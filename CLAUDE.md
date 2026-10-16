@@ -68,7 +68,9 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Each stage: describe its design, wait for his approval, then build it.
 - Never open the app, or anything else, on his screen without asking first.
 - Never delete anything on his computer, not even copies or scratch files
-  made here (his rule, 16 October 2026). Ask in the chat first.
+  made here (his rule, 16 October 2026). Ask in the chat first. The one
+  exception he gave: each new build replaces the previous Geotag in
+  Applications and in `build/`.
 - Raise `appVersion` in `Sources/GeotagCore/Version.swift` with every push, and
   start the commit subject with that number.
 - Commit locally as often as it is worth. Push only when he says so, each time.
