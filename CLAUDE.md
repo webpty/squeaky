@@ -24,8 +24,8 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 ## Tracks come from the track service, never from Strava directly
 
 - There is exactly one Strava connection, and it belongs to a separate track
-  service on Cloudflare (its own repo, Cloudflare's free address, decided
-  16 October 2026). This app and antarctique.xyz both read tracks from it.
+  service on Cloudflare (its own repo, `../tracks`, at https://geotrac.cc,
+  decided 16 October 2026). This app and antarctique.xyz both read tracks from it.
 - The brief's Strava Client ID and Secret settings are replaced by the
   service's address and key. Connect and Disconnect stay in Settings and work
   through the service.
