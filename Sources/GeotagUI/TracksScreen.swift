@@ -16,7 +16,7 @@ struct TracksScreen: View {
             HStack(spacing: Style.gap) {
                 ScreenTitle(text: "Tracks")
                 Button {
-                    Task { await model.refresh() }
+                    Task { await model.refresh(pullStrava: true) }
                 } label: {
                     Text("Refresh").buttonLabel()
                 }

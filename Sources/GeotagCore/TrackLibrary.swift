@@ -75,9 +75,11 @@ public actor TrackLibrary {
         return .added(track)
     }
 
-    /// Uploads what waits, asks Strava for news when this Mac is the owner's,
-    /// and brings in every track the service has that this Mac does not.
-    public func refresh(service: TrackServicePort, role: KeyRole) async -> RefreshReport {
+    /// Uploads what waits, asks the service for a Strava pull when told to and
+    /// this Mac is the owner's, and brings in every track the service has that
+    /// this Mac does not. The service pulls by itself all day; asking is for
+    /// the Refresh button.
+    public func refresh(service: TrackServicePort, role: KeyRole, pullStrava: Bool = false) async -> RefreshReport {
         var report = RefreshReport()
 
         // A key that only reads cannot upload: what waited stays here.
@@ -88,7 +90,7 @@ public actor TrackLibrary {
         do {
             if role == .owner {
                 report.uploaded = try await uploadWaiting(service)
-                if let problem = try? await service.sync(), problem.hasPrefix("Strava") {
+                if pullStrava, let problem = try? await service.sync(), problem.hasPrefix("Strava") {
                     report.problems.append(problem)
                 }
             }

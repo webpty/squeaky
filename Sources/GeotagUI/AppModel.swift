@@ -432,7 +432,7 @@ public final class AppModel: ObservableObject {
 
     // MARK: Tracks
 
-    public func refresh() async {
+    public func refresh(pullStrava: Bool = false) async {
         guard !tracksBusy else { return }
         guard let service else {
             tracks = await library.listed()
@@ -449,7 +449,7 @@ public final class AppModel: ObservableObject {
         }
         await loadMaps(service)
         if thumbnails.forgetFailures() { mapsRound += 1 }
-        let report = await library.refresh(service: service, role: role)
+        let report = await library.refresh(service: service, role: role, pullStrava: pullStrava)
         tracks = await library.listed()
         tracksLine = report.line
         if !rows.isEmpty {
