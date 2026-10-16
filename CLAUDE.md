@@ -83,6 +83,16 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - FIT reading is our own (`FITReader`), checked against Garmin's own
   decoder on its sample files. A real fenix 9 file has not been tried yet.
 
+## The keychain asks after every update (decided 16 October 2026)
+
+- The service key stays in the login keychain, as the brief asks. Every new
+  build is a stranger to the keychain (no Apple-issued signature, so its
+  partition is the build's own hash), and the Mac asks for the password,
+  twice, on the first launch of each new version. David chose to live with
+  it over a key file or Xcode with his Apple ID. A home-made signing
+  certificate would not help: only an Apple-issued one gives a stable
+  partition. Do not propose it again.
+
 ## People and cameras (stage 4, 16 October 2026)
 
 - `PeopleBook` in `~/Library/Application Support/Geotag/people.json`, per Mac,
