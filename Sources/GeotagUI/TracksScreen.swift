@@ -41,6 +41,13 @@ struct TracksScreen: View {
             }
             .listStyle(.inset)
             .clipShape(RoundedRectangle(cornerRadius: Style.radius))
+
+            if !model.tracks.isEmpty, !model.mapCredit.isEmpty {
+                Text(model.mapCredit)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
         .padding(Style.pad * 1.5)
         .fileImporter(isPresented: $importing, allowedContentTypes: Self.trackTypes, allowsMultipleSelection: true) { result in
@@ -116,14 +123,14 @@ struct TrackThumbnail: View {
                 Image(nsImage: image).resizable().scaledToFill()
             } else if !shape.isEmpty {
                 TrackShape(points: shape, bounds: track.bounds)
-                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .stroke(Color(nsColor: MapThumbnails.lineColour), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                     .padding(10)
             }
         }
         .frame(width: MapThumbnails.size.width, height: MapThumbnails.size.height)
         .clipShape(RoundedRectangle(cornerRadius: Style.radius))
         .overlay(RoundedRectangle(cornerRadius: Style.radius).strokeBorder(Color(nsColor: .separatorColor)))
-        .task(id: "\(track.id)-\(scheme == .dark)") {
+        .task(id: "\(track.id)-\(scheme == .dark)-\(model.mapsRound)") {
             let dark = scheme == .dark
             if let cached = model.thumbnails.cached(track.id, dark: dark) {
                 image = cached

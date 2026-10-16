@@ -1,14 +1,18 @@
 import AppKit
-import MapKit
 import GeotagCore
 
-/// Small map pictures of each track's shape, drawn once per appearance and
-/// kept on this Mac, so they show with no internet afterwards.
+/// Small map pictures of each track: OpenStreetMap tiles with no words, as the
+/// track service names them, with the line drawn on top. Each is drawn once
+/// per appearance and kept on this Mac, so it shows with no internet after.
 @MainActor
 public final class MapThumbnails {
     public static let size = NSSize(width: 160, height: 100)
+    /// Pixels per point in the pictures kept.
+    static let scale: CGFloat = 2
+    public static let lineColour = NSColor(red: 0.949, green: 0.443, blue: 0.110, alpha: 1)
 
     let folder: URL
+    public var source: MapSource?
     private var memory: [String: NSImage] = [:]
     private var failedAt: [String: Date] = [:]
 
@@ -22,7 +26,7 @@ public final class MapThumbnails {
     }
 
     private func fileURL(_ id: String, dark: Bool) -> URL {
-        folder.appendingPathComponent("\(id)-\(dark ? "dark" : "light").png")
+        folder.appendingPathComponent("\(id)-osm-\(dark ? "dark" : "light").png")
     }
 
     /// The picture if it was drawn before, from memory or disk.
@@ -34,72 +38,107 @@ public final class MapThumbnails {
         return image
     }
 
-    /// Draws the picture, or answers nil when the map cannot be had (offline).
-    /// A failure is not tried again for five minutes.
+    /// Draws the picture, or answers nil when the map cannot be had: no key
+    /// yet, or no internet. A failure is not tried again for five minutes.
     public func make(_ track: Track, points: TrackPoints, dark: Bool) async -> NSImage? {
         if let image = cached(track.id, dark: dark) { return image }
-        let key = "\(track.id)-\(dark)"
-        if let failed = failedAt[key], Date().timeIntervalSince(failed) < 300 { return nil }
-        guard let image = await Self.render(points: points, bounds: track.bounds, dark: dark, size: Self.size) else {
-            failedAt[key] = Date()
+        guard let source, let key = source.key, !key.isEmpty else { return nil }
+        let memoKey = "\(track.id)-\(dark)"
+        if let failed = failedAt[memoKey], Date().timeIntervalSince(failed) < 300 { return nil }
+        guard let png = await Self.render(points: points, bounds: track.bounds,
+                                          template: dark ? source.dark : source.light, key: key, size: Self.size),
+              let image = NSImage(data: png) else {
+            failedAt[memoKey] = Date()
             return nil
         }
-        memory[key] = image
-        if let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
-           let png = rep.representation(using: .png, properties: [:]) {
-            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            try? png.write(to: fileURL(track.id, dark: dark), options: .atomic)
-        }
+        image.size = Self.size
+        memory[memoKey] = image
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? png.write(to: fileURL(track.id, dark: dark), options: .atomic)
         return image
     }
 
-    /// A map of the track's area with its line drawn on top.
-    public static func render(points: TrackPoints, bounds: Bounds, dark: Bool, size: NSSize) async -> NSImage? {
-        let options = MKMapSnapshotter.Options()
-        options.region = region(bounds, size: size)
-        options.size = size
-        options.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-        options.pointOfInterestFilter = .excludingAll
+    // MARK: Drawing
 
-        let snapshot: MKMapSnapshotter.Snapshot
-        do {
-            snapshot = try await MKMapSnapshotter(options: options).start()
-        } catch {
-            return nil
-        }
-        let image = snapshot.image
-        let line = thinned(points, to: 600)
-        let output = NSImage(size: image.size)
-        output.lockFocus()
-        image.draw(in: NSRect(origin: .zero, size: image.size))
-        let path = NSBezierPath()
-        for (i, (lat, lon)) in line.enumerated() {
-            // On the Mac the snapshot's points already count up from the bottom.
-            let p = snapshot.point(for: CLLocationCoordinate2D(latitude: lat, longitude: lon))
-            if i == 0 { path.move(to: p) } else { path.line(to: p) }
-        }
-        path.lineWidth = 2.5
-        path.lineJoinStyle = .round
-        path.lineCapStyle = .round
-        NSColor.white.withAlphaComponent(dark ? 0.35 : 0.9).setStroke()
-        let casing = path.copy() as! NSBezierPath
-        casing.lineWidth = 4.5
-        casing.stroke()
-        NSColor.systemBlue.setStroke()
-        path.stroke()
-        output.unlockFocus()
-        return output
+    /// Web Mercator, in points at zoom `z` with 256-point tiles.
+    public static func project(_ lat: Double, _ lon: Double, _ z: Int) -> CGPoint {
+        let world = 256 * pow(2, Double(z))
+        let la = max(min(lat, 85.0511), -85.0511) * .pi / 180
+        let x = (lon + 180) / 360 * world
+        let y = (1 - log(tan(la) + 1 / cos(la)) / .pi) / 2 * world
+        return CGPoint(x: x, y: y)
     }
 
-    static func region(_ b: Bounds, size: NSSize) -> MKCoordinateRegion {
-        let centre = CLLocationCoordinate2D(latitude: (b.minLat + b.maxLat) / 2, longitude: (b.minLon + b.maxLon) / 2)
-        var latSpan = max(b.maxLat - b.minLat, 0.003) * 1.3
-        var lonSpan = max(b.maxLon - b.minLon, 0.003) * 1.3
-        // Keep the picture's shape so the line is not squeezed.
-        let aspect = Double(size.width / size.height)
-        let lonPerLat = 1 / max(cos(centre.latitude * .pi / 180), 0.05)
-        if lonSpan / lonPerLat / latSpan < aspect { lonSpan = latSpan * aspect * lonPerLat } else { latSpan = lonSpan / lonPerLat / aspect }
-        return MKCoordinateRegion(center: centre, span: MKCoordinateSpan(latitudeDelta: min(latSpan, 170), longitudeDelta: min(lonSpan, 350)))
+    /// The closest zoom that still fits the track, with some room round it.
+    public static func zoom(_ b: Bounds, size: NSSize) -> Int {
+        for z in stride(from: 17, through: 1, by: -1) {
+            let a = project(b.maxLat, b.minLon, z), c = project(b.minLat, b.maxLon, z)
+            if (c.x - a.x) * 1.3 <= size.width && (c.y - a.y) * 1.3 <= size.height { return z }
+        }
+        return 1
+    }
+
+    /// The picture as PNG bytes, or nil when any tile cannot be had.
+    public static func render(points: TrackPoints, bounds: Bounds, template: String, key: String,
+                              size: NSSize) async -> Data? {
+        let z = zoom(bounds, size: size)
+        let a = project(bounds.maxLat, bounds.minLon, z), c = project(bounds.minLat, bounds.maxLon, z)
+        let left = (a.x + c.x) / 2 - size.width / 2
+        let top = (a.y + c.y) / 2 - size.height / 2
+        let tiles = 1 << z
+
+        var images: [(x: Int, y: Int, image: NSImage)] = []
+        for ty in Int(floor(top / 256))...Int(floor((top + size.height) / 256)) {
+            guard ty >= 0, ty < tiles else { continue }
+            for tx in Int(floor(left / 256))...Int(floor((left + size.width) / 256)) {
+                let wrapped = ((tx % tiles) + tiles) % tiles
+                var text = template
+                    .replacingOccurrences(of: "{z}", with: String(z))
+                    .replacingOccurrences(of: "{x}", with: String(wrapped))
+                    .replacingOccurrences(of: "{y}", with: String(ty))
+                text += (text.contains("?") ? "&" : "?") + "key=" + (key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? key)
+                guard let url = URL(string: text) else { return nil }
+                var request = URLRequest(url: url)
+                request.setValue("Geotag/\(appVersion)", forHTTPHeaderField: "User-Agent")
+                request.timeoutInterval = 20
+                guard let (data, response) = try? await URLSession.shared.data(for: request),
+                      (response as? HTTPURLResponse)?.statusCode == 200,
+                      let image = NSImage(data: data) else { return nil }
+                images.append((tx, ty, image))
+            }
+        }
+
+        let w = Int(size.width * scale), h = Int(size.height * scale)
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h, bitsPerSample: 8,
+                                         samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSGraphicsContext.current?.imageInterpolation = .high
+        // Points from the top-left of the view to the picture's pixels, which count from the bottom.
+        func pixel(_ p: CGPoint) -> NSPoint {
+            NSPoint(x: (p.x - left) * scale, y: CGFloat(h) - (p.y - top) * scale)
+        }
+        for t in images {
+            let corner = pixel(CGPoint(x: CGFloat(t.x) * 256, y: CGFloat(t.y + 1) * 256))
+            t.image.draw(in: NSRect(x: corner.x, y: corner.y, width: 256 * scale, height: 256 * scale),
+                         from: .zero, operation: .copy, fraction: 1)
+        }
+        let path = NSBezierPath()
+        for (i, (lat, lon)) in thinned(points, to: 600).enumerated() {
+            let p = pixel(project(lat, lon, z))
+            if i == 0 { path.move(to: p) } else { path.line(to: p) }
+        }
+        path.lineJoinStyle = .round
+        path.lineCapStyle = .round
+        path.lineWidth = 4.5 * scale
+        NSColor.white.withAlphaComponent(0.85).setStroke()
+        path.stroke()
+        path.lineWidth = 2.5 * scale
+        lineColour.setStroke()
+        path.stroke()
+        NSGraphicsContext.restoreGraphicsState()
+        return rep.representation(using: .png, properties: [:])
     }
 
     /// Every n-th point, enough for a line this small.

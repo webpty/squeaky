@@ -42,6 +42,22 @@ public struct ServiceTrack: Codable, Equatable, Sendable {
     }
 }
 
+/// Where the small maps come from, as the service says: tile addresses with
+/// {z}, {x} and {y}, the credit the maps need, and the key, if one is set.
+public struct MapSource: Codable, Equatable, Sendable {
+    public var light: String
+    public var dark: String
+    public var credit: String
+    public var key: String?
+
+    public init(light: String, dark: String, credit: String, key: String?) {
+        self.light = light
+        self.dark = dark
+        self.credit = credit
+        self.key = key
+    }
+}
+
 public struct UploadAnswer: Codable, Sendable {
     public var added: Bool
     public var track: ServiceTrack
@@ -66,6 +82,7 @@ public enum ServiceError: Error, LocalizedError, Equatable {
 /// What the app needs from the track service.
 public protocol TrackServicePort: Sendable {
     func status() async throws -> ServiceStatus
+    func maps() async throws -> MapSource
     func tracks() async throws -> [ServiceTrack]
     func points(_ id: String) async throws -> TrackPoints
     func upload(name: String, fileName: String?, points: TrackPoints) async throws -> UploadAnswer
@@ -129,6 +146,10 @@ public struct TrackServiceHTTP: TrackServicePort {
 
     public func status() async throws -> ServiceStatus {
         try await call("GET", "v1/status", as: ServiceStatus.self)
+    }
+
+    public func maps() async throws -> MapSource {
+        try await call("GET", "v1/maps", as: MapSource.self)
     }
 
     public func tracks() async throws -> [ServiceTrack] {

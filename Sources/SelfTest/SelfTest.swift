@@ -97,6 +97,7 @@ struct SelfTest {
 
     final class DeadService: TrackServicePort {
         func status() async throws -> ServiceStatus { throw ServiceError.offline }
+        func maps() async throws -> MapSource { throw ServiceError.offline }
         func tracks() async throws -> [ServiceTrack] { throw ServiceError.offline }
         func points(_ id: String) async throws -> TrackPoints { throw ServiceError.offline }
         func upload(name: String, fileName: String?, points: TrackPoints) async throws -> UploadAnswer { throw ServiceError.offline }
@@ -181,13 +182,27 @@ struct SelfTest {
         for i in 0..<100 { p.t.append(i); p.lat.append(-54.82); p.lon.append(-68.32 + Double(i) * 0.0004); p.alt.append(nil) }
         for i in 0..<100 { p.t.append(100 + i); p.lat.append(-54.82 + Double(i) * 0.0002); p.lon.append(-68.28); p.alt.append(nil) }
         let bounds = Bounds(minLat: -54.82, maxLat: -54.80, minLon: -68.32, maxLon: -68.28)
-        for dark in [false, true] {
-            let image = await MapThumbnails.render(points: p, bounds: bounds, dark: dark, size: MapThumbnails.size)
-            check("thumbnail \(dark ? "dark" : "light")", image != nil)
-            if let image, let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
-               let png = rep.representation(using: .png, properties: [:]) {
-                try? png.write(to: scratch.appendingPathComponent("thumb-\(dark ? "dark" : "light").png"))
-            }
+
+        let centre = MapThumbnails.project(0, 0, 0)
+        check("map: the middle of the world", abs(centre.x - 128) < 0.001 && abs(centre.y - 128) < 0.001)
+        let north = MapThumbnails.project(-54.80, -68.30, 10), south = MapThumbnails.project(-54.82, -68.30, 10)
+        check("map: north is up", north.y < south.y)
+        let z = MapThumbnails.zoom(bounds, size: MapThumbnails.size)
+        check("map: a walk gets a close zoom", (11...12).contains(z), "zoom \(z)")
+
+        // Drawing needs a real key: GEOTAG_MAP_KEY, with the tile addresses the service hands out.
+        guard let key = ProcessInfo.processInfo.environment["GEOTAG_MAP_KEY"], !key.isEmpty else {
+            print("skip  map pictures: no GEOTAG_MAP_KEY")
+            return
+        }
+        let templates = [
+            "light": "https://basemaps.cartocdn.com/rastertiles/light_nolabels/{z}/{x}/{y}@2x.png",
+            "dark": "https://basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}@2x.png",
+        ]
+        for (name, template) in templates {
+            let png = await MapThumbnails.render(points: p, bounds: bounds, template: template, key: key, size: MapThumbnails.size)
+            check("map picture \(name)", png != nil)
+            try? png?.write(to: scratch.appendingPathComponent("thumb-\(name).png"))
         }
     }
 }

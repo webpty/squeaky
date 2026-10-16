@@ -49,6 +49,10 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var tracks: [Track] = []
     @Published public var tracksLine = ""
     @Published public private(set) var tracksBusy = false
+    /// The credit the small maps need, kept for when the Mac is offline.
+    @Published public private(set) var mapCredit = ""
+    /// Goes up whenever the map source changes, so missing maps are tried again.
+    @Published public private(set) var mapsRound = 0
 
     public let library: TrackLibrary
     public let thumbnails = MapThumbnails()
@@ -69,6 +73,7 @@ public final class AppModel: ObservableObject {
         serviceAddress = defaults.string(forKey: "trackServiceAddress") ?? ""
         role = defaults.string(forKey: "trackServiceRole").flatMap(KeyRole.init(rawValue:))
         serviceKey = secrets.read(Self.keyAccount) ?? ""
+        mapCredit = defaults.string(forKey: "mapCredit") ?? ""
 
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.cameBack() }
@@ -128,7 +133,10 @@ public final class AppModel: ObservableObject {
     }
 
     public func connectStrava() async {
-        guard let service else { return }
+        guard let service else {
+            settingsLine = ServiceError.notSetUp.localizedDescription
+            return
+        }
         settingsBusy = true
         defer { settingsBusy = false }
         do {
@@ -142,7 +150,10 @@ public final class AppModel: ObservableObject {
     }
 
     public func disconnectStrava() async {
-        guard let service else { return }
+        guard let service else {
+            settingsLine = ServiceError.notSetUp.localizedDescription
+            return
+        }
         settingsBusy = true
         defer { settingsBusy = false }
         do {
@@ -183,9 +194,21 @@ public final class AppModel: ObservableObject {
             tracksLine = settingsLine
             return
         }
+        await loadMaps(service)
         let report = await library.refresh(service: service, role: role)
         tracks = await library.listed()
         tracksLine = report.line
+    }
+
+    /// Where the small maps come from. Without it, rows show the bare line.
+    private func loadMaps(_ service: TrackServicePort) async {
+        guard let source = try? await service.maps() else { return }
+        if source != thumbnails.source {
+            thumbnails.source = source
+            mapsRound += 1
+        }
+        mapCredit = source.credit
+        defaults.set(source.credit, forKey: "mapCredit")
     }
 
     public func importFiles(_ urls: [URL]) async {
