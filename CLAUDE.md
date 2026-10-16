@@ -7,6 +7,9 @@ lost connections. Built for an Antarctica trip with patchy internet. Shared with
 family members, never sold. The full brief is `geotag-app-brief.md`, given on
 16 October 2026; it is built in nine stages.
 
+- David's instructions override the brief wherever they clash (16 October
+  2026). Follow them and record them here; the brief is only the start.
+
 ## Stack
 
 - SwiftUI, built as a plain `.app` with `./build.sh`, like Photo Flatten and
