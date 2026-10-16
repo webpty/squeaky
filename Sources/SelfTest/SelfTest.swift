@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import GeotagCore
 import GeotagUI
+import SwiftUI
 
 // Checks the rules without the interface. Everything happens in a temporary
 // folder; the real library in Application Support is never touched.
@@ -35,6 +36,9 @@ struct SelfTest {
         if args.count > 1, !args[1].isEmpty { fit(URL(fileURLWithPath: args[1])) }
         if args.count > 2 { await library(scratch, address: args[2]) }
         await thumbnail(scratch)
+        if let key = ProcessInfo.processInfo.environment["GEOTAG_MAP_KEY"], ProcessInfo.processInfo.environment["GEOTAG_VIEWER"] != nil {
+            await viewerPicture(scratch, key: key)
+        }
 
         print(failures == 0 ? "all passed" : "\(failures) failed")
         print("scratch: \(scratch.path)")
@@ -105,13 +109,13 @@ struct SelfTest {
         }
     }
 
-    static func writeGPX(_ url: URL, start: Int, count: Int, name: String) {
+    static func writeGPX(_ url: URL, start: Int, count: Int, name: String, lat: Double = -54.81, lon: Double = -68.29) {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         var points = ""
         for i in 0..<count {
             let t = f.string(from: Date(timeIntervalSince1970: TimeInterval(start + i)))
-            points += "<trkpt lat=\"\(-54.81 + Double(i) * 1e-5)\" lon=\"\(-68.29 + Double(i) * 2e-5)\"><ele>\(5.0 + Double(i) / 10)</ele><time>\(t)</time><extensions><ns3:TrackPointExtension><ns3:hr>90</ns3:hr></ns3:TrackPointExtension></extensions></trkpt>\n"
+            points += "<trkpt lat=\"\(lat + Double(i) * 1e-5)\" lon=\"\(lon + Double(i) * 2e-5)\"><ele>\(5.0 + Double(i) / 10)</ele><time>\(t)</time><extensions><ns3:TrackPointExtension><ns3:hr>90</ns3:hr></ns3:TrackPointExtension></extensions></trkpt>\n"
         }
         let xml = """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -269,5 +273,57 @@ struct SelfTest {
             check("map picture \(name)", png != nil)
             try? png?.write(to: scratch.appendingPathComponent("thumb-\(name).png"))
         }
+    }
+}
+
+// MARK: - A picture of the track viewer, drawn off-screen with test tracks.
+
+struct NoSecrets: SecretStorePort {
+    func read(_ account: String) -> String? { nil }
+    func write(_ account: String, _ value: String) throws {}
+}
+
+extension SelfTest {
+    /// Lets the main run loop turn, so the views draw and their tasks run.
+    static func spin(_ seconds: TimeInterval) {
+        RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+    }
+
+    @MainActor
+    static func viewerPicture(_ scratch: URL, key: String) async {
+        let lib = TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("viewer-lib")))
+        let spots: [(String, Double, Double)] = [("Ushuaia harbour", -54.81, -68.30), ("Panama old town", 8.952, -79.535), ("El Chaltén", -49.33, -72.89)]
+        for (i, spot) in spots.enumerated() {
+            let url = scratch.appendingPathComponent("viewer-\(i).gpx")
+            writeGPX(url, start: 1_792_000_000 + i * 86_400, count: 1800, name: spot.0, lat: spot.1, lon: spot.2)
+            _ = try? await lib.importFile(url, role: .reader)
+        }
+        let model = AppModel(library: lib, peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("viewer-people.json")),
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("viewer-maps")))
+        model.useMaps(MapSource(light: "https://basemaps.cartocdn.com/rastertiles/light_nolabels/{z}/{x}/{y}@2x.png",
+                                dark: "https://basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}@2x.png",
+                                credit: "© OpenStreetMap contributors, © CARTO", key: key))
+        await model.showLibrary()
+        model.viewing = model.tracks[1].id
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        for dark in [false, true] {
+            NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            let window = NSWindow(contentRect: NSRect(x: -6000, y: -6000, width: 1100, height: 820), styleMask: [.titled], backing: .buffered, defer: false)
+            let host = NSHostingView(rootView: TrackViewer(trackId: model.tracks[1].id).environmentObject(model))
+            window.contentView = host
+            window.orderBack(nil)
+            for _ in 0..<150 {
+                spin(0.04)
+                try? await Task.sleep(for: .milliseconds(40))
+            }
+            host.layoutSubtreeIfNeeded()
+            if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                host.cacheDisplay(in: host.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: scratch.appendingPathComponent("viewer-\(dark ? "dark" : "light").png"))
+            }
+            window.orderOut(nil)
+        }
+        print("viewer pictures in \(scratch.path)")
     }
 }

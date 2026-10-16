@@ -66,45 +66,28 @@ struct TrackRow: View {
     var body: some View {
         HStack(spacing: Style.gap) {
             TrackThumbnail(track: track)
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.2)) { model.viewing = track.id }
+                }
             VStack(alignment: .leading, spacing: 4) {
                 Text(track.name)
                     .font(.headline)
                     .lineLimit(1)
-                Text(dateLine)
+                Text(TrackText.date(track))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Spacer(minLength: Style.gap)
-            Text(durationText)
+            Text(TrackText.clock(track))
                 .monospacedDigit()
                 .lineLimit(1)
                 .frame(width: 70, alignment: .trailing)
-            Text(sourceText)
+            Text(TrackText.source(track))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .frame(width: 190, alignment: .leading)
         }
         .padding(.vertical, 6)
-    }
-
-    private var dateLine: String {
-        var style = Date.FormatStyle(date: .complete, time: .shortened)
-        if let zone = track.timeZone.flatMap(TimeZone.init(identifier:)) { style.timeZone = zone }
-        return track.start.formatted(style)
-    }
-
-    private var durationText: String {
-        let minutes = Int((track.duration / 60).rounded())
-        return String(format: "%d:%02d", minutes / 60, minutes % 60)
-    }
-
-    private var sourceText: String {
-        switch (track.source, track.status) {
-        case (.strava, _): return "Strava"
-        case (.file, .waitingToUpload): return "File, waiting to upload"
-        case (.file, .thisMacOnly): return "File, this Mac only"
-        case (.file, _): return "File"
-        }
     }
 }
 
@@ -113,6 +96,7 @@ struct TrackThumbnail: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.colorScheme) private var scheme
     let track: Track
+    var scale: CGFloat = 1
     @State private var image: NSImage?
     @State private var shape: [(Double, Double)] = []
 
@@ -124,10 +108,10 @@ struct TrackThumbnail: View {
             } else if !shape.isEmpty {
                 TrackShape(points: shape, bounds: track.bounds)
                     .stroke(Color(nsColor: MapThumbnails.lineColour), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                    .padding(10)
+                    .padding(10 * scale)
             }
         }
-        .frame(width: MapThumbnails.size.width, height: MapThumbnails.size.height)
+        .frame(width: MapThumbnails.size.width * scale, height: MapThumbnails.size.height * scale)
         .clipShape(RoundedRectangle(cornerRadius: Style.radius))
         .overlay(RoundedRectangle(cornerRadius: Style.radius).strokeBorder(Color(nsColor: .separatorColor)))
         .task(id: "\(track.id)-\(scheme == .dark)-\(model.mapsRound)") {

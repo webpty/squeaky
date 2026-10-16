@@ -7,6 +7,8 @@ import GeotagCore
 @MainActor
 public final class MapThumbnails {
     public static let size = NSSize(width: 160, height: 100)
+    /// The track viewer's map.
+    public static let largeSize = NSSize(width: 880, height: 520)
     /// Pixels per point in the pictures kept.
     static let scale: CGFloat = 2
     public static let lineColour = NSColor(red: 0.949, green: 0.443, blue: 0.110, alpha: 1)
@@ -25,36 +27,39 @@ public final class MapThumbnails {
         return support.appendingPathComponent("Geotag/Maps", isDirectory: true)
     }
 
-    private func fileURL(_ id: String, dark: Bool) -> URL {
-        folder.appendingPathComponent("\(id)-osm-\(dark ? "dark" : "light").png")
+    private func fileURL(_ id: String, dark: Bool, large: Bool) -> URL {
+        folder.appendingPathComponent("\(id)-osm2-\(large ? "large-" : "")\(dark ? "dark" : "light").png")
     }
 
     /// The picture if it was drawn before, from memory or disk.
-    public func cached(_ id: String, dark: Bool) -> NSImage? {
-        let key = "\(id)-\(dark)"
+    public func cached(_ id: String, dark: Bool, large: Bool = false) -> NSImage? {
+        let key = "\(id)-\(dark)-\(large)"
         if let image = memory[key] { return image }
-        guard let image = NSImage(contentsOf: fileURL(id, dark: dark)) else { return nil }
+        guard let image = NSImage(contentsOf: fileURL(id, dark: dark, large: large)) else { return nil }
+        image.size = large ? Self.largeSize : Self.size
         memory[key] = image
         return image
     }
 
     /// Draws the picture, or answers nil when the map cannot be had: no key
     /// yet, or no internet. A failure is not tried again for five minutes.
-    public func make(_ track: Track, points: TrackPoints, dark: Bool) async -> NSImage? {
-        if let image = cached(track.id, dark: dark) { return image }
+    public func make(_ track: Track, points: TrackPoints, dark: Bool, large: Bool = false) async -> NSImage? {
+        if let image = cached(track.id, dark: dark, large: large) { return image }
         guard let source, let key = source.key, !key.isEmpty else { return nil }
-        let memoKey = "\(track.id)-\(dark)"
+        let memoKey = "\(track.id)-\(dark)-\(large)"
         if let failed = failedAt[memoKey], Date().timeIntervalSince(failed) < 300 { return nil }
+        let size = large ? Self.largeSize : Self.size
         guard let png = await Self.render(points: points, bounds: track.bounds,
-                                          template: dark ? source.dark : source.light, key: key, size: Self.size),
+                                          template: dark ? source.dark : source.light, key: key, size: size,
+                                          lineWidth: large ? 3.5 : 2.5),
               let image = NSImage(data: png) else {
             failedAt[memoKey] = Date()
             return nil
         }
-        image.size = Self.size
+        image.size = size
         memory[memoKey] = image
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try? png.write(to: fileURL(track.id, dark: dark), options: .atomic)
+        try? png.write(to: fileURL(track.id, dark: dark, large: large), options: .atomic)
         return image
     }
 
@@ -80,11 +85,12 @@ public final class MapThumbnails {
 
     /// The picture as PNG bytes, or nil when any tile cannot be had.
     public static func render(points: TrackPoints, bounds: Bounds, template: String, key: String,
-                              size: NSSize) async -> Data? {
+                              size: NSSize, lineWidth: CGFloat = 2.5) async -> Data? {
         let z = zoom(bounds, size: size)
         let a = project(bounds.maxLat, bounds.minLon, z), c = project(bounds.minLat, bounds.maxLon, z)
-        let left = (a.x + c.x) / 2 - size.width / 2
-        let top = (a.y + c.y) / 2 - size.height / 2
+        // On whole pixels, so the tiles meet without seams.
+        let left = (((a.x + c.x) / 2 - size.width / 2) * scale).rounded() / scale
+        let top = (((a.y + c.y) / 2 - size.height / 2) * scale).rounded() / scale
         let tiles = 1 << z
 
         var images: [(x: Int, y: Int, image: NSImage)] = []
@@ -125,16 +131,16 @@ public final class MapThumbnails {
                          from: .zero, operation: .copy, fraction: 1)
         }
         let path = NSBezierPath()
-        for (i, (lat, lon)) in thinned(points, to: 600).enumerated() {
+        for (i, (lat, lon)) in thinned(points, to: size.width > 400 ? 3000 : 600).enumerated() {
             let p = pixel(project(lat, lon, z))
             if i == 0 { path.move(to: p) } else { path.line(to: p) }
         }
         path.lineJoinStyle = .round
         path.lineCapStyle = .round
-        path.lineWidth = 4.5 * scale
+        path.lineWidth = (lineWidth + 2) * scale
         NSColor.white.withAlphaComponent(0.85).setStroke()
         path.stroke()
-        path.lineWidth = 2.5 * scale
+        path.lineWidth = lineWidth * scale
         lineColour.setStroke()
         path.stroke()
         NSGraphicsContext.restoreGraphicsState()

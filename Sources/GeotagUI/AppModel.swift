@@ -53,13 +53,15 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var mapCredit = ""
     /// Goes up whenever the map source changes, so missing maps are tried again.
     @Published public private(set) var mapsRound = 0
+    /// The track open in the viewer, if one is.
+    @Published public var viewing: String?
 
     // People and cameras.
     @Published public private(set) var book = PeopleBook()
     @Published public var peopleLine = ""
 
     public let library: TrackLibrary
-    public let thumbnails = MapThumbnails()
+    public let thumbnails: MapThumbnails
     private let peopleStore: PeopleStorePort
     private let secrets: SecretStorePort
     private let defaults = UserDefaults.standard
@@ -70,8 +72,10 @@ public final class AppModel: ObservableObject {
 
     public init(library: TrackLibrary = TrackLibrary(store: TrackStoreFolder.standard()),
                 peopleStore: PeopleStorePort = PeopleStoreFile.standard(),
-                secrets: SecretStorePort = Keychain()) {
+                secrets: SecretStorePort = Keychain(),
+                thumbnails: MapThumbnails? = nil) {
         self.library = library
+        self.thumbnails = thumbnails ?? MapThumbnails()
         self.peopleStore = peopleStore
         self.secrets = secrets
         do {
@@ -251,12 +255,21 @@ public final class AppModel: ObservableObject {
     /// Where the small maps come from. Without it, rows show the bare line.
     private func loadMaps(_ service: TrackServicePort) async {
         guard let source = try? await service.maps() else { return }
+        useMaps(source)
+    }
+
+    public func useMaps(_ source: MapSource) {
         if source != thumbnails.source {
             thumbnails.source = source
             mapsRound += 1
         }
         mapCredit = source.credit
         defaults.set(source.credit, forKey: "mapCredit")
+    }
+
+    /// Shows what the library holds, without asking the service.
+    public func showLibrary() async {
+        tracks = await library.listed()
     }
 
     public func importFiles(_ urls: [URL]) async {

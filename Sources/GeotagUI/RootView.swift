@@ -16,6 +16,12 @@ public struct RootView: View {
                 .background(Color(nsColor: .windowBackgroundColor))
         }
         .navigationTitle(appName)
+        .overlay {
+            if let id = model.viewing {
+                TrackViewer(trackId: id)
+                    .transition(.opacity)
+            }
+        }
     }
 }
 
