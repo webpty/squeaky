@@ -18,13 +18,16 @@ public struct Position: Equatable, Sendable {
     public var moment: Date
     /// Seconds between that moment and the nearest track point.
     public var fromPoint: Int
+    /// The track it was found on.
+    public var trackId: String?
 
-    public init(lat: Double, lon: Double, alt: Double?, moment: Date, fromPoint: Int) {
+    public init(lat: Double, lon: Double, alt: Double?, moment: Date, fromPoint: Int, trackId: String? = nil) {
         self.lat = lat
         self.lon = lon
         self.alt = alt
         self.moment = moment
         self.fromPoint = fromPoint
+        self.trackId = trackId
     }
 }
 
@@ -124,10 +127,10 @@ public struct TrackTimeline: Sendable {
                 if let a = p.alt[before], let b = p.alt[after] { alt = a + (b - a) * f } else { alt = p.alt[before] ?? p.alt[after] }
                 found = Position(lat: p.lat[before] + (p.lat[after] - p.lat[before]) * f,
                                  lon: p.lon[before] + (p.lon[after] - p.lon[before]) * f,
-                                 alt: alt, moment: moment, fromPoint: Int(nearest.rounded()))
+                                 alt: alt, moment: moment, fromPoint: Int(nearest.rounded()), trackId: piece.id)
             } else {
                 let i = dBefore <= dAfter ? before : after
-                found = Position(lat: p.lat[i], lon: p.lon[i], alt: p.alt[i], moment: moment, fromPoint: Int(nearest.rounded()))
+                found = Position(lat: p.lat[i], lon: p.lon[i], alt: p.alt[i], moment: moment, fromPoint: Int(nearest.rounded()), trackId: piece.id)
             }
             if best == nil || found.fromPoint < best!.fromPoint { best = found }
         }

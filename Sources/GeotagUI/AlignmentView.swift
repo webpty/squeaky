@@ -16,6 +16,7 @@ struct AlignmentView: View {
     @State private var fitted = false
     @State private var selected: String?
     @State private var lines: [[CGPoint]] = []
+    @State private var place = ""
 
     private var personId: UUID? { model.importPerson }
 
@@ -65,7 +66,7 @@ struct AlignmentView: View {
         let dots = placed.compactMap { p in p.position.map { MapDot(id: p.row.id, world: World.point($0.lat, $0.lon)) } }
         VStack(alignment: .leading, spacing: Style.gap) {
             HStack(spacing: Style.gap) {
-                Text("Align \(camera?.model ?? "")").font(.title2.weight(.semibold)).lineLimit(1)
+                Text(place).font(.title2.weight(.semibold)).lineLimit(1)
                 if cameras.count > 1 {
                     Picker("", selection: Binding(get: { camera?.id }, set: { cameraId = $0; extra = 0; fitted = false })) {
                         ForEach(cameras) { Text($0.model).tag(Optional($0.id)) }
@@ -136,6 +137,27 @@ struct AlignmentView: View {
         .padding(Style.pad * 1.5)
         .frame(minWidth: 1000, minHeight: 720)
         .task { buildLines() }
+        .task(id: camera?.id) { await name(placed) }
+    }
+
+    /// The window's title: where the photos were taken, as best as can be
+    /// found. The place name from OpenStreetMap, else the track's name, else
+    /// the day.
+    private func name(_ placed: [(row: ImportRow, position: Position?)]) async {
+        let found = placed.compactMap(\.position)
+        if let lat = found.map(\.lat).sorted().dropFirst(found.count / 2).first,
+           let lon = found.map(\.lon).sorted().dropFirst(found.count / 2).first,
+           let named = await PlaceNames.shared.name(lat: lat, lon: lon) {
+            place = named
+            return
+        }
+        if let id = found.first?.trackId, let track = model.tracks.first(where: { $0.id == id }) {
+            place = track.name
+            return
+        }
+        if let first = placed.first, let clock = Moments.clockReading(first.row.photo) {
+            place = When.current.day(clock, zone: TimeZone(secondsFromGMT: 0)!, weekday: true)
+        }
     }
 
     /// "Clock 1 min 12 s ahead", for the offset as it would be saved.

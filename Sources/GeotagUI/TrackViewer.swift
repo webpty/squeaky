@@ -3,10 +3,10 @@ import GeotagCore
 
 /// How a track's details read, the same in the list and the viewer.
 enum TrackText {
+    /// In the zone where the track was recorded, when known.
     static func date(_ track: Track) -> String {
-        var style = Date.FormatStyle(date: .complete, time: .shortened)
-        if let zone = track.timeZone.flatMap(TimeZone.init(identifier:)) { style.timeZone = zone }
-        return track.start.formatted(style)
+        let zone = track.timeZone.flatMap(TimeZone.init(identifier:)) ?? .current
+        return When.current.dayAndTime(track.start, zone: zone, weekday: true)
     }
 
     static func duration(_ track: Track) -> String {

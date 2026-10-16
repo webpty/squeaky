@@ -60,9 +60,8 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var book = PeopleBook()
     @Published public var peopleLine = ""
 
-    // Photos: cards and folders, whose they are, and what is on them.
+    // Photos: cards, whose they are, and what is on them.
     @Published public private(set) var cards: [PhotoSource] = []
-    @Published public private(set) var folder: PhotoSource?
     @Published public private(set) var source: PhotoSource?
     /// The card waiting for its owner to be chosen.
     @Published public var askingWhose: PhotoSource?
@@ -72,6 +71,10 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var photosLine = ""
     @Published public private(set) var openOnCard = true
     @Published public var cardsLine = ""
+
+    // Dates and times, as chosen in Settings; until then, as the Mac.
+    @Published public private(set) var dateOrder = DateOrder.system
+    @Published public private(set) var clock24: Bool?
 
     // Matching.
     @Published public private(set) var maxGapSeconds = 120
@@ -89,7 +92,10 @@ public final class AppModel: ObservableObject {
     private let peopleStore: PeopleStorePort
     private let history: HistoryStorePort
     private let exifTool: ExifTool?
-    private let cardWatcher = CardWatcher()
+    private let cardGuard = CardGuard()
+    /// Bumped whenever reading should stop: a new card chosen, or an eject.
+    private var readingRound = 0
+    private var ejecting: String?
     private let secrets: SecretStorePort
     private let defaults = UserDefaults.standard
     private var timer: Timer?
@@ -112,6 +118,9 @@ public final class AppModel: ObservableObject {
         self.secrets = secrets
         openOnCard = defaults.object(forKey: "openOnCard") as? Bool ?? true
         if defaults.object(forKey: "maxGapSeconds") != nil { maxGapSeconds = defaults.integer(forKey: "maxGapSeconds") }
+        dateOrder = defaults.string(forKey: "dateOrder").flatMap(DateOrder.init(rawValue:)) ?? .system
+        clock24 = defaults.object(forKey: "clock24") as? Bool
+        When.current = When(order: dateOrder, clock24: clock24)
         do {
             if let saved = try peopleStore.load() {
                 book = saved
@@ -270,22 +279,29 @@ public final class AppModel: ObservableObject {
     // MARK: Photos
 
     private func startCards() {
-        cardWatcher.onChange = { [weak self] cards in
+        cardGuard.onHeld = { [weak self] card in
             guard let self else { return }
-            self.cards = cards
-            if let source, source.isCard, !cards.contains(where: { $0.id == source.id }) {
-                self.source = nil
-                self.rows = []
-                self.photosLine = "\(source.name) was taken out."
-            }
-        }
-        cardWatcher.onInserted = { [weak self] card in
-            guard let self, self.openOnCard else { return }
+            self.cards.removeAll { $0.bsd == card.bsd }
+            self.cards.append(card)
+            guard self.openOnCard else { return }
             Windows.bringForward()
             self.screen = .photos
             self.choose(card)
         }
-        cardWatcher.start()
+        cardGuard.onGone = { [weak self] bsd in
+            guard let self else { return }
+            let gone = self.cards.first { $0.bsd == bsd }
+            self.cards.removeAll { $0.bsd == bsd }
+            if let source = self.source, source.bsd == bsd {
+                self.readingRound += 1
+                self.source = nil
+                self.rows = []
+                self.importPerson = nil
+                if self.ejecting != bsd { self.photosLine = "\(gone?.name ?? "The card") was taken out." }
+            }
+        }
+        cardGuard.onProblem = { [weak self] message in self?.photosLine = message }
+        cardGuard.start()
         // On by default: the first time, Geotag joins the Login Items.
         if defaults.object(forKey: "openOnCard") == nil { setOpenOnCard(true) }
     }
@@ -302,19 +318,35 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    /// A card or folder picked: first, whose is it.
+    /// A card picked: first, whose is it.
     public func choose(_ source: PhotoSource) {
+        readingRound += 1
         self.source = source
         rows = []
         photosLine = ""
         askingWhose = source
     }
 
-    public func chooseFolder() {
-        guard let url = Folders.choose() else { return }
-        let picked = PhotoSource(id: url.path, name: url.lastPathComponent, url: url, isCard: false)
-        folder = picked
-        choose(picked)
+    /// Stops reading, forces the card off now and says when it can come out.
+    public func eject() {
+        guard let card = source, let bsd = card.bsd else { return }
+        readingRound += 1
+        ejecting = bsd
+        askingWhose = nil
+        aligning = false
+        rows = []
+        photosLine = "Ejecting \(card.name)"
+        cardGuard.eject(bsd) { [weak self] problem in
+            guard let self else { return }
+            self.ejecting = nil
+            if let problem {
+                self.photosLine = "\(card.name) was not ejected. \(problem)"
+            } else {
+                self.cards.removeAll { $0.bsd == bsd }
+                if self.source?.bsd == bsd { self.source = nil; self.importPerson = nil }
+                self.photosLine = "\(card.name) is ejected. You can take it out."
+            }
+        }
     }
 
     /// Whoever this card belonged to last time.
@@ -333,6 +365,8 @@ public final class AppModel: ObservableObject {
             photosLine = "ExifTool is missing from Geotag."
             return
         }
+        readingRound += 1
+        let round = readingRound
         photosBusy = true
         defer { photosBusy = false }
         photosLine = "Looking for photos"
@@ -343,18 +377,20 @@ public final class AppModel: ObservableObject {
         do {
             let photos = try await Task.detached {
                 try PhotoScanner(exifTool: tool).scan(files) { done in
-                    Task { @MainActor [weak self] in self?.photosLine = "Reading \(done) of \(total)" }
+                    Task { @MainActor [weak self] in
+                        if self?.readingRound == round { self?.photosLine = "Reading \(done) of \(total)" }
+                    }
                 }
             }.value
             let past = (try? history.load(personId)) ?? []
-            guard self.source?.id == source.id else { return }
+            guard readingRound == round, self.source?.id == source.id else { return }
             rows = ImportList.rows(photos, history: past, book: book, personId: personId)
             await loadTimeline()
             rematch()
-            photosLine = summary()
+            photosLine = rows.isEmpty ? "No photos on \(source.name)." : ""
             if !alignable.isEmpty { aligning = true }
         } catch {
-            photosLine = "The photos could not be read: \(error.localizedDescription)"
+            if readingRound == round { photosLine = "The photos could not be read: \(error.localizedDescription)" }
         }
     }
 
@@ -366,6 +402,20 @@ public final class AppModel: ObservableObject {
     public func setWithoutLocation(_ id: String, _ on: Bool) {
         guard let i = rows.firstIndex(where: { $0.id == id }) else { return }
         rows[i].withoutLocation = on
+    }
+
+    // MARK: Dates and times
+
+    public func setDateOrder(_ order: DateOrder) {
+        dateOrder = order
+        defaults.set(order.rawValue, forKey: "dateOrder")
+        When.current = When(order: dateOrder, clock24: clock24)
+    }
+
+    public func setClock24(_ on: Bool) {
+        clock24 = on
+        defaults.set(on, forKey: "clock24")
+        When.current = When(order: dateOrder, clock24: clock24)
     }
 
     // MARK: Matching
@@ -397,7 +447,6 @@ public final class AppModel: ObservableObject {
             let camera = photo.model.flatMap { book.camera(personId: personId, model: $0) }
             rows[i].placement = Matcher.place(photo, camera: camera, timeline: timeline, gap: maxGapSeconds)
         }
-        photosLine = summary()
     }
 
     /// Ticked photos whose camera is known and whose time can be read: the
@@ -409,18 +458,6 @@ public final class AppModel: ObservableObject {
                   let model = row.photo.model, let camera = book.camera(personId: personId, model: model) else { return false }
             return camera.zone != .notSet
         }
-    }
-
-    private func summary() -> String {
-        if rows.isEmpty { return "No photos on \(source?.name ?? "it")." }
-        let fresh = rows.filter { $0.status != .alreadyImported }.count
-        let before = rows.count - fresh
-        let unknown = rows.filter { $0.status == .unknownCamera }.count
-        var line = "\(fresh.formatted()) new, \(before.formatted()) already imported"
-        if unknown > 0 { line += ", \(unknown.formatted()) from a camera not on the list" }
-        let review = rows.filter { $0.ticked && $0.needsReview && !$0.withoutLocation }.count
-        if review > 0 { line += ", \(review.formatted()) to review" }
-        return line
     }
 
     // MARK: History

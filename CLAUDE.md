@@ -158,6 +158,32 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   with `GEOTAG_MAP_KEY` (the CARTO key from `../tracks/.keys/carto.key`).
   A probe view needs a background of its own or it draws black.
 
+## Cards held, dates, tiles (0.9.0, 16 October 2026)
+
+- `CardGuard` (DiskArbitration) refuses the Mac's own opening of every
+  external, removable or ejectable FAT/exFAT disk, opens it itself with
+  `rdonly,nobrowse`, and keeps it only if it has a DCIM folder; any other
+  disk is closed and opened again as usual. Cards open before Geotag starts
+  are taken over the same way unless another app holds them. There is no
+  Release button (David's decision): to see a card in Finder, quit Geotag.
+- The Mac may answer "busy" to Geotag's own opening and open the card all
+  the same; check whether it is open before calling it a failure.
+- Eject forces the whole disk closed (`kDADiskUnmountOptionForce |
+  kDADiskUnmountOptionWhole`, on the whole disk, never a partition) and
+  ejects it; under a second, open files or not.
+- Test the guard only on a disk image named GTTEST with a GEOTAG_TEST
+  folder (`GEOTAG_GUARD_TEST=1`), never with a DCIM folder: Geotag on
+  David's Mac would take a DCIM test disk for a real card.
+- Photos come only from cards: Choose folder is gone (David, 16 October).
+- Dates and times follow Settings (`When`): date order and 24-hour clock,
+  else the Mac's own. A chosen format uses the language without the Mac's
+  "24-hour time" override, or a 12-hour choice would be ignored.
+- Copies of JPEG photos are saved ending ".jpg" (`CopyName`), raw and HEIF
+  names untouched (David, 16 October 2026).
+- The map window is titled by place: OpenStreetMap's Nominatim lookup, one
+  question a second, identified as Geotag; else the track's name; else the
+  day.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

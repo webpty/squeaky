@@ -9,6 +9,16 @@ public struct PhotoSource: Identifiable, Equatable, Sendable {
     public var name: String
     public var url: URL
     public var isCard: Bool
+    /// The card's disk, as the Mac names it ("disk6s1"), for ejecting it.
+    public var bsd: String?
+
+    public init(id: String, name: String, url: URL, isCard: Bool, bsd: String? = nil) {
+        self.id = id
+        self.name = name
+        self.url = url
+        self.isCard = isCard
+        self.bsd = bsd
+    }
 }
 
 /// Notices camera cards as they come and go: any disk with a DCIM folder.

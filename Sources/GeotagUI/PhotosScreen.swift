@@ -12,9 +12,7 @@ enum PhotoText {
         parser.timeZone = TimeZone(secondsFromGMT: 0)
         parser.dateFormat = "yyyy:MM:dd HH:mm:ss"
         guard let date = parser.date(from: raw) else { return raw }
-        var style = Date.FormatStyle(date: .abbreviated, time: .standard)
-        style.timeZone = TimeZone(secondsFromGMT: 0)!
-        return date.formatted(style) + (photo.zone.map { " (\($0))" } ?? "")
+        return When.current.dayAndTime(date, zone: TimeZone(secondsFromGMT: 0)!, seconds: true) + (photo.zone.map { " (\($0))" } ?? "")
     }
 
     static func size(_ bytes: Int64) -> String {
@@ -55,8 +53,11 @@ struct PhotosScreen: View {
         reviewOnly ? model.rows.filter { $0.ticked && $0.needsReview } : model.rows
     }
 
-    private var sources: [PhotoSource] {
-        model.cards + (model.folder.map { [$0] } ?? [])
+    private var counts: (photos: Int, fresh: Int, before: Int, review: Int) {
+        let rows = model.rows
+        let fresh = rows.filter { $0.status != .alreadyImported }.count
+        let review = rows.filter { $0.ticked && $0.needsReview && !$0.withoutLocation }.count
+        return (rows.count, fresh, rows.count - fresh, review)
     }
 
     var body: some View {
@@ -66,45 +67,54 @@ struct PhotosScreen: View {
                 Button {
                     model.aligning = true
                 } label: {
-                    Text("Align").buttonLabel()
+                    Text("See photos on the map").buttonLabel()
                 }
                 .disabled(model.photosBusy || model.alignable.isEmpty)
-                Button {
-                    model.chooseFolder()
-                } label: {
-                    Text("Choose folder").buttonLabel()
-                }
-                .disabled(model.photosBusy)
             }
 
-            if !sources.isEmpty {
+            if model.cards.count > 1 {
                 HStack(spacing: 8) {
-                    ForEach(sources) { source in
-                        SourceButton(source: source, selected: model.source?.id == source.id) {
-                            model.choose(source)
+                    ForEach(model.cards) { card in
+                        SourceButton(source: card, selected: model.source?.id == card.id) {
+                            model.choose(card)
                         }
                         .disabled(model.photosBusy)
                     }
                 }
             }
 
-            HStack(spacing: 8) {
-                if let id = model.importPerson, model.source != nil, let person = model.book.person(id) {
-                    Text(person.name).font(.headline).lineLimit(1)
-                    Button {
-                        if let source = model.source { model.askingWhose = source }
-                    } label: {
-                        Text("Change").buttonLabel()
+            let c = counts
+            let ready = model.source != nil && !model.rows.isEmpty
+            HStack(spacing: Style.gap) {
+                Tile(label: "Card", value: model.source?.name ?? "No card") {
+                    if model.source?.bsd != nil {
+                        Button {
+                            model.eject()
+                        } label: {
+                            Text("Eject").buttonLabel()
+                        }
                     }
-                    .disabled(model.photosBusy)
                 }
+                Tile(label: "Person", value: model.importPerson.flatMap { model.book.person($0)?.name } ?? "Nobody yet") {
+                    if let source = model.source {
+                        RoundIconButton(symbol: "pencil", label: "Change") { model.askingWhose = source }
+                            .disabled(model.photosBusy)
+                    }
+                }
+                Tile(label: "Photos", value: ready ? c.photos.formatted() : "0")
+                Tile(label: "New", value: ready ? c.fresh.formatted() : "0")
+                Tile(label: "Imported before", value: ready ? c.before.formatted() : "0")
+                Tile(label: "To review", value: ready ? c.review.formatted() : "0")
+            }
+
+            HStack(spacing: 8) {
                 if model.photosBusy { ProgressView().controlSize(.small) }
                 StatusLine(text: model.photosLine)
                 Spacer()
                 if !model.rows.isEmpty {
                     Picker("", selection: $reviewOnly) {
                         Text("All").tag(false)
-                        Text("Review (\(model.rows.filter { $0.ticked && $0.needsReview }.count))").tag(true)
+                        Text("Review (\(c.review))").tag(true)
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
@@ -126,31 +136,26 @@ struct PhotosScreen: View {
                 TableColumn("Name") { row in
                     Text(row.photo.fileName).lineLimit(1)
                 }
-                .width(min: 110, ideal: 140)
+                .width(min: 100, ideal: 120)
                 TableColumn("Taken") { row in
                     Text(PhotoText.taken(row.photo)).monospacedDigit().lineLimit(1)
                 }
-                .width(min: 170, ideal: 220)
+                .width(min: 170, ideal: 200)
                 TableColumn("Camera") { row in
                     Text(row.photo.model ?? "Unknown").lineLimit(1)
                 }
-                .width(min: 110, ideal: 150)
+                .width(min: 100, ideal: 130)
                 TableColumn("Size") { row in
                     Text(PhotoText.size(row.photo.size)).monospacedDigit().lineLimit(1)
                 }
-                .width(min: 60, ideal: 80)
+                .width(min: 60, ideal: 70)
                 TableColumn("Status") { row in
-                    Text(PhotoText.status(row.status))
-                        .foregroundStyle(row.status == .new ? .primary : .secondary)
+                    let before = row.status == .alreadyImported
+                    Text(before ? PhotoText.status(row.status) : PhotoText.location(row, gap: model.maxGapSeconds))
+                        .foregroundStyle(before || row.needsReview ? .secondary : .primary)
                         .lineLimit(1)
                 }
-                .width(min: 110, ideal: 150)
-                TableColumn("Location") { row in
-                    Text(PhotoText.location(row, gap: model.maxGapSeconds))
-                        .foregroundStyle(row.needsReview ? .secondary : .primary)
-                        .lineLimit(1)
-                }
-                .width(min: 150, ideal: 220)
+                .width(min: 150, ideal: 190)
                 TableColumn("Without location") { row in
                     if row.needsReview {
                         Toggle("", isOn: Binding(get: { row.withoutLocation }, set: { model.setWithoutLocation(row.id, $0) }))
@@ -168,6 +173,47 @@ struct PhotosScreen: View {
         .sheet(isPresented: $model.aligning) {
             AlignmentView()
         }
+    }
+}
+
+/// A small label over a large figure, with room for a button beside it.
+struct Tile<Accessory: View>: View {
+    let label: String
+    let value: String
+    let accessory: Accessory
+
+    init(label: String, value: String, @ViewBuilder accessory: () -> Accessory) {
+        self.label = label
+        self.value = value
+        self.accessory = accessory()
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Text(value)
+                    .font(.title2.monospacedDigit())
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 0)
+            accessory
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Style.radius).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: Style.radius).strokeBorder(Color(nsColor: .separatorColor)))
+    }
+}
+
+extension Tile where Accessory == EmptyView {
+    init(label: String, value: String) {
+        self.init(label: label, value: value) { EmptyView() }
     }
 }
 
@@ -280,7 +326,7 @@ struct HistoryScreen: View {
                     Text(row.entry.taken ?? "No time").monospacedDigit().lineLimit(1)
                 }
                 TableColumn("Size") { Text(PhotoText.size($0.entry.size)).monospacedDigit().lineLimit(1) }
-                TableColumn("Imported") { Text($0.entry.imported.formatted(date: .abbreviated, time: .shortened)).lineLimit(1) }
+                TableColumn("Imported") { Text(When.current.dayAndTime($0.entry.imported)).lineLimit(1) }
             }
             .clipShape(RoundedRectangle(cornerRadius: Style.radius))
         }
@@ -295,6 +341,32 @@ struct HistoryRow: Identifiable {
     let index: Int
     let entry: HistoryEntry
     var id: Int { index }
+}
+
+struct DatesCard: View {
+    @EnvironmentObject var model: AppModel
+
+    /// Whether the Mac itself writes times on a 24-hour clock.
+    private var macUses24: Bool {
+        !(DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .current) ?? "").contains("a")
+    }
+
+    var body: some View {
+        let today = Date()
+        Card(title: "Dates and times") {
+            Picker("Date order", selection: Binding(get: { model.dateOrder }, set: { model.setDateOrder($0) })) {
+                ForEach(DateOrder.allCases) { order in
+                    Text("\(order.title) (\(When(order: order, clock24: model.clock24).day(today)))").tag(order)
+                }
+            }
+            .fixedSize()
+            Toggle("24-hour clock", isOn: Binding(get: { model.clock24 ?? macUses24 }, set: { model.setClock24($0) }))
+                .toggleStyle(.switch)
+            Text(When.current.dayAndTime(today, weekday: true))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
 }
 
 struct MatchingCard: View {

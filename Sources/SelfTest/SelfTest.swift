@@ -3,6 +3,7 @@ import Foundation
 import GeotagCore
 import GeotagUI
 import SwiftUI
+import DiskArbitration
 
 // Checks the rules without the interface. Everything happens in a temporary
 // folder; the real library in Application Support is never touched.
@@ -34,7 +35,9 @@ struct SelfTest {
         people(scratch)
         cards(scratch)
         matching(scratch)
+        names()
         if ProcessInfo.processInfo.environment["GEOTAG_MOUNT_TEST"] != nil { await cardArrives(scratch) }
+        if ProcessInfo.processInfo.environment["GEOTAG_GUARD_TEST"] != nil { await guardTest(scratch) }
         if ProcessInfo.processInfo.environment["GEOTAG_VIEWER"] != nil { await photosPicture(scratch) }
         if let key = ProcessInfo.processInfo.environment["GEOTAG_MAP_KEY"], ProcessInfo.processInfo.environment["GEOTAG_ALIGN"] != nil {
             await alignmentPicture(scratch, key: key)
@@ -616,5 +619,82 @@ extension SelfTest {
             host.cacheDisplay(in: host.bounds, to: rep)
             try? rep.representation(using: .png, properties: [:])?.write(to: scratch.appendingPathComponent("alignment.png"))
         }
+    }
+}
+
+extension SelfTest {
+    /// The card guard on a test disk only (volume GTTEST, marker folder
+    /// GEOTAG_TEST, so nothing else on the Mac takes it for a camera card).
+    /// It must open it hidden and read-only, then force it off and eject it.
+    @MainActor
+    static func guardTest(_ scratch: URL) async {
+        func run(_ tool: String, _ args: [String]) -> (Int32, String) {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: tool)
+            p.arguments = args
+            let out = Pipe()
+            p.standardOutput = out
+            p.standardError = out
+            try? p.run()
+            let data = out.fileHandleForReading.readDataToEndOfFile()
+            p.waitUntilExit()
+            return (p.terminationStatus, String(data: data, encoding: .utf8) ?? "")
+        }
+        let src = scratch.appendingPathComponent("guard-src")
+        try? FileManager.default.createDirectory(at: src.appendingPathComponent("GEOTAG_TEST"), withIntermediateDirectories: true)
+        try? "x".write(to: src.appendingPathComponent("GEOTAG_TEST/a.txt"), atomically: true, encoding: .utf8)
+        let image = scratch.appendingPathComponent("guard.dmg")
+        guard run("/usr/bin/hdiutil", ["create", "-quiet", "-srcfolder", src.path, "-volname", "GTTEST", "-fs", "ExFAT", image.path]).0 == 0 else {
+            check("guard: test disk made", false)
+            return
+        }
+        let guardian = CardGuard(marker: "GEOTAG_TEST") { d in d[kDADiskDescriptionVolumeNameKey as String] as? String == "GTTEST" }
+        var heldCard: PhotoSource?
+        var gone: [String] = []
+        var problems: [String] = []
+        guardian.onHeld = { heldCard = $0 }
+        guardian.onGone = { gone.append($0) }
+        guardian.onProblem = { problems.append($0) }
+        guardian.start()
+        _ = run("/usr/bin/hdiutil", ["attach", "-nobrowse", image.path])
+        for _ in 0..<80 where heldCard == nil { spin(0.05); try? await Task.sleep(for: .milliseconds(50)) }
+        check("guard: the card is held", heldCard != nil, problems.joined(separator: " "))
+        guard let card = heldCard, let bsd = card.bsd else { return }
+        let line = run("/sbin/mount", []).1.split(separator: "\n").first { $0.contains(card.url.path) }.map(String.init) ?? ""
+        check("guard: opened read-only", line.contains("read-only"), line)
+        check("guard: hidden from Finder", line.contains("nobrowse"), line)
+        let wrote = FileManager.default.createFile(atPath: card.url.appendingPathComponent("written.txt").path, contents: Data("x".utf8))
+        check("guard: nothing can be written to it", !wrote)
+        check("guard: still readable", (try? String(contentsOf: card.url.appendingPathComponent("GEOTAG_TEST/a.txt"), encoding: .utf8)) == "x")
+
+        // Something holding a file open does not stop the eject.
+        let handle = FileHandle(forReadingAtPath: card.url.appendingPathComponent("GEOTAG_TEST/a.txt").path)
+        var answer: String?? = .none
+        let started = Date()
+        guardian.eject(bsd) { answer = .some($0) }
+        for _ in 0..<100 where answer == nil { spin(0.05); try? await Task.sleep(for: .milliseconds(50)) }
+        let took = Date().timeIntervalSince(started)
+        check("guard: ejected at once, a file open or not", answer == .some(nil), "\(String(describing: answer)) in \(String(format: "%.1f", took)) s")
+        check("guard: within two seconds", took < 2)
+        for _ in 0..<40 where gone.isEmpty { spin(0.05); try? await Task.sleep(for: .milliseconds(50)) }
+        check("guard: told the card is gone", gone == [bsd], "\(gone)")
+        check("guard: no longer attached", !run("/usr/bin/hdiutil", ["info"]).1.contains(image.path))
+        try? handle?.close()
+    }
+}
+
+extension SelfTest {
+    static func names() {
+        check("copy name: JPG becomes jpg", CopyName.forCopy("IMG_0001.JPG") == "IMG_0001.jpg")
+        check("copy name: JPEG becomes jpg", CopyName.forCopy("IMG_0002.JPEG") == "IMG_0002.jpg")
+        check("copy name: jpeg becomes jpg", CopyName.forCopy("IMG_0003.jpeg") == "IMG_0003.jpg")
+        check("copy name: jpg stays", CopyName.forCopy("IMG_0004.jpg") == "IMG_0004.jpg")
+        check("copy name: raw untouched", CopyName.forCopy("DAVL0311.CR3") == "DAVL0311.CR3" && CopyName.forCopy("IMG.HIF") == "IMG.HIF")
+        let d = ISO8601DateFormatter().date(from: "2026-10-16T14:05:09Z")!
+        let utc = TimeZone(secondsFromGMT: 0)!
+        check("dates: day month year", When(order: .dayMonthYear, clock24: true).day(d, zone: utc).hasPrefix("16 Oct"), When(order: .dayMonthYear).day(d, zone: utc))
+        check("dates: year month day", When(order: .yearMonthDay).day(d, zone: utc) == "2026-10-16")
+        check("dates: 24-hour clock", When(clock24: true).time(d, zone: utc, seconds: true) == "14:05:09")
+        check("dates: 12-hour clock", When(clock24: false).time(d, zone: utc).hasPrefix("2:05"), When(clock24: false).time(d, zone: utc))
     }
 }

@@ -218,3 +218,14 @@ public enum ImportList {
         }
     }
 }
+
+/// What a copy is called when saved: the photo's own name, except that every
+/// JPEG ends in ".jpg" (David's rule, 16 October 2026). Raw and HEIF files
+/// keep their names exactly.
+public enum CopyName {
+    public static func forCopy(_ fileName: String) -> String {
+        let ext = (fileName as NSString).pathExtension
+        guard ["jpg", "jpeg"].contains(ext.lowercased()) else { return fileName }
+        return (fileName as NSString).deletingPathExtension + ".jpg"
+    }
+}

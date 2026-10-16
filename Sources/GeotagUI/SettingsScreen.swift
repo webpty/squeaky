@@ -13,6 +13,7 @@ struct SettingsScreen: View {
                 CamerasCard()
                 MatchingCard()
                 CardsCard()
+                DatesCard()
                 Card(title: "Appearance") {
                     Picker("", selection: Binding(
                         get: { model.appearance },
