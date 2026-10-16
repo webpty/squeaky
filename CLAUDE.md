@@ -70,10 +70,16 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   import stays in the index as `uploaded` and is hidden; the service's copy
   is the one shown.
 - A file starting within 60 s of a track already here is the same track.
-- Map pictures are drawn once per appearance with MapKit and kept in
-  `Geotag/Maps`; offline, the row shows the bare line until a map can be
-  had. On the Mac, `MKMapSnapshotter.Snapshot.point(for:)` already counts
-  from the bottom: do not flip it.
+- Map pictures are OpenStreetMap tiles with no words from CARTO, whose
+  addresses, credit and key come from the service (`GET /v1/maps`), with
+  the line drawn in orange; drawn once per appearance and kept in
+  `Geotag/Maps` as `<id>-osm-<light|dark>.png`. Offline or without a key,
+  the row shows the bare line. The credit line under the list is required.
+- Never Apple Maps or MapKit: David ruled them out on 16 October 2026 (their
+  words cannot be removed). He wants maps with no text.
+- The sidebar is an orange gradient with white words, so the window stands
+  out (his request, 16 October 2026). The icon is his `Resources/AppIcon.svg`,
+  drawn into the Mac's rounded square by `Tools/makeicon.swift`.
 - FIT reading is our own (`FITReader`), checked against Garmin's own
   decoder on its sample files. A real fenix 9 file has not been tried yet.
 
