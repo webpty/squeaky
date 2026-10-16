@@ -60,24 +60,50 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var book = PeopleBook()
     @Published public var peopleLine = ""
 
+    // Photos: cards and folders, whose they are, and what is on them.
+    @Published public private(set) var cards: [PhotoSource] = []
+    @Published public private(set) var folder: PhotoSource?
+    @Published public private(set) var source: PhotoSource?
+    /// The card waiting for its owner to be chosen.
+    @Published public var askingWhose: PhotoSource?
+    @Published public private(set) var importPerson: UUID?
+    @Published public private(set) var rows: [ImportRow] = []
+    @Published public private(set) var photosBusy = false
+    @Published public private(set) var photosLine = ""
+    @Published public private(set) var openOnCard = true
+    @Published public var cardsLine = ""
+
+    // History.
+    @Published public var historyPerson: UUID?
+    @Published public private(set) var historyEntries: [HistoryEntry] = []
+
     public let library: TrackLibrary
     public let thumbnails: MapThumbnails
     private let peopleStore: PeopleStorePort
+    private let history: HistoryStorePort
+    private let exifTool: ExifTool?
+    private let cardWatcher = CardWatcher()
     private let secrets: SecretStorePort
     private let defaults = UserDefaults.standard
     private var timer: Timer?
     private var awaitingStrava = false
+    private var started = false
 
     static let keyAccount = "track-service-key"
 
     public init(library: TrackLibrary = TrackLibrary(store: TrackStoreFolder.standard()),
                 peopleStore: PeopleStorePort = PeopleStoreFile.standard(),
+                history: HistoryStorePort = HistoryStoreFolder.standard(),
                 secrets: SecretStorePort = Keychain(),
-                thumbnails: MapThumbnails? = nil) {
+                thumbnails: MapThumbnails? = nil,
+                exifTool: ExifTool? = nil) {
+        self.exifTool = exifTool ?? ExifTool.bundled()
         self.library = library
         self.thumbnails = thumbnails ?? MapThumbnails()
         self.peopleStore = peopleStore
+        self.history = history
         self.secrets = secrets
+        openOnCard = defaults.object(forKey: "openOnCard") as? Bool ?? true
         do {
             if let saved = try peopleStore.load() {
                 book = saved
@@ -119,7 +145,11 @@ public final class AppModel: ObservableObject {
 
     /// At launch: show what this Mac has, then ask the service, and again every ten minutes.
     public func start() async {
+        // A window opened again runs this again; the rest is once per launch.
+        guard !started else { return }
+        started = true
         applyAppearance()
+        startCards()
         tracks = await library.listed()
         await refresh()
         timer?.invalidate()
@@ -228,6 +258,116 @@ public final class AppModel: ObservableObject {
     public func remove(person id: UUID) { store { $0.remove(person: id) } }
     public func save(_ camera: Camera) { store { $0.save(camera) } }
     public func remove(camera id: UUID) { store { $0.remove(camera: id) } }
+
+    // MARK: Photos
+
+    private func startCards() {
+        cardWatcher.onChange = { [weak self] cards in
+            guard let self else { return }
+            self.cards = cards
+            if let source, source.isCard, !cards.contains(where: { $0.id == source.id }) {
+                self.source = nil
+                self.rows = []
+                self.photosLine = "\(source.name) was taken out."
+            }
+        }
+        cardWatcher.onInserted = { [weak self] card in
+            guard let self, self.openOnCard else { return }
+            Windows.bringForward()
+            self.screen = .photos
+            self.choose(card)
+        }
+        cardWatcher.start()
+        // On by default: the first time, Geotag joins the Login Items.
+        if defaults.object(forKey: "openOnCard") == nil { setOpenOnCard(true) }
+    }
+
+    public func setOpenOnCard(_ on: Bool) {
+        do {
+            try LoginItem.set(on)
+            openOnCard = on
+            defaults.set(on, forKey: "openOnCard")
+            cardsLine = ""
+        } catch {
+            openOnCard = LoginItem.isOn
+            cardsLine = "The Mac refused: \(error.localizedDescription)"
+        }
+    }
+
+    /// A card or folder picked: first, whose is it.
+    public func choose(_ source: PhotoSource) {
+        self.source = source
+        rows = []
+        photosLine = ""
+        askingWhose = source
+    }
+
+    public func chooseFolder() {
+        guard let url = Folders.choose() else { return }
+        let picked = PhotoSource(id: url.path, name: url.lastPathComponent, url: url, isCard: false)
+        folder = picked
+        choose(picked)
+    }
+
+    /// Whoever this card belonged to last time.
+    public func lastPerson(for source: PhotoSource) -> UUID? {
+        let saved = defaults.dictionary(forKey: "cardPeople") as? [String: String] ?? [:]
+        return saved[source.id].flatMap(UUID.init(uuidString:)).flatMap { id in book.person(id) != nil ? id : nil }
+    }
+
+    public func read(_ source: PhotoSource, for personId: UUID) async {
+        var saved = defaults.dictionary(forKey: "cardPeople") as? [String: String] ?? [:]
+        saved[source.id] = personId.uuidString
+        defaults.set(saved, forKey: "cardPeople")
+        askingWhose = nil
+        importPerson = personId
+        guard let tool = exifTool else {
+            photosLine = "ExifTool is missing from Geotag."
+            return
+        }
+        photosBusy = true
+        defer { photosBusy = false }
+        photosLine = "Looking for photos"
+        let url = source.url
+        let files = await Task.detached { PhotoScanner.files(in: url) }.value
+        let total = files.count
+        photosLine = "Reading 0 of \(total)"
+        do {
+            let photos = try await Task.detached {
+                try PhotoScanner(exifTool: tool).scan(files) { done in
+                    Task { @MainActor [weak self] in self?.photosLine = "Reading \(done) of \(total)" }
+                }
+            }.value
+            let past = (try? history.load(personId)) ?? []
+            guard self.source?.id == source.id else { return }
+            rows = ImportList.rows(photos, history: past, book: book, personId: personId)
+            photosLine = summary()
+        } catch {
+            photosLine = "The photos could not be read: \(error.localizedDescription)"
+        }
+    }
+
+    public func setTicked(_ id: String, _ on: Bool) {
+        guard let i = rows.firstIndex(where: { $0.id == id }) else { return }
+        rows[i].ticked = on
+    }
+
+    private func summary() -> String {
+        if rows.isEmpty { return "No photos on \(source?.name ?? "it")." }
+        let fresh = rows.filter { $0.status != .alreadyImported }.count
+        let before = rows.count - fresh
+        let unknown = rows.filter { $0.status == .unknownCamera }.count
+        var line = "\(fresh.formatted()) new, \(before.formatted()) already imported"
+        if unknown > 0 { line += ", \(unknown.formatted()) from a camera not on the list" }
+        return line
+    }
+
+    // MARK: History
+
+    public func showHistory(_ personId: UUID?) {
+        historyPerson = personId
+        historyEntries = personId.flatMap { try? history.load($0) } ?? []
+    }
 
     // MARK: Tracks
 

@@ -11,6 +11,7 @@ struct SettingsScreen: View {
                 TrackServiceCard()
                 PeopleCard()
                 CamerasCard()
+                CardsCard()
                 Card(title: "Appearance") {
                     Picker("", selection: Binding(
                         get: { model.appearance },

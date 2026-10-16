@@ -113,6 +113,25 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Appearance is applied with `NSApp.appearance`; `preferredColorScheme` alone
   did not switch the window back and forth reliably.
 
+## Importing a card (stage 5, 16 October 2026)
+
+- A card is any mounted disk with a DCIM folder (`CardWatcher`). With "Open
+  Geotag when a card is inserted" on (the default, `openOnCard`), Geotag is
+  in Login Items (`SMAppService.mainApp`), starts with no window at login,
+  and comes forward on a card: `Windows.bringForward` reopens the window by
+  opening the running app again.
+- `start()` runs once per launch; a reopened window must not start a second
+  card watcher or timer.
+- `PhotoScanner` lists photo files (hidden folders left out) and reads time,
+  sub-seconds, zone and model through ExifTool, 100 files at a time. It only
+  reads; the self-test checks the card's files are unchanged.
+- The card's owner is asked every time, starting from last time's
+  (`cardPeople` in UserDefaults, keyed by volume id or folder path).
+- A photo counts as imported before when name, size and time taken (with
+  sub-seconds) match the person's history (`History/<person id>.json`).
+- The self-test can attach a disk image with `-nobrowse` to prove a card
+  arriving and leaving (`GEOTAG_MOUNT_TEST=1`); nothing shows in Finder.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

@@ -85,6 +85,10 @@ struct ScreenView: View {
         switch screen {
         case .tracks:
             TracksScreen()
+        case .photos:
+            PhotosScreen()
+        case .history:
+            HistoryScreen()
         case .settings:
             SettingsScreen()
         default:

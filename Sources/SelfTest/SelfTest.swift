@@ -32,6 +32,9 @@ struct SelfTest {
         try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
 
         people(scratch)
+        cards(scratch)
+        if ProcessInfo.processInfo.environment["GEOTAG_MOUNT_TEST"] != nil { await cardArrives(scratch) }
+        if ProcessInfo.processInfo.environment["GEOTAG_VIEWER"] != nil { await photosPicture(scratch) }
         gpx(scratch)
         if args.count > 1, !args[1].isEmpty { fit(URL(fileURLWithPath: args[1])) }
         if args.count > 2 { await library(scratch, address: args[2]) }
@@ -364,5 +367,124 @@ extension SelfTest {
             for dark in [false, true] where await maps.make(t, points: p, dark: dark) != nil { drawn += 1 }
         }
         check("maps: forty asked at once, all drawn", drawn == 40, "\(drawn) of 40")
+    }
+}
+
+extension SelfTest {
+    static func cards(_ scratch: URL) {
+        let fm = FileManager.default
+        let card = scratch.appendingPathComponent("CARD")
+        let dcim = card.appendingPathComponent("DCIM/100CANON")
+        try? fm.createDirectory(at: dcim, withIntermediateDirectories: true)
+        try? fm.createDirectory(at: card.appendingPathComponent(".Trashes"), withIntermediateDirectories: true)
+        writePhoto(dcim.appendingPathComponent("IMG_0001.JPG"), model: "Canon EOS R5m2", zone: "-03:00")
+        writePhoto(dcim.appendingPathComponent("IMG_0002.JPG"), model: "Canon EOS R5m2", zone: "-03:00")
+        writePhoto(dcim.appendingPathComponent("IMG_0003.JPG"), model: "Canon PowerShot G7 X", zone: nil)
+        writePhoto(card.appendingPathComponent(".Trashes/IMG_9999.JPG"), model: "Canon EOS R5m2", zone: nil)
+        try? "notes".write(to: dcim.appendingPathComponent("readme.txt"), atomically: true, encoding: .utf8)
+
+        check("card: a disk with DCIM is a card", CardWatcher.card(at: card)?.isCard == true)
+        check("card: any other folder is not", CardWatcher.card(at: scratch) == nil)
+        let files = PhotoScanner.files(in: card)
+        check("card: photos only, hidden folders left out", files.map(\.lastPathComponent) == ["IMG_0001.JPG", "IMG_0002.JPG", "IMG_0003.JPG"])
+
+        let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+        final class Last: @unchecked Sendable { var value = 0 }
+        let last = Last()
+        let photos = (try? PhotoScanner(exifTool: tool).scan(files) { last.value = $0 }) ?? []
+        check("card: every photo read", photos.count == 3 && last.value == 3)
+        check("card: time, zone and camera read", photos.first?.taken == "2026:10:16 12:00:00" && photos.first?.zone == "-03:00"
+              && photos.first?.model == "Canon EOS R5m2", "\(String(describing: photos.first))")
+        let before = files.map { (try? fm.attributesOfItem(atPath: $0.path)[.modificationDate] as? Date) ?? nil }
+
+        var book = PeopleBook.family()
+        let amanda = book.people[1].id
+        let history = HistoryStoreFolder(folder: scratch.appendingPathComponent("history"))
+        let entry = HistoryEntry(fileName: photos[0].fileName, size: photos[0].size, taken: photos[0].taken,
+                                 subSeconds: photos[0].subSeconds, imported: Date())
+        try? history.save(amanda, [entry])
+        let past = (try? history.load(amanda)) ?? []
+        check("history: saved and read back", past == [entry])
+        let rows = ImportList.rows(photos, history: past, book: book, personId: amanda)
+        check("import: imported before, unticked", rows[0].status == .alreadyImported && !rows[0].ticked)
+        check("import: new, ticked", rows[1].status == .new && rows[1].ticked)
+        check("import: camera not on the list, ticked", rows[2].status == .unknownCamera && rows[2].ticked)
+        book.remove(person: amanda)
+        let after = files.map { (try? fm.attributesOfItem(atPath: $0.path)[.modificationDate] as? Date) ?? nil }
+        check("card: nothing on it changed", before == after)
+
+        if let folder = ProcessInfo.processInfo.environment["GEOTAG_SAMPLES"] {
+            let real = (try? PhotoScanner(exifTool: tool).scan(PhotoScanner.files(in: URL(fileURLWithPath: folder))) { _ in }) ?? []
+            for p in real { print("card   \(p.fileName): \(p.taken ?? "-").\(p.subSeconds ?? "") \(p.zone ?? "-") \(p.model ?? "-")") }
+        }
+    }
+
+    /// A card arriving for real: a disk image with a DCIM folder, attached
+    /// without showing in Finder, then detached.
+    @MainActor
+    static func cardArrives(_ scratch: URL) async {
+        let src = scratch.appendingPathComponent("dmg-src")
+        try? FileManager.default.createDirectory(at: src.appendingPathComponent("DCIM/100TEST"), withIntermediateDirectories: true)
+        writePhoto(src.appendingPathComponent("DCIM/100TEST/IMG_0001.JPG"), model: "Canon EOS R7", zone: "-03:00")
+        let image = scratch.appendingPathComponent("card.dmg")
+        let mount = scratch.appendingPathComponent("mnt")
+        try? FileManager.default.createDirectory(at: mount, withIntermediateDirectories: true)
+        func hdiutil(_ args: [String]) -> Int32 {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+            p.arguments = args
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError = FileHandle.nullDevice
+            try? p.run()
+            p.waitUntilExit()
+            return p.terminationStatus
+        }
+        guard hdiutil(["create", "-quiet", "-srcfolder", src.path, "-volname", "TESTCARD", "-fs", "ExFAT", image.path]) == 0 else {
+            check("card arrives: disk image made", false)
+            return
+        }
+        let watcher = CardWatcher()
+        var inserted: [String] = []
+        var lists: [[String]] = []
+        watcher.onInserted = { inserted.append($0.name) }
+        watcher.onChange = { lists.append($0.map(\.name)) }
+        watcher.start()
+        let attached = hdiutil(["attach", "-nobrowse", "-mountpoint", mount.path, image.path]) == 0
+        for _ in 0..<40 { spin(0.05); try? await Task.sleep(for: .milliseconds(50)) }
+        check("card arrives: noticed", attached && inserted == ["TESTCARD"], "\(inserted)")
+        _ = hdiutil(["detach", "-quiet", mount.path])
+        for _ in 0..<40 { spin(0.05); try? await Task.sleep(for: .milliseconds(50)) }
+        check("card leaves: noticed", lists.last?.contains("TESTCARD") == false, "\(lists)")
+    }
+}
+
+extension SelfTest {
+    /// A picture of the Photos screen after reading a test card, off-screen.
+    @MainActor
+    static func photosPicture(_ scratch: URL) async {
+        let card = scratch.appendingPathComponent("CARD")
+        let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("pp-lib"))),
+                             peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("pp-people.json")),
+                             history: HistoryStoreFolder(folder: scratch.appendingPathComponent("history")),
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("pp-maps")),
+                             exifTool: ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool")))
+        let source = CardWatcher.card(at: card)!
+        model.choose(source)
+        model.askingWhose = nil
+        // Amanda's history was written by the card test, under her id from a fresh book; use the book's own Amanda.
+        await model.read(source, for: model.book.people[1].id)
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        NSApp.appearance = NSAppearance(named: .aqua)
+        let window = NSWindow(contentRect: NSRect(x: -6000, y: -6000, width: 1000, height: 520), styleMask: [.titled], backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: PhotosScreenProbe().environmentObject(model))
+        window.contentView = host
+        window.orderBack(nil)
+        for _ in 0..<60 { spin(0.05); try? await Task.sleep(for: .milliseconds(50)) }
+        if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: scratch.appendingPathComponent("photos.png"))
+        }
+        print("photos picture: \(model.photosLine)")
     }
 }
