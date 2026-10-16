@@ -42,6 +42,21 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   offset set, goes to the review list. Never guess a position.
 - No emoji anywhere in the interface.
 
+## Writing the location (proved in stage 2, 16 October 2026)
+
+- ExifTool 13.59 lives in `Vendor/ExifTool` and runs on the Mac's own
+  `/usr/bin/perl`. `Tools/gps-test.sh` holds the exact arguments.
+- Name the group on every tag: `-GPS:GPSLatitude=` and so on. Left to choose,
+  ExifTool also writes XMP into a CR3 with no S or W, which other software
+  reads as north and east.
+- Clear the old location first (`-GPS:all= -XMP-exif:GPS*=`), so nothing of an
+  old position stays mixed with the new one.
+- Write with `-P`, then copy `FileCreateDate` and `FileModifyDate` back from
+  the original: ExifTool's rewrite gives the copy a new creation date.
+- GPS date and time are UTC: the capture time less `OffsetTimeOriginal`.
+- Prove each copy: `ImageDataHash` equals the original's, every other tag is
+  unchanged, and ImageIO opens it and reads the position.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.
