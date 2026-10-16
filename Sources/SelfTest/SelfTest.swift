@@ -33,8 +33,12 @@ struct SelfTest {
 
         people(scratch)
         cards(scratch)
+        matching(scratch)
         if ProcessInfo.processInfo.environment["GEOTAG_MOUNT_TEST"] != nil { await cardArrives(scratch) }
         if ProcessInfo.processInfo.environment["GEOTAG_VIEWER"] != nil { await photosPicture(scratch) }
+        if let key = ProcessInfo.processInfo.environment["GEOTAG_MAP_KEY"], ProcessInfo.processInfo.environment["GEOTAG_ALIGN"] != nil {
+            await alignmentPicture(scratch, key: key)
+        }
         gpx(scratch)
         if args.count > 1, !args[1].isEmpty { fit(URL(fileURLWithPath: args[1])) }
         if args.count > 2 { await library(scratch, address: args[2]) }
@@ -52,17 +56,21 @@ struct SelfTest {
     }
 
     /// A small JPEG with the camera details a photo carries.
-    static func writePhoto(_ url: URL, model: String, zone: String?) {
+    static func writePhoto(_ url: URL, model: String, zone: String?, taken: String = "2026:10:16 12:00:00", gps: (Double, Double)? = nil) {
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 8, pixelsHigh: 8, bitsPerSample: 8, samplesPerPixel: 3,
                                    hasAlpha: false, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
         guard let image = rep.cgImage,
               let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.jpeg" as CFString, 1, nil) else { return }
-        var exif: [CFString: Any] = [kCGImagePropertyExifDateTimeOriginal: "2026:10:16 12:00:00"]
+        var exif: [CFString: Any] = [kCGImagePropertyExifDateTimeOriginal: taken]
         if let zone { exif[kCGImagePropertyExifOffsetTimeOriginal] = zone }
-        let props: [CFString: Any] = [
+        var props: [CFString: Any] = [
             kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFModel: model, kCGImagePropertyTIFFMake: "Test"],
             kCGImagePropertyExifDictionary: exif,
         ]
+        if let gps {
+            props[kCGImagePropertyGPSDictionary] = [kCGImagePropertyGPSLatitude: abs(gps.0), kCGImagePropertyGPSLatitudeRef: gps.0 < 0 ? "S" : "N",
+                                                    kCGImagePropertyGPSLongitude: abs(gps.1), kCGImagePropertyGPSLongitudeRef: gps.1 < 0 ? "W" : "E"]
+        }
         CGImageDestinationAddImage(dest, image, props as CFDictionary)
         CGImageDestinationFinalize(dest)
     }
@@ -486,5 +494,127 @@ extension SelfTest {
             try? rep.representation(using: .png, properties: [:])?.write(to: scratch.appendingPathComponent("photos.png"))
         }
         print("photos picture: \(model.photosLine)")
+    }
+}
+
+extension SelfTest {
+    static func photo(_ taken: String?, zone: String?, model: String = "Canon EOS R5m2", sub: String? = nil, located: Bool = false) -> ScannedPhoto {
+        ScannedPhoto(url: URL(fileURLWithPath: "/tmp/x.jpg"), fileName: "x.jpg", size: 1, taken: taken, subSeconds: sub,
+                     zone: zone, model: model, hasLocation: located)
+    }
+
+    static func matching(_ scratch: URL) {
+        let iso = ISO8601DateFormatter()
+        let person = UUID()
+        var cam = Camera(personId: person, model: "Canon EOS R5m2", zone: .fromPhoto, offsetSeconds: 0)
+
+        func utc(_ r: Result<Date, ReviewReason>) -> String {
+            switch r { case .success(let d): return iso.string(from: d); case .failure(let e): return "\(e)" }
+        }
+        let p = photo("2026:10:16 12:00:00", zone: "-03:00", sub: "50")
+        check("moment: zone taken off", utc(Moments.moment(p, camera: cam)) == "2026-10-16T15:00:00Z", utc(Moments.moment(p, camera: cam)))
+        check("moment: sub-seconds kept", Moments.moment(p, camera: cam).map { $0.timeIntervalSince1970.truncatingRemainder(dividingBy: 1) } == .success(0.5))
+        cam.offsetSeconds = 30
+        check("moment: a clock 30 s ahead", utc(Moments.moment(p, camera: cam)) == "2026-10-16T14:59:30Z")
+        cam.offsetSeconds = -90
+        check("moment: a clock 90 s behind", utc(Moments.moment(p, camera: cam)) == "2026-10-16T15:01:30Z")
+        cam.offsetSeconds = 0
+        cam.zone = .fixed("Europe/Paris")
+        let summer = photo("2026:07:01 12:00:00", zone: nil)
+        check("moment: a fixed zone in summer time", utc(Moments.moment(summer, camera: cam)) == "2026-07-01T10:00:00Z", utc(Moments.moment(summer, camera: cam)))
+        let winter = photo("2026:01:15 12:00:00", zone: nil)
+        check("moment: a fixed zone in winter", utc(Moments.moment(winter, camera: cam)) == "2026-01-15T11:00:00Z")
+        cam.zone = .notSet
+        check("moment: zone not set", utc(Moments.moment(p, camera: cam)) == "zoneNotSet")
+        cam.zone = .fromPhoto
+        check("moment: no zone in the photo", utc(Moments.moment(photo("2026:10:16 12:00:00", zone: nil), camera: cam)) == "noZoneInPhoto")
+        check("moment: no time", utc(Moments.moment(photo(nil, zone: "-03:00"), camera: cam)) == "noTime")
+        cam.offsetSeconds = nil
+        check("moment: offset not set", utc(Moments.moment(p, camera: cam)) == "offsetNotSet")
+        check("moment: no camera", utc(Moments.moment(p, camera: nil)) == "unknownCamera")
+
+        // A track from 15:00 to 15:10 UTC, a point every 10 s heading north
+        // and climbing, with a pause from 15:04 to 15:06.
+        let start = Int(iso.date(from: "2026-10-16T15:00:00Z")!.timeIntervalSince1970)
+        var t: [Int] = [], lat: [Double] = [], lon: [Double] = [], alt: [Double?] = []
+        for i in 0...60 where !(25..<36).contains(i) {
+            t.append(start + i * 10); lat.append(-54.80 + Double(i) * 0.0001); lon.append(-68.30); alt.append(Double(i))
+        }
+        let timeline = TrackTimeline([(id: "a", points: TrackPoints(t: t, lat: lat, lon: lon, alt: alt))])
+        func at(_ s: Int) -> Position? { timeline.position(at: Date(timeIntervalSince1970: TimeInterval(start + s)), gap: 120) }
+        let mid = at(15)
+        check("match: halfway between two points", mid.map { abs($0.lat - (-54.80 + 0.00015)) < 1e-9 && $0.alt == 1.5 } == true, "\(String(describing: mid))")
+        check("match: just before the start, the first point", at(-60)?.lat == -54.80 && at(-60)?.fromPoint == 60)
+        check("match: further before the start, nothing", at(-121) == nil)
+        check("match: just after the end, the last point", at(660)?.lat == -54.80 + 0.006)
+        let pause = at(300)
+        check("match: in a pause, the nearer side within the gap", pause != nil && pause!.fromPoint == 60, "\(String(describing: pause))")
+        let wide = timeline.position(at: Date(timeIntervalSince1970: TimeInterval(start + 300)), gap: 30)
+        check("match: in a pause wider than the gap, nothing", wide == nil)
+
+        cam.offsetSeconds = 0
+        check("place: matched", Matcher.place(photo("2026:10:16 12:00:15", zone: "-03:00"), camera: cam, timeline: timeline, gap: 120) != .review(.noTrack))
+        check("place: own location kept", Matcher.place(photo("2026:10:16 12:00:15", zone: "-03:00", located: true), camera: cam, timeline: timeline, gap: 120) == .ownLocation)
+        check("place: no track", Matcher.place(photo("2026:10:16 18:00:00", zone: "-03:00"), camera: cam, timeline: timeline, gap: 120) == .review(.noTrack))
+        check("place: the slider's extra seconds", Matcher.place(photo("2026:10:16 12:00:15", zone: "-03:00"), camera: cam, timeline: timeline, gap: 120, extraOffset: 600) == .review(.noTrack))
+
+        var row = ImportRow(photo: p, status: .new, ticked: true, placement: .review(.noTrack))
+        check("import: review is held back", !row.willImport)
+        row.withoutLocation = true
+        check("import: unless let through without a location", row.willImport)
+        row.ticked = false
+        check("import: never when unticked", !row.willImport)
+
+        // Existing GPS read from a photo.
+        let located = scratch.appendingPathComponent("located.jpg"), bare = scratch.appendingPathComponent("bare.jpg")
+        writePhoto(located, model: "Canon EOS R5m2", zone: "-03:00", gps: (-54.8, -68.3))
+        writePhoto(bare, model: "Canon EOS R5m2", zone: "-03:00")
+        let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+        let read = (try? PhotoScanner(exifTool: tool).scan([located, bare]) { _ in }) ?? []
+        check("scan: a photo's own location noticed", read.map(\.hasLocation) == [true, false])
+    }
+}
+
+extension SelfTest {
+    /// The alignment window, drawn off-screen: a test walk in Ushuaia and a
+    /// card of photos taken along it.
+    @MainActor
+    static func alignmentPicture(_ scratch: URL, key: String) async {
+        let lib = TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("al-lib")))
+        let start = 1_792_162_800 // 2026-10-16 15:00 UTC, 12:00 in Ushuaia
+        let gpx = scratch.appendingPathComponent("al-walk.gpx")
+        writeGPX(gpx, start: start, count: 1800, name: "Ushuaia walk", lat: -54.812, lon: -68.33)
+        _ = try? await lib.importFile(gpx, role: .reader)
+        let card = scratch.appendingPathComponent("AL-CARD/DCIM/100CANON")
+        try? FileManager.default.createDirectory(at: card, withIntermediateDirectories: true)
+        for i in 0..<12 {
+            let s = 120 + i * 130
+            let taken = String(format: "2026:10:16 12:%02d:%02d", s / 60, s % 60)
+            writePhoto(card.appendingPathComponent(String(format: "IMG_%04d.JPG", i + 1)), model: "Canon EOS R5m2", zone: "-03:00", taken: taken)
+        }
+        let model = AppModel(library: lib, peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("al-people.json")),
+                             history: HistoryStoreFolder(folder: scratch.appendingPathComponent("al-history")),
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("al-maps")),
+                             exifTool: ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool")))
+        model.useMaps(MapSource(light: "https://basemaps.cartocdn.com/rastertiles/light_nolabels/{z}/{x}/{y}@2x.png",
+                                dark: "https://basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}@2x.png",
+                                credit: "© OpenStreetMap contributors, © CARTO", key: key))
+        await model.showLibrary()
+        let source = CardWatcher.card(at: scratch.appendingPathComponent("AL-CARD"))!
+        model.choose(source)
+        await model.read(source, for: model.book.people[0].id)
+        print("alignment: \(model.photosLine) | aligning \(model.aligning) | alignable \(model.alignable.count)")
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        NSApp.appearance = NSAppearance(named: .aqua)
+        let window = NSWindow(contentRect: NSRect(x: -6000, y: -6000, width: 1100, height: 760), styleMask: [.titled], backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: AlignmentProbe().environmentObject(model))
+        window.contentView = host
+        window.orderBack(nil)
+        for _ in 0..<120 { spin(0.05); try? await Task.sleep(for: .milliseconds(50)) }
+        if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: scratch.appendingPathComponent("alignment.png"))
+        }
     }
 }

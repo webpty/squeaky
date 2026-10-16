@@ -21,8 +21,11 @@ public struct ScannedPhoto: Identifiable, Equatable, Sendable {
     /// The zone the camera wrote, such as "-05:00".
     public var zone: String?
     public var model: String?
+    /// The camera wrote a location of its own.
+    public var hasLocation: Bool
 
-    public init(url: URL, fileName: String, size: Int64, taken: String?, subSeconds: String?, zone: String?, model: String?) {
+    public init(url: URL, fileName: String, size: Int64, taken: String?, subSeconds: String?, zone: String?, model: String?,
+                hasLocation: Bool = false) {
         self.url = url
         self.fileName = fileName
         self.size = size
@@ -30,6 +33,7 @@ public struct ScannedPhoto: Identifiable, Equatable, Sendable {
         self.subSeconds = subSeconds
         self.zone = zone
         self.model = model
+        self.hasLocation = hasLocation
     }
 
     /// Name, size and time taken: what says two photos are the same one.
@@ -42,6 +46,13 @@ public struct ScannedPhoto: Identifiable, Equatable, Sendable {
 /// nothing on the card is ever written.
 public struct PhotoScanner: Sendable {
     let exifTool: ExifTool
+
+    /// A real position: both numbers there, and not the 0, 0 some cameras write.
+    static func hasLocation(_ row: [String: Any]) -> Bool {
+        guard let lat = (row["GPSLatitude"] as? NSNumber)?.doubleValue,
+              let lon = (row["GPSLongitude"] as? NSNumber)?.doubleValue else { return false }
+        return !(lat == 0 && lon == 0)
+    }
 
     public init(exifTool: ExifTool) {
         self.exifTool = exifTool
@@ -65,7 +76,8 @@ public struct PhotoScanner: Sendable {
         for start in stride(from: 0, to: files.count, by: 100) {
             let batch = Array(files[start..<min(start + 100, files.count)])
             let data = try exifTool.run(["-j", "-q", "-q", "-fast2", "-charset", "filename=utf8",
-                                         "-DateTimeOriginal", "-SubSecTimeOriginal", "-OffsetTimeOriginal", "-OffsetTime", "-Model"]
+                                         "-DateTimeOriginal", "-SubSecTimeOriginal", "-OffsetTimeOriginal", "-OffsetTime", "-Model",
+                                         "-GPSLatitude#", "-GPSLongitude#"]
                                         + batch.map(\.path))
             let rows = (try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
             var byPath: [String: [String: Any]] = [:]
@@ -80,7 +92,8 @@ public struct PhotoScanner: Sendable {
                 let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0 }.map(Int64.init) ?? 0
                 out.append(ScannedPhoto(url: url, fileName: url.lastPathComponent, size: size,
                                         taken: text("DateTimeOriginal"), subSeconds: text("SubSecTimeOriginal"),
-                                        zone: text("OffsetTimeOriginal") ?? text("OffsetTime"), model: text("Model")))
+                                        zone: text("OffsetTimeOriginal") ?? text("OffsetTime"), model: text("Model"),
+                                        hasLocation: Self.hasLocation(row)))
             }
             done += batch.count
             progress(done)
@@ -164,7 +177,33 @@ public struct ImportRow: Identifiable, Equatable, Sendable {
     public var photo: ScannedPhoto
     public var status: ImportStatus
     public var ticked: Bool
+    /// Where the photo goes, once matched.
+    public var placement: Placement?
+    /// Chosen for a photo in review: import it all the same, with no location.
+    public var withoutLocation = false
     public var id: String { photo.id }
+
+    public init(photo: ScannedPhoto, status: ImportStatus, ticked: Bool, placement: Placement? = nil, withoutLocation: Bool = false) {
+        self.photo = photo
+        self.status = status
+        self.ticked = ticked
+        self.placement = placement
+        self.withoutLocation = withoutLocation
+    }
+
+    public var needsReview: Bool {
+        if case .review = placement { return true }
+        return false
+    }
+
+    /// Ticked, and either placed or let through without a location.
+    public var willImport: Bool {
+        guard ticked, let placement else { return false }
+        switch placement {
+        case .matched, .ownLocation: return true
+        case .review: return withoutLocation
+        }
+    }
 }
 
 public enum ImportList {

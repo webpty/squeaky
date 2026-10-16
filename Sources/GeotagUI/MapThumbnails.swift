@@ -86,7 +86,7 @@ public final class MapThumbnails {
     // MARK: Drawing
 
     /// Web Mercator, in points at zoom `z` with 256-point tiles.
-    public static func project(_ lat: Double, _ lon: Double, _ z: Int) -> CGPoint {
+    public nonisolated static func project(_ lat: Double, _ lon: Double, _ z: Int) -> CGPoint {
         let world = 256 * pow(2, Double(z))
         let la = max(min(lat, 85.0511), -85.0511) * .pi / 180
         let x = (lon + 180) / 360 * world
@@ -95,7 +95,7 @@ public final class MapThumbnails {
     }
 
     /// The closest zoom that still fits the track, with some room round it.
-    public static func zoom(_ b: Bounds, size: NSSize) -> Int {
+    public nonisolated static func zoom(_ b: Bounds, size: NSSize) -> Int {
         for z in stride(from: 17, through: 1, by: -1) {
             let a = project(b.maxLat, b.minLon, z), c = project(b.minLat, b.maxLon, z)
             if (c.x - a.x) * 1.3 <= size.width && (c.y - a.y) * 1.3 <= size.height { return z }
@@ -179,7 +179,7 @@ public final class MapThumbnails {
     }
 
     /// Every n-th point, enough for a line this small.
-    public static func thinned(_ p: TrackPoints, to count: Int) -> [(Double, Double)] {
+    public nonisolated static func thinned(_ p: TrackPoints, to count: Int) -> [(Double, Double)] {
         guard p.count > count else { return zip(p.lat, p.lon).map { ($0, $1) } }
         let step = Double(p.count - 1) / Double(count - 1)
         return (0..<count).map { i in

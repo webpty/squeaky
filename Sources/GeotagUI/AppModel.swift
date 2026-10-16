@@ -73,6 +73,13 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var openOnCard = true
     @Published public var cardsLine = ""
 
+    // Matching.
+    @Published public private(set) var maxGapSeconds = 120
+    @Published public var aligning = false
+    /// Every track's points, built once and again whenever the tracks change.
+    public private(set) var timeline = TrackTimeline([])
+    private var timelineIds: [String] = []
+
     // History.
     @Published public var historyPerson: UUID?
     @Published public private(set) var historyEntries: [HistoryEntry] = []
@@ -104,6 +111,7 @@ public final class AppModel: ObservableObject {
         self.history = history
         self.secrets = secrets
         openOnCard = defaults.object(forKey: "openOnCard") as? Bool ?? true
+        if defaults.object(forKey: "maxGapSeconds") != nil { maxGapSeconds = defaults.integer(forKey: "maxGapSeconds") }
         do {
             if let saved = try peopleStore.load() {
                 book = saved
@@ -255,9 +263,9 @@ public final class AppModel: ObservableObject {
     }
 
     public func save(_ person: Person) { store { $0.save(person) } }
-    public func remove(person id: UUID) { store { $0.remove(person: id) } }
-    public func save(_ camera: Camera) { store { $0.save(camera) } }
-    public func remove(camera id: UUID) { store { $0.remove(camera: id) } }
+    public func remove(person id: UUID) { store { $0.remove(person: id) }; rematch() }
+    public func save(_ camera: Camera) { store { $0.save(camera) }; rematch() }
+    public func remove(camera id: UUID) { store { $0.remove(camera: id) }; rematch() }
 
     // MARK: Photos
 
@@ -341,7 +349,10 @@ public final class AppModel: ObservableObject {
             let past = (try? history.load(personId)) ?? []
             guard self.source?.id == source.id else { return }
             rows = ImportList.rows(photos, history: past, book: book, personId: personId)
+            await loadTimeline()
+            rematch()
             photosLine = summary()
+            if !alignable.isEmpty { aligning = true }
         } catch {
             photosLine = "The photos could not be read: \(error.localizedDescription)"
         }
@@ -352,6 +363,54 @@ public final class AppModel: ObservableObject {
         rows[i].ticked = on
     }
 
+    public func setWithoutLocation(_ id: String, _ on: Bool) {
+        guard let i = rows.firstIndex(where: { $0.id == id }) else { return }
+        rows[i].withoutLocation = on
+    }
+
+    // MARK: Matching
+
+    public func setMaxGap(_ seconds: Int) {
+        maxGapSeconds = min(max(seconds, 60), 3600)
+        defaults.set(maxGapSeconds, forKey: "maxGapSeconds")
+        rematch()
+    }
+
+    /// The tracks' points, read again only when the tracks have changed.
+    public func loadTimeline() async {
+        let ids = tracks.map(\.id)
+        guard ids != timelineIds else { return }
+        var pieces: [(id: String, points: TrackPoints)] = []
+        for id in ids {
+            if let p = await library.points(id) { pieces.append((id, p)) }
+        }
+        timeline = TrackTimeline(pieces)
+        timelineIds = ids
+    }
+
+    /// Every photo placed again: after a card is read, a camera changes, the
+    /// gap changes, or new tracks arrive.
+    public func rematch() {
+        guard let personId = importPerson, !rows.isEmpty else { return }
+        for i in rows.indices {
+            let photo = rows[i].photo
+            let camera = photo.model.flatMap { book.camera(personId: personId, model: $0) }
+            rows[i].placement = Matcher.place(photo, camera: camera, timeline: timeline, gap: maxGapSeconds)
+        }
+        photosLine = summary()
+    }
+
+    /// Ticked photos whose camera is known and whose time can be read: the
+    /// ones the alignment window can slide.
+    public var alignable: [ImportRow] {
+        guard let personId = importPerson else { return [] }
+        return rows.filter { row in
+            guard row.ticked, !row.photo.hasLocation, row.photo.taken != nil,
+                  let model = row.photo.model, let camera = book.camera(personId: personId, model: model) else { return false }
+            return camera.zone != .notSet
+        }
+    }
+
     private func summary() -> String {
         if rows.isEmpty { return "No photos on \(source?.name ?? "it")." }
         let fresh = rows.filter { $0.status != .alreadyImported }.count
@@ -359,6 +418,8 @@ public final class AppModel: ObservableObject {
         let unknown = rows.filter { $0.status == .unknownCamera }.count
         var line = "\(fresh.formatted()) new, \(before.formatted()) already imported"
         if unknown > 0 { line += ", \(unknown.formatted()) from a camera not on the list" }
+        let review = rows.filter { $0.ticked && $0.needsReview && !$0.withoutLocation }.count
+        if review > 0 { line += ", \(review.formatted()) to review" }
         return line
     }
 
@@ -391,6 +452,10 @@ public final class AppModel: ObservableObject {
         let report = await library.refresh(service: service, role: role)
         tracks = await library.listed()
         tracksLine = report.line
+        if !rows.isEmpty {
+            await loadTimeline()
+            rematch()
+        }
     }
 
     /// Where the small maps come from. Without it, rows show the bare line.

@@ -132,6 +132,29 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - The self-test can attach a disk image with `-nobrowse` to prove a card
   arriving and leaving (`GEOTAG_MOUNT_TEST=1`); nothing shows in Finder.
 
+## Matching and alignment (stage 6, 16 October 2026)
+
+- The real moment: the camera clock's reading (with sub-seconds), less its
+  zone (from the photo, or the camera's fixed zone at that date), less the
+  camera's offset (seconds ahead). `Moments` in `Matching.swift`.
+- `TrackTimeline` holds every track's points; a moment between two points
+  both within the maximum gap is shared out in proportion to the time,
+  altitude too; otherwise the nearest point within the gap; otherwise
+  review. The gap is a setting (Matching card), 2 minutes to start.
+- A photo with a location of its own keeps it ("Own location"); the watch is
+  for photos without one (David's decision in the stage 6 plan).
+- Review reasons: no track within the gap, offset not set, zone not set, no
+  zone in the photo, no time, camera not on the list. A photo in review is
+  imported only when "Without location" is ticked for it.
+- The alignment window (`AlignmentView`) slides one camera's photos up to
+  15 minutes either way along the track on a map you drag and zoom
+  (`SlippyMap`, CARTO tiles, six fetched at a time, kept while Geotag runs);
+  "Use this offset" saves it as the camera's offset, and everything is
+  matched again.
+- Off-screen pictures of the screens: `GEOTAG_VIEWER=1` and `GEOTAG_ALIGN=1`
+  with `GEOTAG_MAP_KEY` (the CARTO key from `../tracks/.keys/carto.key`).
+  A probe view needs a background of its own or it draws black.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

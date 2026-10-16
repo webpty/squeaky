@@ -21,6 +21,23 @@ enum PhotoText {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
+    static func location(_ row: ImportRow, gap: Int) -> String {
+        guard let placement = row.placement else { return "" }
+        switch placement {
+        case .matched(let p): return p.fromPoint == 0 ? "Matched" : "Matched, \(p.fromPoint) s from the track"
+        case .ownLocation: return "Own location"
+        case .review(let reason):
+            switch reason {
+            case .noTrack: return "No track within \(gap / 60) min"
+            case .offsetNotSet: return "Camera offset not set"
+            case .zoneNotSet: return "Camera time zone not set"
+            case .noZoneInPhoto: return "No time zone in the photo"
+            case .noTime: return "No time in the photo"
+            case .unknownCamera: return "Camera not on the list"
+            }
+        }
+    }
+
     static func status(_ status: ImportStatus) -> String {
         switch status {
         case .new: return "New"
@@ -32,6 +49,11 @@ enum PhotoText {
 
 struct PhotosScreen: View {
     @EnvironmentObject var model: AppModel
+    @State private var reviewOnly = false
+
+    private var shown: [ImportRow] {
+        reviewOnly ? model.rows.filter { $0.ticked && $0.needsReview } : model.rows
+    }
 
     private var sources: [PhotoSource] {
         model.cards + (model.folder.map { [$0] } ?? [])
@@ -41,6 +63,12 @@ struct PhotosScreen: View {
         VStack(alignment: .leading, spacing: Style.gap) {
             HStack(spacing: Style.gap) {
                 ScreenTitle(text: "Photos")
+                Button {
+                    model.aligning = true
+                } label: {
+                    Text("Align").buttonLabel()
+                }
+                .disabled(model.photosBusy || model.alignable.isEmpty)
                 Button {
                     model.chooseFolder()
                 } label: {
@@ -72,10 +100,20 @@ struct PhotosScreen: View {
                 }
                 if model.photosBusy { ProgressView().controlSize(.small) }
                 StatusLine(text: model.photosLine)
+                Spacer()
+                if !model.rows.isEmpty {
+                    Picker("", selection: $reviewOnly) {
+                        Text("All").tag(false)
+                        Text("Review (\(model.rows.filter { $0.ticked && $0.needsReview }.count))").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                }
             }
             .frame(height: 24)
 
-            Table(model.rows) {
+            Table(shown) {
                 TableColumn("") { row in
                     Toggle("", isOn: Binding(get: { row.ticked }, set: { model.setTicked(row.id, $0) }))
                         .labelsHidden()
@@ -106,13 +144,29 @@ struct PhotosScreen: View {
                         .foregroundStyle(row.status == .new ? .primary : .secondary)
                         .lineLimit(1)
                 }
-                .width(min: 120, ideal: 170)
+                .width(min: 110, ideal: 150)
+                TableColumn("Location") { row in
+                    Text(PhotoText.location(row, gap: model.maxGapSeconds))
+                        .foregroundStyle(row.needsReview ? .secondary : .primary)
+                        .lineLimit(1)
+                }
+                .width(min: 150, ideal: 220)
+                TableColumn("Without location") { row in
+                    if row.needsReview {
+                        Toggle("", isOn: Binding(get: { row.withoutLocation }, set: { model.setWithoutLocation(row.id, $0) }))
+                            .labelsHidden()
+                    }
+                }
+                .width(110)
             }
             .clipShape(RoundedRectangle(cornerRadius: Style.radius))
         }
         .padding(Style.pad * 1.5)
         .sheet(item: $model.askingWhose) { source in
             WhoseCard(source: source)
+        }
+        .sheet(isPresented: $model.aligning) {
+            AlignmentView()
         }
     }
 }
@@ -241,6 +295,19 @@ struct HistoryRow: Identifiable {
     let index: Int
     let entry: HistoryEntry
     var id: Int { index }
+}
+
+struct MatchingCard: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        Card(title: "Matching") {
+            Stepper(value: Binding(get: { model.maxGapSeconds / 60 }, set: { model.setMaxGap($0 * 60) }), in: 1...60) {
+                Text("Maximum gap: \(model.maxGapSeconds / 60) min").lineLimit(1)
+            }
+            .fixedSize()
+        }
+    }
 }
 
 struct CardsCard: View {
