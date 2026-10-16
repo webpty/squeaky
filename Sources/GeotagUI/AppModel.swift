@@ -247,6 +247,7 @@ public final class AppModel: ObservableObject {
             return
         }
         await loadMaps(service)
+        if thumbnails.forgetFailures() { mapsRound += 1 }
         let report = await library.refresh(service: service, role: role)
         tracks = await library.listed()
         tracksLine = report.line

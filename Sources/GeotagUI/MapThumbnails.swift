@@ -17,6 +17,9 @@ public final class MapThumbnails {
     public var source: MapSource?
     private var memory: [String: NSImage] = [:]
     private var failedAt: [String: Date] = [:]
+    private var inFlight: [String: Task<NSImage?, Never>] = [:]
+    /// Three maps drawn at a time, so the tile server is not flooded.
+    private let gate = Gate(limit: 3)
 
     public init(folder: URL = MapThumbnails.standardFolder()) {
         self.folder = folder
@@ -42,25 +45,42 @@ public final class MapThumbnails {
     }
 
     /// Draws the picture, or answers nil when the map cannot be had: no key
-    /// yet, or no internet. A failure is not tried again for five minutes.
+    /// yet, or no internet. The drawing runs on its own, so a row scrolled out
+    /// of sight does not abandon it halfway, and the same map is never fetched
+    /// twice at once. A failure waits a minute, or the next refresh.
     public func make(_ track: Track, points: TrackPoints, dark: Bool, large: Bool = false) async -> NSImage? {
         if let image = cached(track.id, dark: dark, large: large) { return image }
         guard let source, let key = source.key, !key.isEmpty else { return nil }
         let memoKey = "\(track.id)-\(dark)-\(large)"
-        if let failed = failedAt[memoKey], Date().timeIntervalSince(failed) < 300 { return nil }
+        if let failed = failedAt[memoKey], Date().timeIntervalSince(failed) < 60 { return nil }
+        if let running = inFlight[memoKey] { return await running.value }
+
         let size = large ? Self.largeSize : Self.size
-        guard let png = await Self.render(points: points, bounds: track.bounds,
-                                          template: dark ? source.dark : source.light, key: key, size: size,
-                                          lineWidth: large ? 3.5 : 2.5),
-              let image = NSImage(data: png) else {
-            failedAt[memoKey] = Date()
-            return nil
+        let file = fileURL(track.id, dark: dark, large: large)
+        let gate = self.gate
+        let task = Task { () -> NSImage? in
+            await gate.enter()
+            let png = await Self.render(points: points, bounds: track.bounds,
+                                        template: dark ? source.dark : source.light, key: key, size: size,
+                                        lineWidth: large ? 3.5 : 2.5)
+            await gate.leave()
+            guard let png, let image = NSImage(data: png) else { return nil }
+            image.size = size
+            try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? png.write(to: file, options: .atomic)
+            return image
         }
-        image.size = size
-        memory[memoKey] = image
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try? png.write(to: fileURL(track.id, dark: dark, large: large), options: .atomic)
+        inFlight[memoKey] = task
+        let image = await task.value
+        inFlight[memoKey] = nil
+        if let image { memory[memoKey] = image } else { failedAt[memoKey] = Date() }
         return image
+    }
+
+    /// Lets every map that failed be tried again; true when there were any.
+    public func forgetFailures() -> Bool {
+        defer { failedAt = [:] }
+        return !failedAt.isEmpty
     }
 
     // MARK: Drawing
@@ -104,12 +124,7 @@ public final class MapThumbnails {
                     .replacingOccurrences(of: "{y}", with: String(ty))
                 text += (text.contains("?") ? "&" : "?") + "key=" + (key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? key)
                 guard let url = URL(string: text) else { return nil }
-                var request = URLRequest(url: url)
-                request.setValue("Geotag/\(appVersion)", forHTTPHeaderField: "User-Agent")
-                request.timeoutInterval = 20
-                guard let (data, response) = try? await URLSession.shared.data(for: request),
-                      (response as? HTTPURLResponse)?.statusCode == 200,
-                      let image = NSImage(data: data) else { return nil }
+                guard let image = await tile(url) else { return nil }
                 images.append((tx, ty, image))
             }
         }
@@ -147,6 +162,22 @@ public final class MapThumbnails {
         return rep.representation(using: .png, properties: [:])
     }
 
+    /// One tile, tried three times before giving up.
+    static func tile(_ url: URL) async -> NSImage? {
+        var request = URLRequest(url: url)
+        request.setValue("Geotag/\(appVersion)", forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 20
+        for attempt in 0..<3 {
+            if attempt > 0 { try? await Task.sleep(for: .milliseconds(700 * attempt)) }
+            if let (data, response) = try? await URLSession.shared.data(for: request),
+               (response as? HTTPURLResponse)?.statusCode == 200,
+               let image = NSImage(data: data) {
+                return image
+            }
+        }
+        return nil
+    }
+
     /// Every n-th point, enough for a line this small.
     public static func thinned(_ p: TrackPoints, to count: Int) -> [(Double, Double)] {
         guard p.count > count else { return zip(p.lat, p.lon).map { ($0, $1) } }
@@ -154,6 +185,33 @@ public final class MapThumbnails {
         return (0..<count).map { i in
             let k = Int((Double(i) * step).rounded())
             return (p.lat[k], p.lon[k])
+        }
+    }
+}
+
+/// Lets a few callers through at a time; the rest wait their turn.
+actor Gate {
+    private let limit: Int
+    private var inside = 0
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    init(limit: Int) {
+        self.limit = limit
+    }
+
+    func enter() async {
+        if inside < limit {
+            inside += 1
+            return
+        }
+        await withCheckedContinuation { waiting.append($0) }
+    }
+
+    func leave() {
+        if waiting.isEmpty {
+            inside -= 1
+        } else {
+            waiting.removeFirst().resume()
         }
     }
 }

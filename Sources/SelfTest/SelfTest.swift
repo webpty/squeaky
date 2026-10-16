@@ -36,6 +36,9 @@ struct SelfTest {
         if args.count > 1, !args[1].isEmpty { fit(URL(fileURLWithPath: args[1])) }
         if args.count > 2 { await library(scratch, address: args[2]) }
         await thumbnail(scratch)
+        if let key = ProcessInfo.processInfo.environment["GEOTAG_MAP_KEY"] {
+            await mapStress(scratch, key: key)
+        }
         if let key = ProcessInfo.processInfo.environment["GEOTAG_MAP_KEY"], ProcessInfo.processInfo.environment["GEOTAG_VIEWER"] != nil {
             await viewerPicture(scratch, key: key)
         }
@@ -325,5 +328,41 @@ extension SelfTest {
             window.orderOut(nil)
         }
         print("viewer pictures in \(scratch.path)")
+    }
+}
+
+extension SelfTest {
+    /// Forty maps asked for at once, half of them abandoned straight away as a
+    /// scrolled-off row would; every one must still be drawn.
+    @MainActor
+    static func mapStress(_ scratch: URL, key: String) async {
+        let maps = MapThumbnails(folder: scratch.appendingPathComponent("stress-maps"))
+        maps.source = MapSource(light: "https://basemaps.cartocdn.com/rastertiles/light_nolabels/{z}/{x}/{y}@2x.png",
+                                dark: "https://basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}@2x.png",
+                                credit: "", key: key)
+        var tracks: [(Track, TrackPoints)] = []
+        for i in 0..<20 {
+            let lat = 8.95 + Double(i) * 0.01, lon = -79.53 + Double(i) * 0.013
+            let p = TrackPoints(t: Array(0..<300), lat: (0..<300).map { lat + Double($0) * 2e-5 },
+                                lon: (0..<300).map { lon + Double($0) * 3e-5 }, alt: Array(repeating: nil, count: 300))
+            let t = Track(id: "stress-\(i)", source: .file, name: "Stress \(i)", sport: nil, fileName: nil,
+                          start: Date(), end: Date(), timeZone: nil, pointCount: 300, distance: nil,
+                          bounds: Geo.bounds(p), status: .thisMacOnly)
+            tracks.append((t, p))
+        }
+        var abandoned: [Task<NSImage?, Never>] = []
+        for (i, (t, p)) in tracks.enumerated() {
+            for dark in [false, true] {
+                let task = Task { await maps.make(t, points: p, dark: dark) }
+                if i % 2 == 0 { abandoned.append(task) }
+            }
+        }
+        abandoned.forEach { $0.cancel() }
+        try? await Task.sleep(for: .seconds(1))
+        var drawn = 0
+        for (t, p) in tracks {
+            for dark in [false, true] where await maps.make(t, points: p, dark: dark) != nil { drawn += 1 }
+        }
+        check("maps: forty asked at once, all drawn", drawn == 40, "\(drawn) of 40")
     }
 }
