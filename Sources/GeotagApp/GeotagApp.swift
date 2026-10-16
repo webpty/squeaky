@@ -11,6 +11,7 @@ struct GeotagApp: App {
                 .environmentObject(model)
                 .preferredColorScheme(model.appearance.colorScheme)
                 .frame(minWidth: 940, minHeight: 620)
+                .task { await model.start() }
         }
         .windowToolbarStyle(.unified)
         .commands {

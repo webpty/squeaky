@@ -44,6 +44,8 @@ struct ScreenView: View {
 
     var body: some View {
         switch screen {
+        case .tracks:
+            TracksScreen()
         case .settings:
             SettingsScreen()
         default:

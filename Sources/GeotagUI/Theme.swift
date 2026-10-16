@@ -51,6 +51,24 @@ public struct ScreenTitle: View {
     }
 }
 
+/// A line that is always there, so nothing shifts when a message appears.
+public struct StatusLine: View {
+    let text: String
+
+    public init(text: String) {
+        self.text = text
+    }
+
+    public var body: some View {
+        Text(text)
+            .font(.callout)
+            .foregroundStyle(text.isEmpty ? .clear : .secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(height: 18, alignment: .leading)
+    }
+}
+
 public extension View {
     /// One line, with room on all four sides, for every button label.
     func buttonLabel() -> some View {

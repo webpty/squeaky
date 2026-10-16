@@ -20,6 +20,14 @@ The stage 2 location test, which only reads the samples folder:
 Tools/gps-test.sh <samples folder> <output folder>
 ```
 
+The self-test, with its files in a scratch folder, Garmin's sample FIT
+files in another, and a local copy of the track service holding the test
+keys (see `../tracks/CLAUDE.md`):
+
+```
+GEOTAG_SCRATCH=<scratch> swift run -c release SelfTest <fit folder> http://127.0.0.1:8790
+```
+
 Raise `appVersion` in `Sources/GeotagCore/Version.swift` with every push. The
 build script reads that line for the bundle version, and the number shows in
 the corner of the sidebar.

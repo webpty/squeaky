@@ -57,6 +57,26 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Prove each copy: `ImageDataHash` equals the original's, every other tag is
   unchanged, and ImageIO opens it and reads the position.
 
+## Tracks (stage 3, 16 October 2026)
+
+- The track service is `../tracks` (its own CLAUDE.md). Settings holds its
+  address (UserDefaults) and key (login keychain, account
+  `track-service-key`, service `com.webpty.geotag`).
+- The key's role decides: an owner key connects Strava, syncs and uploads;
+  a reading key reads, and its Mac's imports stay on that Mac.
+- `TrackLibrary` keeps every track and its points in
+  `~/Library/Application Support/Geotag/Tracks` (`index.json`,
+  `points/<id>.json`). Files are replaced whole, never removed. An uploaded
+  import stays in the index as `uploaded` and is hidden; the service's copy
+  is the one shown.
+- A file starting within 60 s of a track already here is the same track.
+- Map pictures are drawn once per appearance with MapKit and kept in
+  `Geotag/Maps`; offline, the row shows the bare line until a map can be
+  had. On the Mac, `MKMapSnapshotter.Snapshot.point(for:)` already counts
+  from the bottom: do not flip it.
+- FIT reading is our own (`FITReader`), checked against Garmin's own
+  decoder on its sample files. A real fenix 9 file has not been tried yet.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

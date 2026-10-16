@@ -1,4 +1,5 @@
 import SwiftUI
+import GeotagCore
 
 struct SettingsScreen: View {
     @EnvironmentObject var model: AppModel
@@ -7,7 +8,7 @@ struct SettingsScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Style.gap) {
                 ScreenTitle(text: "Settings")
-
+                TrackServiceCard()
                 Card(title: "Appearance") {
                     Picker("", selection: Binding(
                         get: { model.appearance },
@@ -25,5 +26,85 @@ struct SettingsScreen: View {
             .padding(Style.pad * 1.5)
             .frame(maxWidth: 720, alignment: .leading)
         }
+    }
+}
+
+struct TrackServiceCard: View {
+    @EnvironmentObject var model: AppModel
+    @State private var confirmDisconnect = false
+
+    var body: some View {
+        Card(title: "Track service") {
+            Grid(alignment: .leading, horizontalSpacing: Style.gap, verticalSpacing: Style.gap) {
+                GridRow {
+                    Text("Address").lineLimit(1)
+                    TextField("", text: $model.serviceAddress)
+                        .textFieldStyle(.roundedBorder)
+                }
+                GridRow {
+                    Text("Key").lineLimit(1)
+                    SecureField("", text: $model.serviceKey)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+            HStack(spacing: Style.gap) {
+                Button {
+                    Task { await model.saveService() }
+                } label: {
+                    Text("Save").buttonLabel()
+                }
+                .keyboardShortcut(.defaultAction)
+                Button {
+                    Task { await model.testService() }
+                } label: {
+                    Text("Test").buttonLabel()
+                }
+                if model.settingsBusy {
+                    ProgressView().controlSize(.small)
+                }
+                StatusLine(text: model.settingsLine)
+            }
+            .disabled(model.settingsBusy)
+
+            if model.role == .owner {
+                Divider()
+                HStack(spacing: Style.gap) {
+                    Text(stravaLine)
+                        .lineLimit(1)
+                    Spacer()
+                    if model.serviceStatus?.strava.connected == true {
+                        Button {
+                            confirmDisconnect = true
+                        } label: {
+                            Text("Disconnect").buttonLabel()
+                        }
+                    } else {
+                        Button {
+                            Task { await model.connectStrava() }
+                        } label: {
+                            Text("Connect Strava").buttonLabel()
+                        }
+                    }
+                }
+                .disabled(model.settingsBusy)
+            }
+        }
+        .alert("Disconnect Strava?", isPresented: $confirmDisconnect) {
+            Button("Disconnect", role: .destructive) {
+                Task { await model.disconnectStrava() }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .task {
+            if model.serviceStatus == nil, !model.serviceAddress.isEmpty { await model.testService() }
+        }
+    }
+
+    private var stravaLine: String {
+        guard let strava = model.serviceStatus?.strava else { return "Strava" }
+        if strava.connected {
+            return strava.athlete.map { "Strava: connected as \($0)" } ?? "Strava: connected"
+        }
+        return "Strava: not connected"
     }
 }
