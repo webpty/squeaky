@@ -71,9 +71,6 @@ for f in "$src"/*(.N); do
 
   "${et[@]}" "${compare[@]}" "$copy" | grep -Ev "$ignore" > "$out/.after-$name.txt"
   changed=$(diff "$out/.before-$name.txt" "$out/.after-$name.txt" | grep -c '^[<>]' || true)
-  if [[ "$changed" == 0 ]]; then
-    rm "$out/.before-$name.txt" "$out/.after-$name.txt"
-  fi
 
   hash=(-s3 -api ImageHashType=SHA256 -ImageDataHash)
   picture_same=$([[ $("${et[@]}" "${hash[@]}" "$f") == $("${et[@]}" "${hash[@]}" "$copy") ]] && echo yes || echo no)
