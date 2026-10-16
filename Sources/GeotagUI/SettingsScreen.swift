@@ -9,6 +9,8 @@ struct SettingsScreen: View {
             VStack(alignment: .leading, spacing: Style.gap) {
                 ScreenTitle(text: "Settings")
                 TrackServiceCard()
+                PeopleCard()
+                CamerasCard()
                 Card(title: "Appearance") {
                     Picker("", selection: Binding(
                         get: { model.appearance },

@@ -9,7 +9,6 @@ struct GeotagApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(model)
-                .preferredColorScheme(model.appearance.colorScheme)
                 .frame(minWidth: 940, minHeight: 620)
                 .task { await model.start() }
         }

@@ -54,8 +54,13 @@ public final class AppModel: ObservableObject {
     /// Goes up whenever the map source changes, so missing maps are tried again.
     @Published public private(set) var mapsRound = 0
 
+    // People and cameras.
+    @Published public private(set) var book = PeopleBook()
+    @Published public var peopleLine = ""
+
     public let library: TrackLibrary
     public let thumbnails = MapThumbnails()
+    private let peopleStore: PeopleStorePort
     private let secrets: SecretStorePort
     private let defaults = UserDefaults.standard
     private var timer: Timer?
@@ -64,9 +69,21 @@ public final class AppModel: ObservableObject {
     static let keyAccount = "track-service-key"
 
     public init(library: TrackLibrary = TrackLibrary(store: TrackStoreFolder.standard()),
+                peopleStore: PeopleStorePort = PeopleStoreFile.standard(),
                 secrets: SecretStorePort = Keychain()) {
         self.library = library
+        self.peopleStore = peopleStore
         self.secrets = secrets
+        do {
+            if let saved = try peopleStore.load() {
+                book = saved
+            } else {
+                book = .family()
+                try peopleStore.save(book)
+            }
+        } catch {
+            peopleLine = "The people list could not be read: \(error.localizedDescription)"
+        }
         if let raw = defaults.string(forKey: "appearance"), let mode = Appearance(rawValue: raw) {
             appearance = mode
         }
@@ -83,10 +100,22 @@ public final class AppModel: ObservableObject {
     public func setAppearance(_ mode: Appearance) {
         appearance = mode
         defaults.set(mode.rawValue, forKey: "appearance")
+        applyAppearance()
+    }
+
+    /// Light, dark or the Mac's own, for every window. Set on the application
+    /// itself: SwiftUI's colour scheme alone left the Mac's own colours behind.
+    public func applyAppearance() {
+        switch appearance {
+        case .system: NSApp.appearance = nil
+        case .light: NSApp.appearance = NSAppearance(named: .aqua)
+        case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
+        }
     }
 
     /// At launch: show what this Mac has, then ask the service, and again every ten minutes.
     public func start() async {
+        applyAppearance()
         tracks = await library.listed()
         await refresh()
         timer?.invalidate()
@@ -176,6 +205,25 @@ public final class AppModel: ObservableObject {
             }
         }
     }
+
+    // MARK: People and cameras
+
+    private func store(_ change: (inout PeopleBook) -> Void) {
+        var next = book
+        change(&next)
+        do {
+            try peopleStore.save(next)
+            book = next
+            peopleLine = ""
+        } catch {
+            peopleLine = "Not saved: \(error.localizedDescription)"
+        }
+    }
+
+    public func save(_ person: Person) { store { $0.save(person) } }
+    public func remove(person id: UUID) { store { $0.remove(person: id) } }
+    public func save(_ camera: Camera) { store { $0.save(camera) } }
+    public func remove(camera id: UUID) { store { $0.remove(camera: id) } }
 
     // MARK: Tracks
 

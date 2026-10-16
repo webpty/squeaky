@@ -17,6 +17,9 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp ".build/release/$name" "$app/Contents/MacOS/$name"
 
+echo "Adding ExifTool"
+cp -R Vendor/ExifTool "$app/Contents/Resources/ExifTool"
+
 echo "Drawing the icon"
 mkdir -p build
 swiftc -O Tools/makeicon.swift -o build/makeicon

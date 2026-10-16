@@ -30,6 +30,7 @@ struct SelfTest {
         let scratch = root.appendingPathComponent("geotag-selftest-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
 
+        people(scratch)
         gpx(scratch)
         if args.count > 1, !args[1].isEmpty { fit(URL(fileURLWithPath: args[1])) }
         if args.count > 2 { await library(scratch, address: args[2]) }
@@ -38,6 +39,70 @@ struct SelfTest {
         print(failures == 0 ? "all passed" : "\(failures) failed")
         print("scratch: \(scratch.path)")
         exit(failures == 0 ? 0 : 1)
+    }
+
+    /// A small JPEG with the camera details a photo carries.
+    static func writePhoto(_ url: URL, model: String, zone: String?) {
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 8, pixelsHigh: 8, bitsPerSample: 8, samplesPerPixel: 3,
+                                   hasAlpha: false, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        guard let image = rep.cgImage,
+              let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.jpeg" as CFString, 1, nil) else { return }
+        var exif: [CFString: Any] = [kCGImagePropertyExifDateTimeOriginal: "2026:10:16 12:00:00"]
+        if let zone { exif[kCGImagePropertyExifOffsetTimeOriginal] = zone }
+        let props: [CFString: Any] = [
+            kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFModel: model, kCGImagePropertyTIFFMake: "Test"],
+            kCGImagePropertyExifDictionary: exif,
+        ]
+        CGImageDestinationAddImage(dest, image, props as CFDictionary)
+        CGImageDestinationFinalize(dest)
+    }
+
+    static func people(_ scratch: URL) {
+        let store = PeopleStoreFile(url: scratch.appendingPathComponent("people.json"))
+        check("people: nothing saved yet", (try? store.load()) == nil)
+        var book = PeopleBook.family()
+        check("people: the four", book.people.map(\.name) == ["David", "Amanda", "Patrick", "Gilbert"])
+        check("cameras: the five, none ready", book.cameras.count == 5 && book.cameras.allSatisfy { !$0.isReady })
+        try? store.save(book)
+        check("people: saved and read back", (try? store.load()) == book)
+
+        let david = book.people[0].id, amanda = book.people[1].id
+        check("cameras: found by owner and model", book.camera(personId: amanda, model: "canon eos r5m2 ")?.personId == amanda)
+        check("cameras: not someone else's", book.camera(personId: amanda, model: "Canon EOS R7") == nil)
+
+        var r7 = book.camera(personId: david, model: "Canon EOS R7")!
+        r7.offsetSeconds = -42
+        book.save(r7)
+        check("cameras: ready once its offset is set", book.camera(personId: david, model: "Canon EOS R7")!.isReady)
+        var nikon = book.cameras.first { $0.model == "COOLPIX P950" }!
+        nikon.zone = .fixed("America/Panama")
+        nikon.offsetSeconds = 0
+        book.save(nikon)
+        try? store.save(book)
+        let back = try? store.load()
+        check("cameras: zone and offset kept", back?.cameras.first { $0.id == nikon.id }?.zone == .fixed("America/Panama")
+              && back?.cameras.first { $0.id == r7.id }?.offsetSeconds == -42)
+
+        book.remove(person: david)
+        check("people: removing takes their cameras off", book.person(david) == nil && book.cameras(of: david).isEmpty && book.cameras.count == 3)
+
+        let withZone = scratch.appendingPathComponent("zone.jpg"), without = scratch.appendingPathComponent("nozone.jpg")
+        writePhoto(withZone, model: "Canon EOS R5m2", zone: "-05:00")
+        writePhoto(without, model: "Canon EOS REBEL T3i", zone: nil)
+        check("camera read with its zone", CameraReader.read(withZone) == CameraReading(model: "Canon EOS R5m2", zone: "-05:00"))
+        check("camera read, no zone", CameraReader.read(without) == CameraReading(model: "Canon EOS REBEL T3i", zone: nil))
+
+        // The same through ExifTool, as the app reads them, run from the repo.
+        let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+        check("exiftool: camera read with its zone", CameraReader.read(withZone, exifTool: tool) == CameraReading(model: "Canon EOS R5m2", zone: "-05:00"))
+        check("exiftool: camera read, no zone", CameraReader.read(without, exifTool: tool) == CameraReading(model: "Canon EOS REBEL T3i", zone: nil))
+        if let folder = ProcessInfo.processInfo.environment["GEOTAG_SAMPLES"] {
+            let files = (try? FileManager.default.contentsOfDirectory(atPath: folder))?.sorted() ?? []
+            for name in files where !name.hasPrefix(".") {
+                let r = CameraReader.read(URL(fileURLWithPath: folder).appendingPathComponent(name), exifTool: tool)
+                print("photo  \(name): \(r?.model ?? "-") | zone \(r?.zone ?? "none")")
+            }
+        }
     }
 
     static func writeGPX(_ url: URL, start: Int, count: Int, name: String) {

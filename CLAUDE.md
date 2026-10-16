@@ -83,6 +83,26 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - FIT reading is our own (`FITReader`), checked against Garmin's own
   decoder on its sample files. A real fenix 9 file has not been tried yet.
 
+## People and cameras (stage 4, 16 October 2026)
+
+- `PeopleBook` in `~/Library/Application Support/Geotag/people.json`, per Mac,
+  seeded on first launch with David, Amanda, Patrick and Gilbert and the five
+  cameras David listed: his R5 Mark II and R7, Amanda's R5 Mark II (zone
+  from the photo), Gilbert's COOLPIX P950 and Patrick's EOS REBEL T3i (zone
+  not set; the T3i's model is a guess until one of his photos is read).
+- A photo finds its camera by owner and model, the model as EXIF records it
+  ("Canon EOS R5m2", not "R5 Mark II").
+- A camera is ready for matching only with its zone (from the photo, or a
+  fixed zone for cameras that write none) and its clock offset set.
+  Offset is seconds the clock is ahead; negative is behind.
+- The NAS folder is kept as share plus path ("homes/patrick/Antarctica"), not
+  a /Volumes path, so it does not depend on where a Mac mounts the share.
+- ExifTool is inside the app (`Contents/Resources/ExifTool`) from 0.5.0.
+  Read camera details with it: ImageIO misses `OffsetTimeOriginal` in Canon
+  CR3 files.
+- Appearance is applied with `NSApp.appearance`; `preferredColorScheme` alone
+  did not switch the window back and forth reliably.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.
