@@ -16,12 +16,6 @@ public struct RootView: View {
                 .background(Color(nsColor: .windowBackgroundColor))
         }
         .navigationTitle(appName)
-        .overlay {
-            if let id = model.viewing {
-                TrackViewer(trackId: id)
-                    .transition(.opacity)
-            }
-        }
     }
 }
 
@@ -41,7 +35,7 @@ struct Sidebar: View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
                 VStack(spacing: 4) {
-                    ForEach(Screen.allCases) { screen in
+                    ForEach(Screen.sidebar) { screen in
                         Button {
                             model.screen = screen
                         } label: {

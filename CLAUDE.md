@@ -184,6 +184,15 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   question a second, identified as Geotag; else the track's name; else the
   day.
 
+## Tracks out of the way (0.10.0, 16 October 2026)
+
+- Tracks is not in the sidebar. It is a "Tracks" menu in the Mac's menu bar
+  (Show Tracks, Refresh, Import GPX or FIT…); Show Tracks opens a window of
+  its own (`Window` id "tracks") with the tracks as a grid of map cards, and
+  the track viewer opens over that window. Geotag opens on Photos. David's
+  instructions: "when tracks are working I don't need to see them", "they
+  should be a grid", "in the Apple top bar", never Geotag's own toolbar.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

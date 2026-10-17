@@ -36,11 +36,15 @@ struct TracksScreen: View {
             }
             .frame(height: 18)
 
-            List(model.tracks) { track in
-                TrackRow(track: track)
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 200, maximum: 260), spacing: Style.gap)],
+                          alignment: .leading, spacing: Style.gap) {
+                    ForEach(model.tracks) { track in
+                        TrackCard(track: track)
+                    }
+                }
+                .padding(.bottom, Style.gap)
             }
-            .listStyle(.inset)
-            .clipShape(RoundedRectangle(cornerRadius: Style.radius))
 
             if !model.tracks.isEmpty, !model.mapCredit.isEmpty {
                 Text(model.mapCredit)
@@ -56,6 +60,38 @@ struct TracksScreen: View {
             case .failure(let error): model.tracksLine = error.localizedDescription
             }
         }
+    }
+}
+
+/// One track in the grid: its map, then its name, day and length of time.
+/// Clicking the map opens the track viewer.
+struct TrackCard: View {
+    @EnvironmentObject var model: AppModel
+    let track: Track
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            GeometryReader { geo in
+                TrackThumbnail(track: track, scale: geo.size.width / MapThumbnails.size.width)
+            }
+            .aspectRatio(MapThumbnails.size.width / MapThumbnails.size.height, contentMode: .fit)
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 0.2)) { model.viewing = track.id }
+            }
+            Text(track.name)
+                .font(.headline)
+                .lineLimit(1)
+            Text(TrackText.date(track, weekday: false))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Text([TrackText.duration(track), TrackText.source(track)].joined(separator: " · "))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: Style.radius).fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: Style.radius).strokeBorder(Color(nsColor: .separatorColor)))
     }
 }
 
@@ -148,4 +184,54 @@ struct TrackShape: Shape {
         }
         return path
     }
+}
+
+/// The Tracks window, opened from the Tracks menu in the Mac's menu bar.
+/// The track viewer opens over it.
+public struct TracksWindow: View {
+    @EnvironmentObject var model: AppModel
+
+    public init() {}
+
+    public var body: some View {
+        TracksScreen()
+            .frame(minWidth: 720, minHeight: 480)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .overlay {
+                if let id = model.viewing {
+                    TrackViewer(trackId: id)
+                        .transition(.opacity)
+                }
+            }
+    }
+}
+
+/// The Tracks menu's items.
+public struct TracksMenu: View {
+    @Environment(\.openWindow) private var openWindow
+    let model: AppModel
+
+    public init(model: AppModel) {
+        self.model = model
+    }
+
+    public var body: some View {
+        Button("Show Tracks") {
+            openWindow(id: "tracks")
+        }
+        Divider()
+        Button("Refresh") {
+            Task { await model.refresh(pullStrava: true) }
+        }
+        Button("Import GPX or FIT…") {
+            model.importWithPanel()
+            openWindow(id: "tracks")
+        }
+    }
+}
+
+/// The Tracks page on its own, for pictures made off-screen.
+public struct TracksScreenProbe: View {
+    public init() {}
+    public var body: some View { TracksScreen().background(Color(nsColor: .windowBackgroundColor)) }
 }

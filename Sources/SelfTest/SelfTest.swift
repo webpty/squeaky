@@ -342,6 +342,19 @@ extension SelfTest {
             }
             window.orderOut(nil)
         }
+        NSApp.appearance = NSAppearance(named: .aqua)
+        let grid = NSWindow(contentRect: NSRect(x: -6000, y: -6000, width: 900, height: 620), styleMask: [.titled], backing: .buffered, defer: false)
+        let gridHost = NSHostingView(rootView: TracksScreenProbe().environmentObject(model))
+        grid.contentView = gridHost
+        grid.orderBack(nil)
+        for _ in 0..<100 {
+            spin(0.04)
+            try? await Task.sleep(for: .milliseconds(40))
+        }
+        if let rep = gridHost.bitmapImageRepForCachingDisplay(in: gridHost.bounds) {
+            gridHost.cacheDisplay(in: gridHost.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: scratch.appendingPathComponent("tracks.png"))
+        }
         print("viewer pictures in \(scratch.path)")
     }
 }

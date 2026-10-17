@@ -31,6 +31,14 @@ struct GeotagApp: App {
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandMenu("Tracks") {
+                TracksMenu(model: model)
+            }
+        }
+
+        Window("Tracks", id: "tracks") {
+            TracksWindow()
+                .environmentObject(model)
         }
     }
 }

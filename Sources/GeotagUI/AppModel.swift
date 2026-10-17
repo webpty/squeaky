@@ -1,15 +1,20 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import GeotagCore
 
 public enum Screen: String, CaseIterable, Identifiable {
-    case tracks
     case photos
+    case tracks
     case queue
     case history
     case settings
 
     public var id: String { rawValue }
+
+    /// The sidebar's sections. Tracks is not one of them: it is a menu in the
+    /// Mac's menu bar, out of the way while it works (David, 16 October 2026).
+    public static let sidebar: [Screen] = [.photos, .queue, .history, .settings]
 
     public var title: String {
         switch self {
@@ -35,7 +40,7 @@ public enum Screen: String, CaseIterable, Identifiable {
 @MainActor
 public final class AppModel: ObservableObject {
     @Published public var appearance = Appearance.system
-    @Published public var screen = Screen.tracks
+    @Published public var screen = Screen.photos
 
     // Track service, as set in Settings.
     @Published public var serviceAddress = ""
@@ -521,6 +526,18 @@ public final class AppModel: ObservableObject {
     /// Shows what the library holds, without asking the service.
     public func showLibrary() async {
         tracks = await library.listed()
+    }
+
+    /// Import from the Tracks menu: the Mac's own file window, GPX and FIT only.
+    public func importWithPanel() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [UTType(filenameExtension: "gpx"), UTType(filenameExtension: "fit")].compactMap { $0 }
+        guard panel.runModal() == .OK else { return }
+        let urls = panel.urls
+        Task { await importFiles(urls) }
     }
 
     public func importFiles(_ urls: [URL]) async {
