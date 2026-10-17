@@ -69,7 +69,22 @@ struct PhotosScreen: View {
                 } label: {
                     Text("See photos on the map").buttonLabel()
                 }
-                .disabled(model.photosBusy || model.alignable.isEmpty)
+                .disabled(model.photosBusy || model.saving || model.alignable.isEmpty)
+                if model.saving {
+                    Button {
+                        model.stopSaving()
+                    } label: {
+                        Text("Stop").buttonLabel()
+                    }
+                } else {
+                    Button {
+                        Task { await model.savePhotos() }
+                    } label: {
+                        Text("Save photos").buttonLabel()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(model.photosBusy || model.readyToSave.isEmpty)
+                }
             }
 
             if model.cards.count > 1 {
@@ -108,7 +123,12 @@ struct PhotosScreen: View {
             }
 
             HStack(spacing: 8) {
-                if model.photosBusy { ProgressView().controlSize(.small) }
+                if model.saving {
+                    ProgressView(value: Double(model.saveDone), total: Double(max(model.saveTotal, 1)))
+                        .frame(width: 200)
+                } else if model.photosBusy {
+                    ProgressView().controlSize(.small)
+                }
                 StatusLine(text: model.photosLine, lines: 2)
                 Spacer()
                 if !model.rows.isEmpty {
@@ -127,6 +147,7 @@ struct PhotosScreen: View {
                 TableColumn("") { row in
                     Toggle("", isOn: Binding(get: { row.ticked }, set: { model.setTicked(row.id, $0) }))
                         .labelsHidden()
+                        .disabled(model.saving)
                 }
                 .width(24)
                 TableColumn("") { row in
@@ -150,10 +171,18 @@ struct PhotosScreen: View {
                 }
                 .width(min: 60, ideal: 70)
                 TableColumn("Status") { row in
-                    let before = row.status == .alreadyImported
-                    Text(before ? PhotoText.status(row.status) : PhotoText.location(row, gap: model.maxGapSeconds))
-                        .foregroundStyle(before || row.needsReview ? .secondary : .primary)
-                        .lineLimit(1)
+                    if let result = model.results[row.id] {
+                        switch result {
+                        case .saved: Text("Saved").lineLimit(1)
+                        case .alreadyThere: Text("Already saved").foregroundStyle(.secondary).lineLimit(1)
+                        case .failed(let why): Text("Not saved: \(why)").foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    } else {
+                        let before = row.status == .alreadyImported
+                        Text(before ? PhotoText.status(row.status) : PhotoText.location(row, gap: model.maxGapSeconds))
+                            .foregroundStyle(before || row.needsReview ? .secondary : .primary)
+                            .lineLimit(1)
+                    }
                 }
                 .width(min: 150, ideal: 190)
                 TableColumn("Without location") { row in

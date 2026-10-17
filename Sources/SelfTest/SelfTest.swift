@@ -33,6 +33,11 @@ struct SelfTest {
         try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
 
         people(scratch)
+        if let samples = ProcessInfo.processInfo.environment["GEOTAG_SAMPLES"] {
+            saving(scratch, samples: URL(fileURLWithPath: samples),
+                   raws: ProcessInfo.processInfo.environment["GEOTAG_RAWS"].map { URL(fileURLWithPath: $0) })
+            await savingEdges(scratch, samples: URL(fileURLWithPath: samples))
+        }
         cardKinds()
         cards(scratch)
         matching(scratch)
@@ -754,5 +759,184 @@ extension SelfTest {
               !CardGuard.cardLike(d("msdos", name: "EFI", removable: false, content: "C12A7328-F81F-11D2-BA4B-00A0C93EC93B")))
         check("card kinds: not the Mac's own disk", !CardGuard.cardLike(d("exfat", inside: true)))
         check("card kinds: not an APFS or HFS drive", !CardGuard.cardLike(d("apfs")) && !CardGuard.cardLike(d("hfs")))
+    }
+}
+
+extension SelfTest {
+    /// Saving, on copies only: a "card" folder made in the scratch folder from
+    /// the sample photos and the published raw files, never the real card.
+    static func saving(_ scratch: URL, samples: URL, raws: URL?) {
+        let fm = FileManager.default
+        let card = scratch.appendingPathComponent("SAVE-CARD/DCIM/100CANON")
+        try? fm.createDirectory(at: card, withIntermediateDirectories: true)
+        var files = ((try? fm.contentsOfDirectory(at: samples, includingPropertiesForKeys: nil)) ?? []).filter { PhotoKinds.isPhoto($0) }
+        if let raws { files += ((try? fm.contentsOfDirectory(at: raws, includingPropertiesForKeys: nil)) ?? []).filter { PhotoKinds.isPhoto($0) } }
+        for f in files {
+            let copy = card.appendingPathComponent(f.lastPathComponent)
+            try? fm.copyItem(at: f, to: copy)
+            // A camera writes a file once: created and modified at the same moment.
+            if let m = (try? fm.attributesOfItem(atPath: f.path))?[.modificationDate] as? Date {
+                try? fm.setAttributes([.creationDate: m, .modificationDate: m], ofItemAtPath: copy.path)
+            }
+        }
+        // A JPEG whose name ends in .JPEG, to be saved ending in .jpg.
+        if let jpg = files.first(where: { $0.pathExtension.uppercased() == "JPG" }) {
+            let copy = card.appendingPathComponent("RENAME_ME.JPEG")
+            try? fm.copyItem(at: jpg, to: copy)
+            if let m = (try? fm.attributesOfItem(atPath: jpg.path))?[.modificationDate] as? Date {
+                try? fm.setAttributes([.creationDate: m, .modificationDate: m], ofItemAtPath: copy.path)
+            }
+        }
+        let cardFiles = PhotoScanner.files(in: card)
+        func fingerprints() -> [String: String] {
+            var out: [String: String] = [:]
+            for f in cardFiles { out[f.lastPathComponent] = Saver.sha256(f) ?? "" }
+            return out
+        }
+        let before = fingerprints()
+        let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+        let photos = (try? PhotoScanner(exifTool: tool).scan(cardFiles) { _ in }) ?? []
+        check("save: the test card read", photos.count == cardFiles.count && !photos.isEmpty, "\(photos.count) of \(cardFiles.count)")
+
+        let out = scratch.appendingPathComponent("SAVED")
+        let saver = Saver(exifTool: tool, folder: out)
+        let moment = ISO8601DateFormatter().date(from: "2027-01-12T15:00:00Z")!
+        let here = Position(lat: -54.8091234, lon: -68.2971234, alt: 5.5, moment: moment, fromPoint: 3)
+        var saved: [(ScannedPhoto, SaveResult, SaveItem)] = []
+        for (i, p) in photos.enumerated() {
+            let item: SaveItem
+            if p.hasLocation {
+                item = SaveItem(photo: p, placement: .ownLocation, withoutLocation: false)
+            } else if i == 1 {
+                item = SaveItem(photo: p, placement: .review(.noTrack), withoutLocation: true)
+            } else {
+                item = SaveItem(photo: p, placement: .matched(here), withoutLocation: false)
+            }
+            saved.append((p, saver.save(item), item))
+        }
+        for (p, r, item) in saved {
+            guard case .saved(let url) = r else {
+                check("save: \(p.fileName)", false, "\(r)")
+                continue
+            }
+            let attrs = (try? fm.attributesOfItem(atPath: url.path)) ?? [:]
+            let original = (try? fm.attributesOfItem(atPath: p.url.path)) ?? [:]
+            let datesKept = (attrs[.modificationDate] as? Date) == (original[.modificationDate] as? Date)
+                && (attrs[.creationDate] as? Date) == (original[.creationDate] as? Date)
+            // Read back the way Finder and Photos read it.
+            var where_ = "-"
+            if let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+               let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+               let gps = props[kCGImagePropertyGPSDictionary] as? [CFString: Any] {
+                where_ = "\(gps[kCGImagePropertyGPSLatitude] ?? "-")\(gps[kCGImagePropertyGPSLatitudeRef] ?? "") \(gps[kCGImagePropertyGPSLongitude] ?? "-")\(gps[kCGImagePropertyGPSLongitudeRef] ?? "")"
+            }
+            let expectsWritten = item.position != nil
+            let ok = datesKept && (!expectsWritten || (where_.contains("S") && where_.contains("W") && where_.hasPrefix("54.809")))
+            check("save: \(p.fileName) as \(url.deletingLastPathComponent().lastPathComponent)/\(url.lastPathComponent)", ok,
+                  "\(expectsWritten ? "written" : "copied as is"), dates kept \(datesKept), system reads \(where_)")
+        }
+        check("save: JPEG ends .jpg", fm.fileExists(atPath: out.appendingPathComponent("2025.03.23/RENAME_ME.jpg").path)
+              || saved.contains { $0.1.url?.lastPathComponent == "RENAME_ME.jpg" })
+        let leftovers = (fm.enumerator(atPath: out.path)?.allObjects as? [String] ?? []).filter { $0.contains(".geotag-") || $0.contains("exiftool_tmp") }
+        check("save: no working copies left behind", leftovers.isEmpty, "\(leftovers)")
+        check("save: the card untouched", fingerprints() == before)
+
+        // The same photos again: already there, nothing doubled.
+        let again = saved.map { saver.save($0.2) }
+        check("save: saving again finds them already there", again.allSatisfy { if case .alreadyThere = $0 { return true } else { return false } },
+              "\(again.filter { if case .alreadyThere = $0 { return false } else { return true } })")
+        // A different photo under a name already taken gets _2: two JPEGs.
+        let jpegs = saved.filter { $0.0.fileName.uppercased().hasSuffix(".JPG") && $0.1.url != nil }
+        if jpegs.count >= 2, let taken = jpegs[0].1.url {
+            let other = jpegs[1].0
+            let impostor = ScannedPhoto(url: other.url, fileName: jpegs[0].0.fileName, size: other.size,
+                                        taken: jpegs[0].0.taken, subSeconds: other.subSeconds, zone: other.zone, model: other.model)
+            let r = saver.save(SaveItem(photo: impostor, placement: .matched(here), withoutLocation: false))
+            check("save: a different photo with a taken name gets _2", r.url?.lastPathComponent == Saver.numbered(taken.lastPathComponent, 2), "\(r)")
+        }
+        check("save: the card still untouched", fingerprints() == before)
+    }
+}
+
+extension SelfTest {
+    /// The edges of saving: the 60th second, leftovers, a photo saved before
+    /// with another location, and the whole flow through the app model.
+    @MainActor
+    static func savingEdges(_ scratch: URL, samples: URL) async {
+        let fm = FileManager.default
+        // A moment 59.996 s into the minute is written as 59.99, never 60.00.
+        let edge = Date(timeIntervalSince1970: 1_799_999_999.996)
+        let args = Saver.gpsArguments(Position(lat: 1, lon: 1, alt: nil, moment: edge, fromPoint: 0))
+        check("save: no 60th second", args.contains { $0 == "-GPS:GPSTimeStamp=07:59:59.99" }, args.first { $0.hasPrefix("-GPS:GPSTimeStamp") } ?? "")
+        let plain = Saver.gpsArguments(Position(lat: 1, lon: 1, alt: -3, moment: ISO8601DateFormatter().date(from: "2027-01-12T15:04:05Z")!, fromPoint: 0))
+        check("save: an ordinary time and day", plain.contains("-GPS:GPSTimeStamp=15:04:05.00") && plain.contains("-GPS:GPSDateStamp=2027:01:12"))
+        check("save: below sea level", plain.contains("-GPS:GPSAltitude=3.00") && plain.contains("-GPS:GPSAltitudeRef=1"))
+
+        // Leftovers: only Geotag's own working copies go.
+        let out = scratch.appendingPathComponent("EDGES")
+        let day = out.appendingPathComponent("2026.01.01")
+        try? fm.createDirectory(at: day, withIntermediateDirectories: true)
+        try? "x".write(to: day.appendingPathComponent(".IMG_1.geotag-ABCDEF12.JPG"), atomically: true, encoding: .utf8)
+        try? "x".write(to: day.appendingPathComponent(".IMG_2.geotag-0123ABCD"), atomically: true, encoding: .utf8)
+        try? "x".write(to: day.appendingPathComponent(".hidden-of-his"), atomically: true, encoding: .utf8)
+        try? "x".write(to: day.appendingPathComponent("IMG_3.geotag-ABCDEF12.JPG"), atomically: true, encoding: .utf8)
+        let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+        let saver = Saver(exifTool: tool, folder: out)
+        saver.clearLeftovers()
+        let left = Set((try? fm.contentsOfDirectory(atPath: day.path)) ?? [])
+        check("save: only Geotag's own leftovers cleared", left == [".hidden-of-his", "IMG_3.geotag-ABCDEF12.JPG"], "\(left.sorted())")
+
+        // Saved before with another location: the earlier copy is kept and it says so.
+        guard let jpg = ((try? fm.contentsOfDirectory(at: samples, includingPropertiesForKeys: nil)) ?? [])
+            .first(where: { $0.pathExtension.uppercased() == "JPG" }),
+              let photo = (try? PhotoScanner(exifTool: tool).scan([jpg]) { _ in })?.first, !photo.hasLocation || true else { return }
+        let moment = ISO8601DateFormatter().date(from: "2027-01-12T15:00:00Z")!
+        let a = Position(lat: -54.80, lon: -68.30, alt: nil, moment: moment, fromPoint: 0)
+        let b = Position(lat: -54.90, lon: -68.10, alt: nil, moment: moment, fromPoint: 0)
+        let first = saver.save(SaveItem(photo: photo, placement: .matched(a), withoutLocation: false))
+        let second = saver.save(SaveItem(photo: photo, placement: .matched(b), withoutLocation: false))
+        let third = saver.save(SaveItem(photo: photo, placement: .matched(a), withoutLocation: false))
+        if case .saved = first { check("save: first save", true) } else { check("save: first save", false, "\(first)") }
+        check("save: saved before with another location says so", { if case .failed(let w) = second { return w.contains("different location") } else { return false } }(), "\(second)")
+        check("save: the same location again is already there", { if case .alreadyThere = third { return true } else { return false } }(), "\(third)")
+
+        // The whole flow through the app model, on a test card made of copies.
+        let card = scratch.appendingPathComponent("FLOW-CARD")
+        let dcim = card.appendingPathComponent("DCIM/100CANON")
+        try? fm.createDirectory(at: dcim, withIntermediateDirectories: true)
+        for f in ((try? fm.contentsOfDirectory(at: samples, includingPropertiesForKeys: nil)) ?? []).filter({ PhotoKinds.isPhoto($0) }) {
+            try? fm.copyItem(at: f, to: dcim.appendingPathComponent(f.lastPathComponent))
+        }
+        let saveTo = scratch.appendingPathComponent("FLOW-SAVED")
+        try? fm.createDirectory(at: saveTo, withIntermediateDirectories: true)
+        let queueFile = QueueStoreFile(url: scratch.appendingPathComponent("flow-queue.json"))
+        let historyFolder = HistoryStoreFolder(folder: scratch.appendingPathComponent("flow-history"))
+        let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("flow-lib"))),
+                             peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("flow-people.json")),
+                             history: historyFolder, queue: queueFile, secrets: NoSecrets(),
+                             thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("flow-maps")), exifTool: tool)
+        var david = model.book.people[0]
+        david.saveFolder = scratch.appendingPathComponent("NOT-THERE").path
+        model.save(david)
+        let source = CardWatcher.card(at: card)!
+        model.choose(source)
+        model.askingWhose = nil
+        await model.read(source, for: david.id)
+        // No track here: every photo without a location of its own is let through without one.
+        for row in model.rows where row.needsReview { model.setWithoutLocation(row.id, true) }
+        let ready = model.readyToSave.count
+        await model.savePhotos()
+        check("flow: a missing save folder is said once, nothing saved", model.photosLine.contains("can't be found") && model.results.isEmpty, model.photosLine)
+        david.saveFolder = saveTo.path
+        model.save(david)
+        await model.savePhotos()
+        let queued = (try? queueFile.load()) ?? []
+        let remembered = (try? historyFolder.load(david.id)) ?? []
+        check("flow: every ready photo saved", model.results.count == ready && model.results.values.allSatisfy { $0.url != nil }, "\(model.photosLine)")
+        check("flow: History has them", remembered.count == ready, "\(remembered.count) of \(ready)")
+        check("flow: the queue has them, by day folder", queued.count == ready && queued.allSatisfy { $0.relativePath.split(separator: "/").count == 2 }, "\(queued.map(\.relativePath))")
+        check("flow: they now count as imported before", model.rows.allSatisfy { $0.status == .alreadyImported && !$0.ticked })
+        await model.savePhotos()
+        check("flow: nothing left to save", model.readyToSave.isEmpty && ((try? queueFile.load()) ?? []).count == ready)
     }
 }

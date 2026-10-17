@@ -88,6 +88,14 @@ public final class AppModel: ObservableObject {
     public private(set) var timeline = TrackTimeline([])
     private var timelineIds: [String] = []
 
+    // Saving.
+    @Published public private(set) var saving = false
+    @Published public private(set) var saveDone = 0
+    @Published public private(set) var saveTotal = 0
+    /// Each row's outcome, by row id, once saving has reached it.
+    @Published public private(set) var results: [String: SaveResult] = [:]
+    private var stopAsked = false
+
     // History.
     @Published public var historyPerson: UUID?
     @Published public private(set) var historyEntries: [HistoryEntry] = []
@@ -96,6 +104,7 @@ public final class AppModel: ObservableObject {
     public let thumbnails: MapThumbnails
     private let peopleStore: PeopleStorePort
     private let history: HistoryStorePort
+    private let queue: QueueStorePort
     private let exifTool: ExifTool?
     private let cardGuard = CardGuard()
     /// Bumped whenever reading should stop: a new card chosen, or an eject.
@@ -112,6 +121,7 @@ public final class AppModel: ObservableObject {
     public init(library: TrackLibrary = TrackLibrary(store: TrackStoreFolder.standard()),
                 peopleStore: PeopleStorePort = PeopleStoreFile.standard(),
                 history: HistoryStorePort = HistoryStoreFolder.standard(),
+                queue: QueueStorePort = QueueStoreFile.standard(),
                 secrets: SecretStorePort = Keychain(),
                 thumbnails: MapThumbnails? = nil,
                 exifTool: ExifTool? = nil) {
@@ -120,6 +130,7 @@ public final class AppModel: ObservableObject {
         self.thumbnails = thumbnails ?? MapThumbnails()
         self.peopleStore = peopleStore
         self.history = history
+        self.queue = queue
         self.secrets = secrets
         openOnCard = defaults.object(forKey: "openOnCard") as? Bool ?? true
         if defaults.object(forKey: "maxGapSeconds") != nil { maxGapSeconds = defaults.integer(forKey: "maxGapSeconds") }
@@ -332,6 +343,100 @@ public final class AppModel: ObservableObject {
     }
 
     /// A card picked: first, whose is it.
+    // MARK: Saving
+
+    /// The rows Save photos would save: ticked and placed, or let through.
+    public var readyToSave: [ImportRow] { rows.filter(\.willImport) }
+
+    /// Copies every ready photo into the person's folder with its location,
+    /// one at a time, checking each; records them in History and puts them on
+    /// the upload queue. Stop, or Eject, ends it after the current photo.
+    public func savePhotos() async {
+        guard !saving, let personId = importPerson, let person = book.person(personId), let source else { return }
+        guard let folder = person.saveFolder, !folder.isEmpty else {
+            photosLine = "\(person.name) has no save folder yet. Choose one in Settings."
+            return
+        }
+        guard let tool = exifTool else {
+            photosLine = "ExifTool is missing from Geotag."
+            return
+        }
+        var isFolder: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: folder, isDirectory: &isFolder), isFolder.boolValue else {
+            photosLine = "\(person.name)'s save folder can't be found: \(folder). If it is on a drive, plug the drive in."
+            return
+        }
+        let todo = readyToSave
+        guard !todo.isEmpty else { return }
+        let saver = Saver(exifTool: tool, folder: URL(fileURLWithPath: folder, isDirectory: true))
+        await Task.detached { saver.clearLeftovers() }.value
+        let round = readingRound
+        saving = true
+        stopAsked = false
+        saveDone = 0
+        saveTotal = todo.count
+        defer { saving = false }
+
+        var past = (try? history.load(personId)) ?? []
+        var known = Set(past.map(\.key))
+        var waiting = (try? queue.load()) ?? []
+        func remember(_ photo: ScannedPhoto) {
+            guard !known.contains(photo.key) else { return }
+            known.insert(photo.key)
+            past.append(HistoryEntry(fileName: photo.fileName, size: photo.size, taken: photo.taken,
+                                     subSeconds: photo.subSeconds, imported: Date()))
+        }
+        var savedCount = 0, failedCount = 0
+        for row in todo {
+            if stopAsked || readingRound != round || self.source?.id != source.id { break }
+            photosLine = "Saving \(saveDone + 1) of \(saveTotal)"
+            let item = SaveItem(photo: row.photo, placement: row.placement ?? .review(.noTrack), withoutLocation: row.withoutLocation)
+            let result = await Task.detached { saver.save(item) }.value
+            results[row.id] = result
+            saveDone += 1
+            switch result {
+            case .saved(let url):
+                savedCount += 1
+                remember(row.photo)
+                let relative = "\(url.deletingLastPathComponent().lastPathComponent)/\(url.lastPathComponent)"
+                waiting.append(QueueEntry(personId: personId, localPath: url.path, relativePath: relative))
+            case .alreadyThere:
+                savedCount += 1
+                remember(row.photo)
+            case .failed(let why):
+                failedCount += 1
+                if why == Saver.diskFull {
+                    try? history.save(personId, past)
+                    try? queue.save(waiting)
+                    stopAsked = true
+                }
+            }
+            // Written after every photo, so a crash or a pulled card loses nothing.
+            try? history.save(personId, past)
+            try? queue.save(waiting)
+        }
+
+        // What was saved now counts as imported before.
+        let seen = Set(past.map(\.key))
+        for i in rows.indices where seen.contains(rows[i].photo.key) {
+            rows[i].status = .alreadyImported
+            rows[i].ticked = false
+        }
+        if historyPerson == personId { historyEntries = past }
+        // Ejected or another card chosen meanwhile: that line stands.
+        guard readingRound == round else { return }
+        let stopped = saveDone < saveTotal
+        var line = stopped ? "Stopped after \(saveDone) of \(saveTotal)." : "\(savedCount) saved."
+        if stopped { line += " \(savedCount) saved." }
+        if failedCount > 0 { line += " \(failedCount) not saved: see the Status column." }
+        if results.values.contains(.failed(Saver.diskFull)) { line = "Stopped: \(Saver.diskFull) \(savedCount) saved before that." }
+        photosLine = line
+    }
+
+    public func stopSaving() {
+        stopAsked = true
+    }
+
     /// A card picked. One Geotag has seen before is read straight away for
     /// whoever it was last time (the pencil on the Person tile changes it);
     /// a new one asks whose it is first.
@@ -339,6 +444,7 @@ public final class AppModel: ObservableObject {
         readingRound += 1
         self.source = source
         rows = []
+        results = [:]
         photosLine = ""
         if let person = lastPerson(for: source) {
             askingWhose = nil

@@ -195,6 +195,30 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   instructions: "when tracks are working I don't need to see them", "they
   should be a grid", "in the Apple top bar", never Geotag's own toolbar.
 
+## Saving (stage 7, 16 October 2026)
+
+- `Saver` copies a card photo to a hidden working file in the person's day
+  folder (`2027.01.12`, the camera clock's day; "Undated" without one), named
+  `.<stem>.geotag-<8 hex>.<ext>`: the real extension must stay last, or the
+  Mac reads a Nikon NRW as plain TIFF and the check fails.
+- It writes the GPS block (named group tags only, old location cleared,
+  hundredths of a second cut, never rounded to a 60th second), gives the copy
+  the card file's creation and modification dates, then checks it: it opens
+  in ImageIO, `ImageDataHash` equals the card's, every tag but GPS, file
+  system and offsets is unchanged, the position and altitude read back. A
+  copy unchanged on purpose (own location, without location) must match the
+  card byte for byte.
+- Only then is it moved to its final name; a move never replaces. Same name
+  and same photo: "already there"; same photo saved before with another
+  location: reported, the earlier copy kept; another photo: `_2`, `_3`.
+- A failed copy is removed (Geotag's own); leftovers from a crash are cleared
+  at the next save, matched by that exact pattern only.
+- History and `queue.json` are written after every photo. A missing save
+  folder or a full disk stops the save with one line.
+- Tested on R5 Mark II CR3 and JPEG, R7 JPEG, Canon EOS 600D and REBEL T3i
+  CR2, and COOLPIX P950 NRW (published samples from raw.pixls.us); HEIF not
+  yet, nobody has supplied one.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.
