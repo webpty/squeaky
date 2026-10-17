@@ -128,8 +128,10 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - `PhotoScanner` lists photo files (hidden folders left out) and reads time,
   sub-seconds, zone and model through ExifTool, 100 files at a time. It only
   reads; the self-test checks the card's files are unchanged.
-- The card's owner is asked every time, starting from last time's
-  (`cardPeople` in UserDefaults, keyed by volume id or folder path).
+- A card Geotag has seen is read straight away for last time's person
+  (`cardPeople` in UserDefaults, keyed by the card's volume id); only a new
+  card asks whose it is. The Person tile's pencil changes it (David,
+  16 October 2026).
 - A photo counts as imported before when name, size and time taken (with
   sub-seconds) match the person's history (`History/<person id>.json`).
 - The self-test can attach a disk image with `-nobrowse` to prove a card

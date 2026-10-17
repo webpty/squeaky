@@ -495,9 +495,21 @@ extension SelfTest {
                              exifTool: ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool")))
         let source = CardWatcher.card(at: card)!
         model.choose(source)
+        // A card seen before is read for last time's person without asking.
+        if model.askingWhose == nil {
+            for _ in 0..<40 where model.photosBusy || model.rows.isEmpty { spin(0.05); try? await Task.sleep(for: .milliseconds(50)) }
+            check("card: remembered, read without asking", model.importPerson == model.book.people[1].id && !model.rows.isEmpty)
+        } else {
+            check("card: a new card asks whose it is", model.askingWhose?.id == source.id)
+        }
         model.askingWhose = nil
         // Amanda's history was written by the card test, under her id from a fresh book; use the book's own Amanda.
         await model.read(source, for: model.book.people[1].id)
+        // The same card again: no question, read for Amanda straight away.
+        model.choose(source)
+        check("card: a known card is not asked about again", model.askingWhose == nil)
+        for _ in 0..<60 where model.rows.isEmpty || model.photosBusy { spin(0.05); try? await Task.sleep(for: .milliseconds(50)) }
+        check("card: read for last time's person", model.importPerson == model.book.people[1].id && !model.rows.isEmpty)
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
         NSApp.appearance = NSAppearance(named: .aqua)

@@ -332,12 +332,20 @@ public final class AppModel: ObservableObject {
     }
 
     /// A card picked: first, whose is it.
+    /// A card picked. One Geotag has seen before is read straight away for
+    /// whoever it was last time (the pencil on the Person tile changes it);
+    /// a new one asks whose it is first.
     public func choose(_ source: PhotoSource) {
         readingRound += 1
         self.source = source
         rows = []
         photosLine = ""
-        askingWhose = source
+        if let person = lastPerson(for: source) {
+            askingWhose = nil
+            Task { await read(source, for: person) }
+        } else {
+            askingWhose = source
+        }
     }
 
     /// Stops reading, forces the card off now and says when it can come out.
