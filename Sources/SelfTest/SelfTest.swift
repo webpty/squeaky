@@ -934,6 +934,20 @@ extension SelfTest {
         if case .saved = first { check("save: first save", true) } else { check("save: first save", false, "\(first)") }
         check("save: saved before with another location says so", { if case .failed(let w) = second { return w == "Previously saved in another location" } else { return false } }(), "\(second)")
         check("save: the same location again is already there", { if case .alreadyThere = third { return true } else { return false } }(), "\(third)")
+        // The note that Geotag added the location: in the copy, and read by the Mac's own photo reading too.
+        if case .saved(let url) = first {
+            let note = (try? tool.read(["GPSProcessingMethod"], from: url))?["GPSProcessingMethod"]
+            var mac = "-"
+            if let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+               let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+               let gps = props[kCGImagePropertyGPSDictionary] as? [CFString: Any] {
+                mac = "\(gps[kCGImagePropertyGPSProcessingMethod] ?? "-")"
+            }
+            check("save: the copy says Geotag added its location", note == "GPS coordinates added by Geotag.app"
+                  && mac == "GPS coordinates added by Geotag.app", "ExifTool: \(note ?? "-"); the Mac: \(mac)")
+            let card = (try? tool.read(["GPSProcessingMethod"], from: jpg))?["GPSProcessingMethod"]
+            check("save: the card's photo has no such note", card != Saver.processingMethod, card ?? "")
+        }
 
         // The whole flow through the app model, on a test card made of copies.
         let card = scratch.appendingPathComponent("FLOW-CARD")
@@ -1172,6 +1186,16 @@ extension SelfTest {
         let replaced = send(placed, update: true)
         check("nas: as an update, Geotag's earlier copy is replaced", replaced == .success(.replaced(there))
               && Saver.sha256(there) == Saver.sha256(placed) && hidden().isEmpty, "\(replaced) \(hidden())")
+
+        // The same photo at the same place, written by a Geotag without the note: it is there already.
+        let older = mac.appendingPathComponent("older.jpg")
+        try? fm.copyItem(at: placed, to: older)
+        _ = try? tool.run(["-q", "-q", "-overwrite_original", "-P", "-GPS:GPSProcessingMethod=", older.path])
+        let noteGone = (try? tool.read(["GPSProcessingMethod"], from: older))?["GPSProcessingMethod"] == nil
+        let current = Saver.sha256(there)
+        let same = send(older)
+        check("nas: the same photo and place, written a little differently, is already there", noteGone
+              && same == .success(.alreadyThere(there)) && Saver.sha256(there) == current, "\(same)")
 
         // Leftovers: only Geotag's own unfinished uploads, an hour old.
         let old = Date().addingTimeInterval(-7200)

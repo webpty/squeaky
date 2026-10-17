@@ -125,6 +125,9 @@ public enum NASSender {
         let samePhoto: (URL, URL) -> Bool = { a, b in
             exifTool.map { Saver(exifTool: $0, folder: folder).samePhoto(a, b) } ?? false
         }
+        let sameLocation: (URL, URL) -> Bool = { a, b in
+            exifTool.map { Saver(exifTool: $0, folder: folder).sameLocation(a, b) } ?? false
+        }
         var n = 1
         var target = folder.appendingPathComponent(name)
         var replacing = false
@@ -133,7 +136,12 @@ public enum NASSender {
                 let there = (try fm.attributesOfItem(atPath: target.path)[.size] as? NSNumber)?.uint64Value
                 if there == size, try hashOnNAS(target) == localHash { return .alreadyThere(target) }
                 if samePhoto(target, local) {
-                    guard update else { throw NASError.failed("Already on the NAS with another location") }
+                    if !update {
+                        // The same photo at the same place, its details written
+                        // a little differently (an older Geotag): it is there.
+                        if sameLocation(target, local) { return .alreadyThere(target) }
+                        throw NASError.failed("Already on the NAS with another location")
+                    }
                     replacing = true
                     break
                 }

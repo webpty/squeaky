@@ -164,6 +164,10 @@ public struct Saver: Sendable {
         return ext.isEmpty ? "\(base)_\(n)" : "\(base)_\(n).\(ext)"
     }
 
+    /// Written with every location Geotag adds, in the GPS block's own field
+    /// for how the position was found (David, 17 October 2026).
+    public static let processingMethod = "GPS coordinates added by Geotag.app"
+
     /// What ExifTool is told: every tag named in the EXIF GPS block (left to
     /// choose, ExifTool also writes XMP into a CR3 with no S or W), any old
     /// location cleared first, and nothing else touched.
@@ -183,6 +187,7 @@ public struct Saver: Sendable {
             "-GPS:GPSDateStamp=\(String(format: "%04d:%02d:%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0))",
             "-GPS:GPSTimeStamp=\(String(format: "%02d:%02d:%05.2f", c.hour ?? 0, c.minute ?? 0, seconds))",
             "-GPS:GPSMapDatum=WGS-84",
+            "-GPS:GPSProcessingMethod=\(processingMethod)",
         ]
         if let alt = p.alt {
             args += ["-GPS:GPSAltitude=\(String(format: "%.2f", abs(alt)))", "-GPS:GPSAltitudeRef=\(alt < 0 ? 1 : 0)"]
@@ -255,6 +260,9 @@ public struct Saver: Sendable {
             if abs((ref == 1 ? -a : a) - alt) > 0.01 { return "The altitude in the copy is not the one written." }
         }
         guard after["GPS:GPSDateStamp"] != nil, after["GPS:GPSTimeStamp"] != nil else { return "The GPS time is not in the copy." }
+        guard (after["GPS:GPSProcessingMethod"] as? String) == Self.processingMethod else {
+            return "The note that Geotag added the location is not in the copy."
+        }
 
         // No other detail moved.
         let changed = Self.otherDetailsChanged(before, after)

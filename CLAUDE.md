@@ -57,6 +57,14 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Write with `-P`, then copy `FileCreateDate` and `FileModifyDate` back from
   the original: ExifTool's rewrite gives the copy a new creation date.
 - GPS date and time are UTC: the capture time less `OffsetTimeOriginal`.
+- Every location Geotag writes carries `GPSProcessingMethod` = "GPS
+  coordinates added by Geotag.app" (David, 17 October 2026), in the GPS block
+  so nothing else in the photo changes; the copy check requires it. Photos
+  with their own location, and copies saved without one, get no note. The
+  app's arguments are `Saver.gpsArguments`; `Tools/gps-test.sh` is the
+  stage 2 proof and predates the note.
+- On the NAS, the same photo at the same place but written differently (a
+  copy from before the note) counts as already there.
 - Prove each copy: `ImageDataHash` equals the original's, every other tag is
   unchanged, and ImageIO opens it and reads the position.
 
