@@ -53,6 +53,14 @@ struct GeotagApp: App {
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .newItem) {}
+            // Command-comma opens Settings, in Geotag's own window.
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") {
+                    model.screen = .settings
+                    Windows.bringForward()
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
             CommandMenu("Tracks") {
                 TracksMenu(model: model)
             }

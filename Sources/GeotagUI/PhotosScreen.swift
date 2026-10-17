@@ -48,6 +48,21 @@ enum PhotoText {
 struct PhotosScreen: View {
     @EnvironmentObject var model: AppModel
     @State private var reviewOnly = false
+    @State private var columns = TableColumnCustomization<ImportRow>()
+    @AppStorage("photoColumns") private var savedColumns = Data()
+
+    /// The columns the Columns button can show or hide, in table order.
+    static let toggleable: [(id: String, title: String)] = [
+        ("preview", "Preview"), ("name", "Name"), ("taken", "Date and time"), ("camera", "Camera model"),
+        ("size", "Size"), ("status", "Status"), ("withoutLocation", "Without location"),
+    ]
+
+    private func shows(_ id: String) -> Binding<Bool> {
+        Binding(
+            get: { columns[visibility: id] != .hidden },
+            set: { columns[visibility: id] = $0 ? .visible : .hidden }
+        )
+    }
 
     private var shown: [ImportRow] {
         reviewOnly ? model.rows.filter { $0.ticked && $0.needsReview } : model.rows
@@ -131,6 +146,16 @@ struct PhotosScreen: View {
                 }
                 StatusLine(text: model.photosLine, lines: 2)
                 Spacer()
+                Menu {
+                    ForEach(Self.toggleable, id: \.id) { column in
+                        Toggle(column.title, isOn: shows(column.id))
+                    }
+                } label: {
+                    Text("Columns").buttonLabel()
+                }
+                .menuStyle(.button)
+                .fixedSize()
+                .handCursor()
                 if !model.rows.isEmpty {
                     Picker("", selection: $reviewOnly) {
                         Text("All").tag(false)
@@ -143,33 +168,40 @@ struct PhotosScreen: View {
             }
             .frame(minHeight: 40)
 
-            Table(shown) {
+            Table(shown, columnCustomization: $columns) {
                 TableColumn("") { row in
                     Toggle("", isOn: Binding(get: { row.ticked }, set: { model.setTicked(row.id, $0) }))
                         .labelsHidden()
                         .disabled(model.saving)
                 }
                 .width(24)
+                .customizationID("tick")
+                .disabledCustomizationBehavior(.visibility)
                 TableColumn("") { row in
                     PhotoPreview(url: row.photo.url)
                 }
                 .width(56)
+                .customizationID("preview")
                 TableColumn("Name") { row in
                     Text(row.photo.fileName).lineLimit(1)
                 }
                 .width(min: 100, ideal: 120)
+                .customizationID("name")
                 TableColumn("Date and time") { row in
                     Text(PhotoText.taken(row.photo)).monospacedDigit().lineLimit(1)
                 }
                 .width(min: 170, ideal: 200)
+                .customizationID("taken")
                 TableColumn("Camera model") { row in
                     Text(row.photo.model ?? "Unknown").lineLimit(1)
                 }
                 .width(min: 100, ideal: 130)
+                .customizationID("camera")
                 TableColumn("Size") { row in
                     Text(PhotoText.size(row.photo.size)).monospacedDigit().lineLimit(1)
                 }
                 .width(min: 60, ideal: 70)
+                .customizationID("size")
                 TableColumn("Status") { row in
                     if let result = model.results[row.id] {
                         switch result {
@@ -185,6 +217,7 @@ struct PhotosScreen: View {
                     }
                 }
                 .width(min: 150, ideal: 190)
+                .customizationID("status")
                 TableColumn("Without location") { row in
                     if row.needsReview {
                         Toggle("", isOn: Binding(get: { row.withoutLocation }, set: { model.setWithoutLocation(row.id, $0) }))
@@ -192,10 +225,17 @@ struct PhotosScreen: View {
                     }
                 }
                 .width(110)
+                .customizationID("withoutLocation")
             }
             .clipShape(RoundedRectangle(cornerRadius: Style.radius))
         }
         .padding(Style.pad * 1.5)
+        .onAppear {
+            if let saved = try? JSONDecoder().decode(TableColumnCustomization<ImportRow>.self, from: savedColumns) { columns = saved }
+        }
+        .onChange(of: columns) { _, now in
+            if let data = try? JSONEncoder().encode(now) { savedColumns = data }
+        }
         .sheet(item: $model.askingWhose) { source in
             WhoseCard(source: source)
         }
