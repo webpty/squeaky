@@ -16,6 +16,8 @@ public struct RootView: View {
                 .background(Color(nsColor: .windowBackgroundColor))
         }
         .navigationTitle(appName)
+        // Every word in Geotag can be selected and copied.
+        .textSelection(.enabled)
     }
 }
 

@@ -197,6 +197,7 @@ public struct TracksWindow: View {
 
     public var body: some View {
         TracksScreen()
+            .textSelection(.enabled)
             .frame(minWidth: 720, minHeight: 480)
             .background(Color(nsColor: .windowBackgroundColor))
             .overlay {

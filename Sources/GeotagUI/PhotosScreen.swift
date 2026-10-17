@@ -233,9 +233,11 @@ struct PhotosScreen: View {
         }
         .sheet(item: $model.askingWhose) { source in
             WhoseCard(source: source)
+                .textSelection(.enabled)
         }
         .sheet(isPresented: $model.aligning) {
             AlignmentView()
+                .textSelection(.enabled)
         }
     }
 }

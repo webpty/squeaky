@@ -55,6 +55,7 @@ public struct TrackViewer: View {
                 .onTapGesture { close() }
             if let index {
                 panel(model.tracks[index], at: index)
+                    .textSelection(.enabled)
                     .padding(28)
             }
         }

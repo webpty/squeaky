@@ -89,6 +89,7 @@ struct PeopleCard: View {
             PersonEditor(person: person) { saved in
                 model.save(saved)
             }
+            .textSelection(.enabled)
         }
         .alert("Remove \(removing?.name ?? "")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button("Remove", role: .destructive) {
@@ -237,6 +238,7 @@ struct CamerasCard: View {
             CameraEditor(camera: camera, people: model.book.people) { saved in
                 model.save(saved)
             }
+            .textSelection(.enabled)
         }
         .alert("Remove \(removing?.model ?? "")?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button("Remove", role: .destructive) {
