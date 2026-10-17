@@ -55,6 +55,7 @@ struct Sidebar: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .handCursor()
                     }
                 }
                 .padding(.horizontal, 10)

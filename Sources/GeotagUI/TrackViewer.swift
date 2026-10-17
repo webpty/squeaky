@@ -113,6 +113,7 @@ public struct TrackViewer: View {
                                         .strokeBorder(Color(nsColor: MapThumbnails.lineColour), lineWidth: i == index ? 3 : 0)
                                 )
                                 .onTapGesture { go(to: i) }
+                                .handCursor()
                                 .id(t.id)
                         }
                     }

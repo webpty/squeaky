@@ -78,6 +78,7 @@ struct TrackCard: View {
             .onTapGesture {
                 withAnimation(.easeInOut(duration: 0.2)) { model.viewing = track.id }
             }
+            .handCursor()
             Text(track.name)
                 .font(.headline)
                 .lineLimit(1)
@@ -105,6 +106,7 @@ struct TrackRow: View {
                 .onTapGesture {
                     withAnimation(.easeInOut(duration: 0.2)) { model.viewing = track.id }
                 }
+                .handCursor()
             VStack(alignment: .leading, spacing: 4) {
                 Text(track.name)
                     .font(.headline)

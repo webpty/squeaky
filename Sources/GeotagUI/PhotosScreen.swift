@@ -235,6 +235,7 @@ struct SourceButton: View {
                 .overlay(RoundedRectangle(cornerRadius: Style.radius).strokeBorder(Color(nsColor: .separatorColor)))
         }
         .buttonStyle(.plain)
+        .handCursor()
     }
 }
 

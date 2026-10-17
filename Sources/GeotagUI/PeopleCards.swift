@@ -17,6 +17,7 @@ struct RoundIconButton: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .handCursor()
         .accessibilityLabel(label)
     }
 }

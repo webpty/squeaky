@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// One corner radius, one padding, used everywhere.
@@ -76,7 +77,24 @@ public struct StatusLine: View {
 public extension View {
     /// One line, with room on all four sides, for every button label.
     func buttonLabel() -> some View {
-        self.lineLimit(1).padding(.vertical, 3).padding(.horizontal, 6)
+        self.lineLimit(1).padding(.vertical, 3).padding(.horizontal, 6).handCursor()
+    }
+
+    /// The pointing hand over anything that can be clicked.
+    func handCursor() -> some View {
+        modifier(HandCursor())
+    }
+}
+
+struct HandCursor: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 15, *) {
+            content.pointerStyle(.link)
+        } else {
+            content.onHover { inside in
+                if inside { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
+            }
+        }
     }
 }
 
