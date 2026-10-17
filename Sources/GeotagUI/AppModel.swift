@@ -300,7 +300,15 @@ public final class AppModel: ObservableObject {
                 if self.ejecting != bsd { self.photosLine = "\(gone?.name ?? "The card") was taken out." }
             }
         }
-        cardGuard.onProblem = { [weak self] message in self?.photosLine = message }
+        cardGuard.onProblem = { [weak self] message in
+            guard let self else { return }
+            self.photosLine = message
+            // A card went in and could not be held: show why, where it is said.
+            if self.openOnCard {
+                Windows.bringForward()
+                self.screen = .photos
+            }
+        }
         cardGuard.start()
         // On by default: the first time, Geotag joins the Login Items.
         if defaults.object(forKey: "openOnCard") == nil { setOpenOnCard(true) }

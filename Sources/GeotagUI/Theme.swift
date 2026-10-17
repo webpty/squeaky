@@ -54,18 +54,22 @@ public struct ScreenTitle: View {
 /// A line that is always there, so nothing shifts when a message appears.
 public struct StatusLine: View {
     let text: String
+    let lines: Int
 
-    public init(text: String) {
+    public init(text: String, lines: Int = 1) {
         self.text = text
+        self.lines = lines
     }
 
+    /// Its height is kept whether there is anything to say or not.
     public var body: some View {
         Text(text)
             .font(.callout)
             .foregroundStyle(text.isEmpty ? .clear : .secondary)
-            .lineLimit(1)
+            .lineLimit(lines, reservesSpace: true)
             .truncationMode(.tail)
-            .frame(height: 18, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(alignment: .topLeading)
     }
 }
 

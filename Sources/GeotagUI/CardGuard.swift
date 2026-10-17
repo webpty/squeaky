@@ -145,7 +145,10 @@ public final class CardGuard {
                 return
             }
             opening.remove(bsd)
-            onProblem("\(name) could not be opened (\(Self.words(status!))).")
+            log.info("could not open \(bsd, privacy: .public) read-only: \(Self.words(status!), privacy: .public)")
+            // The usual cause: the card was taken out without being ejected,
+            // and the Mac will only open it after repairing it, which writes.
+            onProblem("\(name) can't be read until it is repaired, and Geotag never writes to a card, so it stays closed. This usually happens when a card is taken out without Eject.")
             return
         }
         opening.remove(bsd)

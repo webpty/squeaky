@@ -109,7 +109,7 @@ struct PhotosScreen: View {
 
             HStack(spacing: 8) {
                 if model.photosBusy { ProgressView().controlSize(.small) }
-                StatusLine(text: model.photosLine)
+                StatusLine(text: model.photosLine, lines: 2)
                 Spacer()
                 if !model.rows.isEmpty {
                     Picker("", selection: $reviewOnly) {
@@ -121,7 +121,7 @@ struct PhotosScreen: View {
                     .fixedSize()
                 }
             }
-            .frame(height: 24)
+            .frame(minHeight: 40)
 
             Table(shown) {
                 TableColumn("") { row in
