@@ -39,16 +39,15 @@ public final class CardGuard {
         self.accepts = accepts ?? CardGuard.cardLike
     }
 
-    /// Not inside the Mac, FAT or exFAT, and removable, ejectable or on a
-    /// card reader: what a camera card is.
+    /// Not inside the Mac, FAT or exFAT: what a camera card is, in any kind of
+    /// reader. SD readers call themselves removable; CFexpress, CFast and XQD
+    /// readers often call themselves fixed disks on USB or Thunderbolt, so the
+    /// reader's own words are not asked for. A disk with no DCIM folder is
+    /// let through as usual.
     public nonisolated static func cardLike(_ d: [String: Any]) -> Bool {
         let kind = (d[kDADiskDescriptionVolumeKindKey as String] as? String)?.lowercased() ?? ""
         guard ["msdos", "exfat", "fat32", "vfat"].contains(kind) else { return false }
-        if d[kDADiskDescriptionDeviceInternalKey as String] as? Bool == true { return false }
-        let protocolName = (d[kDADiskDescriptionDeviceProtocolKey as String] as? String)?.lowercased() ?? ""
-        return d[kDADiskDescriptionMediaRemovableKey as String] as? Bool == true
-            || d[kDADiskDescriptionMediaEjectableKey as String] as? Bool == true
-            || ["usb", "secure digital", "sd", "sdxc"].contains(protocolName)
+        return d[kDADiskDescriptionDeviceInternalKey as String] as? Bool != true
     }
 
     private static func summary(_ d: [String: Any]) -> String {
