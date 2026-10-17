@@ -628,6 +628,15 @@ extension SelfTest {
     /// It must open it hidden and read-only, then force it off and eject it.
     @MainActor
     static func guardTest(_ scratch: URL) async {
+        await guardRun(scratch, refuse: true)
+        await guardRun(scratch, refuse: false)
+    }
+
+    /// With `refuse` off, the Mac opens the test disk itself first and the
+    /// guard must take it over.
+    @MainActor
+    static func guardRun(_ scratch: URL, refuse: Bool) async {
+        let label = refuse ? "guard" : "guard, opened first"
         func run(_ tool: String, _ args: [String]) -> (Int32, String) {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: tool)
@@ -643,12 +652,14 @@ extension SelfTest {
         let src = scratch.appendingPathComponent("guard-src")
         try? FileManager.default.createDirectory(at: src.appendingPathComponent("GEOTAG_TEST"), withIntermediateDirectories: true)
         try? "x".write(to: src.appendingPathComponent("GEOTAG_TEST/a.txt"), atomically: true, encoding: .utf8)
-        let image = scratch.appendingPathComponent("guard.dmg")
-        guard run("/usr/bin/hdiutil", ["create", "-quiet", "-srcfolder", src.path, "-volname", "GTTEST", "-fs", "ExFAT", image.path]).0 == 0 else {
-            check("guard: test disk made", false)
+        // The Mac's own format, so a Geotag running on this Mac, which only
+        // looks at FAT and exFAT cards, leaves the test disk alone.
+        let image = scratch.appendingPathComponent("guard-\(refuse).dmg")
+        guard run("/usr/bin/hdiutil", ["create", "-quiet", "-srcfolder", src.path, "-volname", "GTTEST", "-fs", "HFS+", image.path]).0 == 0 else {
+            check("\(label): test disk made", false)
             return
         }
-        let guardian = CardGuard(marker: "GEOTAG_TEST") { d in d[kDADiskDescriptionVolumeNameKey as String] as? String == "GTTEST" }
+        let guardian = CardGuard(marker: "GEOTAG_TEST", refuseAtApproval: refuse) { d in d[kDADiskDescriptionVolumeNameKey as String] as? String == "GTTEST" }
         var heldCard: PhotoSource?
         var gone: [String] = []
         var problems: [String] = []
@@ -658,14 +669,14 @@ extension SelfTest {
         guardian.start()
         _ = run("/usr/bin/hdiutil", ["attach", "-nobrowse", image.path])
         for _ in 0..<80 where heldCard == nil { spin(0.05); try? await Task.sleep(for: .milliseconds(50)) }
-        check("guard: the card is held", heldCard != nil, problems.joined(separator: " "))
+        check("\(label): the card is held", heldCard != nil, problems.joined(separator: " "))
         guard let card = heldCard, let bsd = card.bsd else { return }
         let line = run("/sbin/mount", []).1.split(separator: "\n").first { $0.contains(card.url.path) }.map(String.init) ?? ""
-        check("guard: opened read-only", line.contains("read-only"), line)
-        check("guard: hidden from Finder", line.contains("nobrowse"), line)
+        check("\(label): opened read-only", line.contains("read-only"), line)
+        check("\(label): hidden from Finder", line.contains("nobrowse"), line)
         let wrote = FileManager.default.createFile(atPath: card.url.appendingPathComponent("written.txt").path, contents: Data("x".utf8))
-        check("guard: nothing can be written to it", !wrote)
-        check("guard: still readable", (try? String(contentsOf: card.url.appendingPathComponent("GEOTAG_TEST/a.txt"), encoding: .utf8)) == "x")
+        check("\(label): nothing can be written to it", !wrote)
+        check("\(label): still readable", (try? String(contentsOf: card.url.appendingPathComponent("GEOTAG_TEST/a.txt"), encoding: .utf8)) == "x")
 
         // Something holding a file open does not stop the eject.
         let handle = FileHandle(forReadingAtPath: card.url.appendingPathComponent("GEOTAG_TEST/a.txt").path)
@@ -674,11 +685,11 @@ extension SelfTest {
         guardian.eject(bsd) { answer = .some($0) }
         for _ in 0..<100 where answer == nil { spin(0.05); try? await Task.sleep(for: .milliseconds(50)) }
         let took = Date().timeIntervalSince(started)
-        check("guard: ejected at once, a file open or not", answer == .some(nil), "\(String(describing: answer)) in \(String(format: "%.1f", took)) s")
-        check("guard: within two seconds", took < 2)
+        check("\(label): ejected at once, a file open or not", answer == .some(nil), "\(String(describing: answer)) in \(String(format: "%.1f", took)) s")
+        check("\(label): within two seconds", took < 2)
         for _ in 0..<40 where gone.isEmpty { spin(0.05); try? await Task.sleep(for: .milliseconds(50)) }
-        check("guard: told the card is gone", gone == [bsd], "\(gone)")
-        check("guard: no longer attached", !run("/usr/bin/hdiutil", ["info"]).1.contains(image.path))
+        check("\(label): told the card is gone", gone == [bsd], "\(gone)")
+        check("\(label): no longer attached", !run("/usr/bin/hdiutil", ["info"]).1.contains(image.path))
         try? handle?.close()
     }
 }

@@ -1,6 +1,9 @@
 import AppKit
 import DiskArbitration
 import GeotagCore
+import os
+
+private let log = Logger(subsystem: "com.webpty.geotag", category: "cards")
 
 /// Holds camera cards for Geotag alone. A card going in is stopped before the
 /// Mac opens it for everyone, then opened by Geotag hidden and read-only, so
@@ -26,18 +29,33 @@ public final class CardGuard {
     private var attemptsStarted: Set<String> = []
     private(set) public var held: [String: PhotoSource] = [:]
 
-    public init(marker: String = "DCIM", accepts: (@Sendable ([String: Any]) -> Bool)? = nil) {
+    /// Whether to refuse the Mac's own opening; off only in tests of taking
+    /// over a card the Mac has already opened.
+    let refuseAtApproval: Bool
+
+    public init(marker: String = "DCIM", refuseAtApproval: Bool = true, accepts: (@Sendable ([String: Any]) -> Bool)? = nil) {
         self.marker = marker
+        self.refuseAtApproval = refuseAtApproval
         self.accepts = accepts ?? CardGuard.cardLike
     }
 
-    /// External, removable or ejectable, FAT or exFAT: what a camera card is.
+    /// Not inside the Mac, FAT or exFAT, and removable, ejectable or on a
+    /// card reader: what a camera card is.
     public nonisolated static func cardLike(_ d: [String: Any]) -> Bool {
         let kind = (d[kDADiskDescriptionVolumeKindKey as String] as? String)?.lowercased() ?? ""
-        guard ["msdos", "exfat"].contains(kind) else { return false }
+        guard ["msdos", "exfat", "fat32", "vfat"].contains(kind) else { return false }
         if d[kDADiskDescriptionDeviceInternalKey as String] as? Bool == true { return false }
+        let protocolName = (d[kDADiskDescriptionDeviceProtocolKey as String] as? String)?.lowercased() ?? ""
         return d[kDADiskDescriptionMediaRemovableKey as String] as? Bool == true
             || d[kDADiskDescriptionMediaEjectableKey as String] as? Bool == true
+            || ["usb", "secure digital", "sd", "sdxc"].contains(protocolName)
+    }
+
+    private static func summary(_ d: [String: Any]) -> String {
+        [kDADiskDescriptionVolumeKindKey, kDADiskDescriptionVolumeNameKey, kDADiskDescriptionMediaRemovableKey,
+         kDADiskDescriptionMediaEjectableKey, kDADiskDescriptionDeviceInternalKey, kDADiskDescriptionDeviceProtocolKey]
+            .map { "\(($0 as String).replacingOccurrences(of: "DA", with: ""))=\(d[$0 as String].map { "\($0)" } ?? "-")" }
+            .joined(separator: " ")
     }
 
     private static func description(_ disk: DADisk) -> [String: Any] {
@@ -73,7 +91,11 @@ public final class CardGuard {
     // MARK: Going in
 
     private func approve(_ disk: DADisk) -> Unmanaged<DADissenter>? {
-        guard let bsd = Self.bsdName(disk), accepts(Self.description(disk)) else { return nil }
+        guard let bsd = Self.bsdName(disk) else { return nil }
+        let d = Self.description(disk)
+        let card = accepts(d)
+        log.info("mount asked for \(bsd, privacy: .public): \(Self.summary(d), privacy: .public) card=\(card)")
+        guard card, refuseAtApproval else { return nil }
         if opening.contains(bsd) || letThrough.contains(bsd) { return nil }
         DispatchQueue.main.async { [weak self] in self?.openHidden(disk) }
         return Unmanaged.passRetained(DADissenterCreate(kCFAllocatorDefault, DAReturn(kDAReturnNotPermitted), "Held by Geotag" as CFString))
@@ -160,37 +182,57 @@ public final class CardGuard {
         guard let session else { return }
         let volumes = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: nil, options: []) ?? []
         for url in volumes {
-            guard let disk = DADiskCreateFromVolumePath(kCFAllocatorDefault, session, url as CFURL),
-                  let bsd = Self.bsdName(disk), accepts(Self.description(disk)), hasMarker(url) else { continue }
-            let values = try? url.resourceValues(forKeys: [.volumeIsReadOnlyKey, .volumeIsBrowsableKey])
-            if values?.volumeIsReadOnly == true, values?.volumeIsBrowsable == false {
-                hold(disk, at: url)
-                continue
-            }
-            let me = Unmanaged.passUnretained(self).toOpaque()
-            opening.insert(bsd)
-            DADiskUnmount(disk, DADiskUnmountOptions(kDADiskUnmountOptionDefault), { disk, dissenter, context in
-                let guardian = Unmanaged<CardGuard>.fromOpaque(context!).takeUnretainedValue()
-                let busy = dissenter != nil
-                MainActor.assumeIsolated {
-                    if busy {
-                        guardian.opening.remove(DADiskGetBSDName(disk).map { String(cString: $0) } ?? "")
-                        if let url = (DADiskCopyDescription(disk) as? [String: Any])?[kDADiskDescriptionVolumePathKey as String] as? URL {
-                            guardian.hold(disk, at: url)
-                        }
-                    } else {
-                        guardian.openHidden(disk)
-                    }
-                }
-            }, me)
+            guard let disk = DADiskCreateFromVolumePath(kCFAllocatorDefault, session, url as CFURL) else { continue }
+            let d = Self.description(disk)
+            guard accepts(d), hasMarker(url) else { continue }
+            log.info("already open at start: \(Self.summary(d), privacy: .public)")
+            takeOver(disk, at: url)
         }
     }
 
     // MARK: Coming out
 
     private func pathChanged(_ disk: DADisk) {
-        guard let bsd = Self.bsdName(disk), held[bsd] != nil else { return }
-        if Self.description(disk)[kDADiskDescriptionVolumePathKey as String] == nil { gone(bsd) }
+        guard let bsd = Self.bsdName(disk) else { return }
+        let d = Self.description(disk)
+        let url = d[kDADiskDescriptionVolumePathKey as String] as? URL
+        if held[bsd] != nil {
+            if url == nil { gone(bsd) }
+            return
+        }
+        // Opened by the Mac after all: take it over, hidden and read-only.
+        guard let url, !opening.contains(bsd), !letThrough.contains(bsd), accepts(d), hasMarker(url) else { return }
+        log.info("opened by the Mac, taking over \(bsd, privacy: .public)")
+        takeOver(disk, at: url)
+    }
+
+    /// Closes a card the Mac opened and opens it again hidden. One another app
+    /// will not let go of is used as it is.
+    private func takeOver(_ disk: DADisk, at url: URL) {
+        guard let bsd = Self.bsdName(disk) else { return }
+        let values = try? url.resourceValues(forKeys: [.volumeIsReadOnlyKey, .volumeIsBrowsableKey])
+        if values?.volumeIsReadOnly == true, values?.volumeIsBrowsable == false {
+            hold(disk, at: url)
+            return
+        }
+        let me = Unmanaged.passUnretained(self).toOpaque()
+        opening.insert(bsd)
+        DADiskUnmount(disk, DADiskUnmountOptions(kDADiskUnmountOptionDefault), { disk, dissenter, context in
+            let guardian = Unmanaged<CardGuard>.fromOpaque(context!).takeUnretainedValue()
+            let refused = dissenter.map { DADissenterGetStatus($0) }
+            MainActor.assumeIsolated {
+                let bsd = DADiskGetBSDName(disk).map { String(cString: $0) } ?? ""
+                guardian.opening.remove(bsd)
+                if let refused {
+                    log.info("could not close \(bsd, privacy: .public): \(CardGuard.words(refused), privacy: .public); used as it is")
+                    if let url = (DADiskCopyDescription(disk) as? [String: Any])?[kDADiskDescriptionVolumePathKey as String] as? URL {
+                        guardian.hold(disk, at: url)
+                    }
+                } else {
+                    guardian.openHidden(disk)
+                }
+            }
+        }, me)
     }
 
     private func disappeared(_ disk: DADisk) {
