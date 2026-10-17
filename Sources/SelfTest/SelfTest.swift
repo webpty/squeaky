@@ -593,11 +593,9 @@ extension SelfTest {
         check("place: the slider's extra seconds", Matcher.place(photo("2026:10:16 12:00:15", zone: "-03:00"), camera: cam, timeline: timeline, gap: 120, extraOffset: 600) == .review(.noTrack))
 
         var row = ImportRow(photo: p, status: .new, ticked: true, placement: .review(.noTrack))
-        check("import: review is held back", !row.willImport)
-        row.withoutLocation = true
-        check("import: unless let through without a location", row.willImport)
+        check("import: a photo that can't be placed is still saved", row.willImport)
         row.ticked = false
-        check("import: never when unticked", !row.willImport)
+        check("import: a photo imported before is not saved again", !row.willImport)
 
         // Existing GPS read from a photo.
         let located = scratch.appendingPathComponent("located.jpg"), bare = scratch.appendingPathComponent("bare.jpg")

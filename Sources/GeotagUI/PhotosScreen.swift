@@ -54,7 +54,7 @@ struct PhotosScreen: View {
     /// The columns the Columns button can show or hide, in table order.
     static let toggleable: [(id: String, title: String)] = [
         ("preview", "Preview"), ("name", "Name"), ("taken", "Date and time"), ("camera", "Camera model"),
-        ("size", "Size"), ("status", "Status"), ("withoutLocation", "Without location"),
+        ("size", "Size"), ("status", "Status"),
     ]
 
     private func shows(_ id: String) -> Binding<Bool> {
@@ -71,7 +71,7 @@ struct PhotosScreen: View {
     private var counts: (photos: Int, fresh: Int, before: Int, review: Int) {
         let rows = model.rows
         let fresh = rows.filter { $0.status != .alreadyImported }.count
-        let review = rows.filter { $0.ticked && $0.needsReview && !$0.withoutLocation }.count
+        let review = rows.filter { $0.ticked && $0.needsReview }.count
         return (rows.count, fresh, rows.count - fresh, review)
     }
 
@@ -134,7 +134,7 @@ struct PhotosScreen: View {
                 Tile(label: "Photos", value: ready ? c.photos.formatted() : "0")
                 Tile(label: "New", value: ready ? c.fresh.formatted() : "0")
                 Tile(label: "Imported before", value: ready ? c.before.formatted() : "0")
-                Tile(label: "To review", value: ready ? c.review.formatted() : "0")
+                Tile(label: "Without location", value: ready ? c.review.formatted() : "0")
             }
 
             HStack(spacing: 8) {
@@ -159,7 +159,7 @@ struct PhotosScreen: View {
                 if !model.rows.isEmpty {
                     Picker("", selection: $reviewOnly) {
                         Text("All").tag(false)
-                        Text("Review (\(c.review))").tag(true)
+                        Text("Without location (\(c.review))").tag(true)
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
@@ -221,14 +221,6 @@ struct PhotosScreen: View {
                 }
                 .width(min: 150, ideal: 190)
                 .customizationID("status")
-                TableColumn("Without location") { row in
-                    if row.needsReview {
-                        Toggle("", isOn: Binding(get: { row.withoutLocation }, set: { model.setWithoutLocation(row.id, $0) }))
-                            .labelsHidden()
-                    }
-                }
-                .width(110)
-                .customizationID("withoutLocation")
             }
             .clipShape(RoundedRectangle(cornerRadius: Style.radius))
         }

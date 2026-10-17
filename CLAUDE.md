@@ -219,6 +219,14 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   CR2, and COOLPIX P950 NRW (published samples from raw.pixls.us); HEIF not
   yet, nobody has supplied one.
 
+## Dump, tag and save (17 October 2026)
+
+- Geotag is not a sorting app (David: "it's dump, tag and save; triage can
+  happen later"). No tick boxes or choices per photo: every new photo on a
+  card is saved, with its location when it can be placed and without one
+  otherwise (the reason shows in Status, the count in the Without location
+  tile). A checkmark icon marks saved photos; never a checkbox for status.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

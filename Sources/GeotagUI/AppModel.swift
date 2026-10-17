@@ -390,7 +390,8 @@ public final class AppModel: ObservableObject {
         for row in todo {
             if stopAsked || readingRound != round || self.source?.id != source.id { break }
             photosLine = "Saving \(saveDone + 1) of \(saveTotal)"
-            let item = SaveItem(photo: row.photo, placement: row.placement ?? .review(.noTrack), withoutLocation: row.withoutLocation)
+            // A photo that cannot be placed is saved as it is, without a location.
+            let item = SaveItem(photo: row.photo, placement: row.placement ?? .review(.noTrack), withoutLocation: row.needsReview)
             let result = await Task.detached { saver.save(item) }.value
             results[row.id] = result
             saveDone += 1
@@ -428,6 +429,8 @@ public final class AppModel: ObservableObject {
         let stopped = saveDone < saveTotal
         var line = stopped ? "Stopped after \(saveDone) of \(saveTotal)." : "\(savedCount) saved."
         if stopped { line += " \(savedCount) saved." }
+        let unplaced = todo.filter { $0.needsReview && results[$0.id]?.url != nil }.count
+        if unplaced > 0 { line += " \(unplaced) of them without a location: see the Status column." }
         if failedCount > 0 { line += " \(failedCount) not saved: see the Status column." }
         if results.values.contains(.failed(Saver.diskFull)) { line = "Stopped: \(Saver.diskFull) \(savedCount) saved before that." }
         photosLine = line

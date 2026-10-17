@@ -196,13 +196,11 @@ public struct ImportRow: Identifiable, Equatable, Sendable {
         return false
     }
 
-    /// Ticked, and either placed or let through without a location.
+    /// Dump, tag and save (David, 17 October 2026): every new photo is saved,
+    /// with its location when it has one and without when it cannot be placed.
+    /// Sorting happens later, elsewhere.
     public var willImport: Bool {
-        guard ticked, let placement else { return false }
-        switch placement {
-        case .matched, .ownLocation: return true
-        case .review: return withoutLocation
-        }
+        ticked && placement != nil
     }
 }
 
