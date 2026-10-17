@@ -521,9 +521,10 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    public func setTicked(_ id: String, _ on: Bool) {
-        guard let i = rows.firstIndex(where: { $0.id == id }) else { return }
-        rows[i].ticked = on
+    /// Saved now, or imported on an earlier card.
+    public func isSaved(_ row: ImportRow) -> Bool {
+        if let result = results[row.id] { return result.url != nil }
+        return row.status == .alreadyImported
     }
 
     public func setWithoutLocation(_ id: String, _ on: Bool) {

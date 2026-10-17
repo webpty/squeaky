@@ -170,12 +170,15 @@ struct PhotosScreen: View {
 
             Table(shown, columnCustomization: $columns) {
                 TableColumn("") { row in
-                    Toggle("", isOn: Binding(get: { row.ticked }, set: { model.setTicked(row.id, $0) }))
-                        .labelsHidden()
-                        .disabled(model.saving)
+                    // A checkmark once the photo is saved, now or on an earlier card.
+                    if model.isSaved(row) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .accessibilityLabel("Saved")
+                    }
                 }
                 .width(24)
-                .customizationID("tick")
+                .customizationID("done")
                 .disabledCustomizationBehavior(.visibility)
                 TableColumn("") { row in
                     PhotoPreview(url: row.photo.url)
