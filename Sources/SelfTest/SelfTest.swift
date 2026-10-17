@@ -33,6 +33,7 @@ struct SelfTest {
         try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
 
         people(scratch)
+        cardKinds()
         cards(scratch)
         matching(scratch)
         names()
@@ -707,5 +708,26 @@ extension SelfTest {
         check("dates: year month day", When(order: .yearMonthDay).day(d, zone: utc) == "2026-10-16")
         check("dates: 24-hour clock", When(clock24: true).time(d, zone: utc, seconds: true) == "14:05:09")
         check("dates: 12-hour clock", When(clock24: false).time(d, zone: utc).hasPrefix("2:05"), When(clock24: false).time(d, zone: utc))
+    }
+}
+
+extension SelfTest {
+    /// Which disks the guard takes for cards.
+    static func cardKinds() {
+        func d(_ kind: String, name: String = "EOS_DIGITAL", internal: Bool = false, removable: Bool = true, ejectable: Bool = true,
+               content: String = "Windows_NTFS", proto: String = "USB") -> [String: Any] {
+            [kDADiskDescriptionVolumeKindKey as String: kind, kDADiskDescriptionVolumeNameKey as String: name,
+             kDADiskDescriptionDeviceInternalKey as String: internal, kDADiskDescriptionMediaRemovableKey as String: removable,
+             kDADiskDescriptionMediaEjectableKey as String: ejectable, kDADiskDescriptionMediaContentKey as String: content,
+             kDADiskDescriptionDeviceProtocolKey as String: proto, kDADiskDescriptionVolumeMountableKey as String: true]
+        }
+        check("card kinds: an SD card", CardGuard.cardLike(d("exfat")))
+        check("card kinds: a CFexpress card in a reader that calls itself fixed",
+              CardGuard.cardLike(d("exfat", removable: false, ejectable: false, proto: "PCI-Express")))
+        check("card kinds: a FAT card", CardGuard.cardLike(d("msdos", content: "DOS_FAT_32")))
+        check("card kinds: not a drive's hidden start-up part",
+              !CardGuard.cardLike(d("msdos", name: "EFI", removable: false, content: "C12A7328-F81F-11D2-BA4B-00A0C93EC93B")))
+        check("card kinds: not the Mac's own disk", !CardGuard.cardLike(d("exfat", internal: true)))
+        check("card kinds: not an APFS or HFS drive", !CardGuard.cardLike(d("apfs")) && !CardGuard.cardLike(d("hfs")))
     }
 }

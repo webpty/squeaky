@@ -47,7 +47,12 @@ public final class CardGuard {
     public nonisolated static func cardLike(_ d: [String: Any]) -> Bool {
         let kind = (d[kDADiskDescriptionVolumeKindKey as String] as? String)?.lowercased() ?? ""
         guard ["msdos", "exfat", "fat32", "vfat"].contains(kind) else { return false }
-        return d[kDADiskDescriptionDeviceInternalKey as String] as? Bool != true
+        guard d[kDADiskDescriptionDeviceInternalKey as String] as? Bool != true else { return false }
+        // A drive's hidden start-up partition is FAT too, and never a card.
+        let content = (d[kDADiskDescriptionMediaContentKey as String] as? String)?.uppercased() ?? ""
+        let name = (d[kDADiskDescriptionVolumeNameKey as String] as? String)?.uppercased() ?? ""
+        if content == "EFI" || content == "C12A7328-F81F-11D2-BA4B-00A0C93EC93B" || name == "EFI" { return false }
+        return d[kDADiskDescriptionVolumeMountableKey as String] as? Bool != false
     }
 
     private static func summary(_ d: [String: Any]) -> String {
@@ -153,9 +158,10 @@ public final class CardGuard {
             }
             opening.remove(bsd)
             log.info("could not open \(bsd, privacy: .public) read-only: \(Self.words(status!), privacy: .public)")
-            // The usual cause: the card was taken out without being ejected,
-            // and the Mac will only open it after repairing it, which writes.
-            onProblem("\(name) can't be read until it is repaired, and Geotag never writes to a card, so it stays closed. This usually happens when a card is taken out without Eject.")
+            // The usual cause: the card was taken out without Eject while the
+            // Mac had it open; it then carries a mark the Mac insists on
+            // clearing before it will open it, which writes to it.
+            onProblem("\(name) was taken out without Eject last time, so the Mac won't open it read-only. Geotag never writes to a card: quit Geotag, open the card once in Finder, eject it, then open Geotag and put it back in.")
             return
         }
         opening.remove(bsd)
