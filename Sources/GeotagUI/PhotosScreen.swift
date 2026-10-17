@@ -22,16 +22,16 @@ enum PhotoText {
     static func location(_ row: ImportRow, gap: Int) -> String {
         guard let placement = row.placement else { return "" }
         switch placement {
-        case .matched(let p): return p.fromPoint == 0 ? "Matched" : "Matched, \(p.fromPoint) s from the track"
+        case .matched(let p): return p.fromPoint == 0 ? "Location matched" : "Location matched, \(p.fromPoint) s from the track"
         case .ownLocation: return "Own location"
         case .review(let reason):
             switch reason {
             case .noTrack: return "No track within \(gap / 60) min"
-            case .offsetNotSet: return "Camera offset not set"
+            case .offsetNotSet: return "Camera time offset not set"
             case .zoneNotSet: return "Camera time zone not set"
             case .noZoneInPhoto: return "No time zone in the photo"
             case .noTime: return "No time in the photo"
-            case .unknownCamera: return "Camera not on the list"
+            case .unknownCamera: return "Camera not registered"
             }
         }
     }
@@ -39,8 +39,8 @@ enum PhotoText {
     static func status(_ status: ImportStatus) -> String {
         switch status {
         case .new: return "New"
-        case .alreadyImported: return "Imported before"
-        case .unknownCamera: return "Camera not on the list"
+        case .alreadyImported: return "Already imported"
+        case .unknownCamera: return "Camera not registered"
         }
     }
 }
@@ -133,7 +133,7 @@ struct PhotosScreen: View {
                 }
                 Tile(label: "Photos", value: ready ? c.photos.formatted() : "0")
                 Tile(label: "New", value: ready ? c.fresh.formatted() : "0")
-                Tile(label: "Imported before", value: ready ? c.before.formatted() : "0")
+                Tile(label: "Already imported", value: ready ? c.before.formatted() : "0")
                 Tile(label: "Without location", value: ready ? c.review.formatted() : "0")
             }
 

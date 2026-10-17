@@ -105,6 +105,8 @@ public final class AppModel: ObservableObject {
     private let peopleStore: PeopleStorePort
     private let history: HistoryStorePort
     private let queue: QueueStorePort
+    private let unplaced: UnplacedStorePort
+    @Published public private(set) var placingLater = false
     private let exifTool: ExifTool?
     private let cardGuard = CardGuard()
     /// Bumped whenever reading should stop: a new card chosen, or an eject.
@@ -122,6 +124,7 @@ public final class AppModel: ObservableObject {
                 peopleStore: PeopleStorePort = PeopleStoreFile.standard(),
                 history: HistoryStorePort = HistoryStoreFolder.standard(),
                 queue: QueueStorePort = QueueStoreFile.standard(),
+                unplaced: UnplacedStorePort = UnplacedStoreFile.standard(),
                 secrets: SecretStorePort = Keychain(),
                 thumbnails: MapThumbnails? = nil,
                 exifTool: ExifTool? = nil) {
@@ -131,6 +134,7 @@ public final class AppModel: ObservableObject {
         self.peopleStore = peopleStore
         self.history = history
         self.queue = queue
+        self.unplaced = unplaced
         self.secrets = secrets
         openOnCard = defaults.object(forKey: "openOnCard") as? Bool ?? true
         if defaults.object(forKey: "maxGapSeconds") != nil { maxGapSeconds = defaults.integer(forKey: "maxGapSeconds") }
@@ -368,6 +372,9 @@ public final class AppModel: ObservableObject {
         }
         let todo = readyToSave
         guard !todo.isEmpty else { return }
+        // Earlier photos being placed write the same records: wait for them.
+        while placingLater { try? await Task.sleep(for: .milliseconds(200)) }
+        var later = (try? unplaced.load()) ?? []
         let saver = Saver(exifTool: tool, folder: URL(fileURLWithPath: folder, isDirectory: true))
         await Task.detached { saver.clearLeftovers() }.value
         let round = readingRound
@@ -399,6 +406,12 @@ public final class AppModel: ObservableObject {
             case .saved(let url):
                 savedCount += 1
                 remember(row.photo)
+                // Saved without a location: kept on the list to be placed later,
+                // unless it has no time at all and never can be.
+                if case .review(let reason)? = row.placement, reason != .noTime,
+                   !later.contains(where: { $0.localPath == url.path }) {
+                    later.append(UnplacedEntry(personId: personId, localPath: url.path, photo: row.photo))
+                }
                 let relative = "\(url.deletingLastPathComponent().lastPathComponent)/\(url.lastPathComponent)"
                 waiting.append(QueueEntry(personId: personId, localPath: url.path, relativePath: relative))
             case .alreadyThere:
@@ -415,6 +428,7 @@ public final class AppModel: ObservableObject {
             // Written after every photo, so a crash or a pulled card loses nothing.
             try? history.save(personId, past)
             try? queue.save(waiting)
+            try? unplaced.save(later)
         }
 
         // What was saved now counts as imported before.
@@ -432,7 +446,7 @@ public final class AppModel: ObservableObject {
         let unplaced = todo.filter { $0.needsReview && results[$0.id]?.url != nil }.count
         if unplaced > 0 { line += " \(unplaced) of them without a location: see the Status column." }
         if failedCount > 0 { line += " \(failedCount) not saved: see the Status column." }
-        if results.values.contains(.failed(Saver.diskFull)) { line = "Stopped: \(Saver.diskFull) \(savedCount) saved before that." }
+        if results.values.contains(.failed(Saver.diskFull)) { line = "Stopped: \(Saver.diskFull.lowercased()). \(savedCount) saved before that." }
         photosLine = line
     }
 
@@ -572,12 +586,57 @@ public final class AppModel: ObservableObject {
     /// Every photo placed again: after a card is read, a camera changes, the
     /// gap changes, or new tracks arrive.
     public func rematch() {
+        Task { await placeLater() }
         guard let personId = importPerson, !rows.isEmpty else { return }
         for i in rows.indices {
             let photo = rows[i].photo
             let camera = photo.model.flatMap { book.camera(personId: personId, model: $0) }
             rows[i].placement = Matcher.place(photo, camera: camera, timeline: timeline, gap: maxGapSeconds)
         }
+    }
+
+    /// Photos saved earlier without a location, tried again: a camera's offset
+    /// or zone may have been set, the gap changed, or new tracks arrived. Each
+    /// that can now be placed gets the location written into its copy on this
+    /// Mac, checked like any save, and goes on the upload queue again.
+    public func placeLater() async {
+        guard !placingLater, !saving, let tool = exifTool else { return }
+        let entries = (try? unplaced.load()) ?? []
+        guard !entries.isEmpty else { return }
+        placingLater = true
+        defer { placingLater = false }
+        await loadTimeline()
+        var waiting = (try? queue.load()) ?? []
+        var keep: [UnplacedEntry] = []
+        var placed = 0
+        var problems: [String] = []
+        for entry in entries {
+            // Moved or removed since by its owner: nothing to place.
+            guard FileManager.default.fileExists(atPath: entry.localPath) else { continue }
+            let camera = entry.model.flatMap { book.camera(personId: entry.personId, model: $0) }
+            guard case .matched(let position) = Matcher.place(entry.photo, camera: camera, timeline: timeline, gap: maxGapSeconds) else {
+                keep.append(entry)
+                continue
+            }
+            let url = URL(fileURLWithPath: entry.localPath)
+            let saver = Saver(exifTool: tool, folder: url.deletingLastPathComponent().deletingLastPathComponent())
+            if let problem = await Task.detached(operation: { saver.addLocation(to: url, position) }).value {
+                problems.append("\(entry.fileName): \(problem)")
+                keep.append(entry)
+                continue
+            }
+            placed += 1
+            if !waiting.contains(where: { $0.localPath == entry.localPath && $0.state == "waiting" }) {
+                waiting.append(QueueEntry(personId: entry.personId, localPath: entry.localPath,
+                                          relativePath: "\(url.deletingLastPathComponent().lastPathComponent)/\(url.lastPathComponent)"))
+            }
+        }
+        try? unplaced.save(keep)
+        try? queue.save(waiting)
+        guard placed > 0 || !problems.isEmpty, !photosBusy, !saving else { return }
+        var line = placed == 0 ? "" : placed == 1 ? "1 photo saved earlier now has its location." : "\(placed) photos saved earlier now have their location."
+        if let first = problems.first { line += (line.isEmpty ? "" : " ") + "Not placed: \(first)" }
+        photosLine = line
     }
 
     /// Ticked photos whose camera is known and whose time can be read: the
@@ -620,7 +679,7 @@ public final class AppModel: ObservableObject {
         let report = await library.refresh(service: service, role: role, pullStrava: pullStrava)
         tracks = await library.listed()
         tracksLine = report.line
-        if !rows.isEmpty {
+        if !rows.isEmpty || report.added > 0 {
             await loadTimeline()
             rematch()
         }

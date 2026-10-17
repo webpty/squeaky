@@ -37,6 +37,7 @@ struct SelfTest {
             saving(scratch, samples: URL(fileURLWithPath: samples),
                    raws: ProcessInfo.processInfo.environment["GEOTAG_RAWS"].map { URL(fileURLWithPath: $0) })
             await savingEdges(scratch, samples: URL(fileURLWithPath: samples))
+            await placingLater(scratch, samples: URL(fileURLWithPath: samples))
         }
         cardKinds()
         cards(scratch)
@@ -895,7 +896,7 @@ extension SelfTest {
         let second = saver.save(SaveItem(photo: photo, placement: .matched(b), withoutLocation: false))
         let third = saver.save(SaveItem(photo: photo, placement: .matched(a), withoutLocation: false))
         if case .saved = first { check("save: first save", true) } else { check("save: first save", false, "\(first)") }
-        check("save: saved before with another location says so", { if case .failed(let w) = second { return w.contains("different location") } else { return false } }(), "\(second)")
+        check("save: saved before with another location says so", { if case .failed(let w) = second { return w == "Previously saved in another location" } else { return false } }(), "\(second)")
         check("save: the same location again is already there", { if case .alreadyThere = third { return true } else { return false } }(), "\(third)")
 
         // The whole flow through the app model, on a test card made of copies.
@@ -936,5 +937,73 @@ extension SelfTest {
         check("flow: they now count as imported before", model.rows.allSatisfy { $0.status == .alreadyImported && !$0.ticked })
         await model.savePhotos()
         check("flow: nothing left to save", model.readyToSave.isEmpty && ((try? queueFile.load()) ?? []).count == ready)
+    }
+}
+
+extension SelfTest {
+    /// A photo saved without a location (its camera's offset not set) gets it
+    /// written into the saved copy once the offset is set.
+    @MainActor
+    static func placingLater(_ scratch: URL, samples: URL) async {
+        let fm = FileManager.default
+        let photoFile = samples.appendingPathComponent("DAVL3660.JPG") // 2025:03:23 17:44:20 -05:00, no location
+        guard fm.fileExists(atPath: photoFile.path) else { print("skip  later: no DAVL3660.JPG"); return }
+        let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+        let lib = TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("later-lib")))
+        let gpx = scratch.appendingPathComponent("later-walk.gpx")
+        let start = Int(ISO8601DateFormatter().date(from: "2025-03-23T22:30:00Z")!.timeIntervalSince1970)
+        writeGPX(gpx, start: start, count: 1800, name: "Casco Viejo", lat: 8.952, lon: -79.535)
+        _ = try? await lib.importFile(gpx, role: .reader)
+        let card = scratch.appendingPathComponent("LATER-CARD/DCIM/100CANON")
+        try? fm.createDirectory(at: card, withIntermediateDirectories: true)
+        try? fm.copyItem(at: photoFile, to: card.appendingPathComponent(photoFile.lastPathComponent))
+        let saveTo = scratch.appendingPathComponent("LATER-SAVED")
+        try? fm.createDirectory(at: saveTo, withIntermediateDirectories: true)
+        let unplacedFile = UnplacedStoreFile(url: scratch.appendingPathComponent("later-unplaced.json"))
+        let queueFile = QueueStoreFile(url: scratch.appendingPathComponent("later-queue.json"))
+        let model = AppModel(library: lib, peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("later-people.json")),
+                             history: HistoryStoreFolder(folder: scratch.appendingPathComponent("later-history")),
+                             queue: queueFile, unplaced: unplacedFile, secrets: NoSecrets(),
+                             thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("later-maps")), exifTool: tool)
+        await model.showLibrary()
+        var david = model.book.people[0]
+        david.saveFolder = saveTo.path
+        model.save(david)
+        let source = CardWatcher.card(at: scratch.appendingPathComponent("LATER-CARD"))!
+        model.choose(source)
+        model.askingWhose = nil
+        await model.read(source, for: david.id)
+        check("later: the camera's offset is not set", model.rows.first?.placement == .review(.offsetNotSet), "\(String(describing: model.rows.first?.placement))")
+        await model.savePhotos()
+        let saved = model.results.values.compactMap(\.url).first
+        check("later: saved without a location, and remembered", saved != nil && ((try? unplacedFile.load()) ?? []).count == 1)
+        guard let saved else { return }
+        let before = Saver.sha256(saved)
+        let dates = (try? fm.attributesOfItem(atPath: saved.path)) ?? [:]
+
+        // The offset is set: the photo saved earlier is placed.
+        var camera = model.book.camera(personId: david.id, model: "Canon EOS R5m2")!
+        camera.offsetSeconds = 0
+        model.save(camera)
+        for _ in 0..<200 {
+            try? await Task.sleep(for: .milliseconds(50))
+            if !model.placingLater, ((try? unplacedFile.load()) ?? []).isEmpty { break }
+        }
+        var where_ = "-"
+        if let src = CGImageSourceCreateWithURL(saved as CFURL, nil),
+           let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+           let gps = props[kCGImagePropertyGPSDictionary] as? [CFString: Any] {
+            where_ = "\(gps[kCGImagePropertyGPSLatitude] ?? "-")\(gps[kCGImagePropertyGPSLatitudeRef] ?? "") \(gps[kCGImagePropertyGPSLongitude] ?? "-")\(gps[kCGImagePropertyGPSLongitudeRef] ?? "")"
+        }
+        let after = (try? fm.attributesOfItem(atPath: saved.path)) ?? [:]
+        check("later: the location is now in the saved copy", where_.hasPrefix("8.9606") && where_.contains("N") && where_.contains("W"), where_)
+        check("later: the copy changed only by that", Saver.sha256(saved) != before
+              && (after[.modificationDate] as? Date) == (dates[.modificationDate] as? Date)
+              && (after[.creationDate] as? Date) == (dates[.creationDate] as? Date))
+        check("later: off the list, once on the queue", ((try? unplacedFile.load()) ?? []).isEmpty
+              && ((try? queueFile.load()) ?? []).filter { $0.localPath == saved.path }.count == 1)
+        let leftovers = (fm.enumerator(atPath: saveTo.path)?.allObjects as? [String] ?? []).filter { $0.contains(".geotag-") }
+        check("later: no working copies left", leftovers.isEmpty, "\(leftovers)")
+        check("later: said on the Photos page", model.photosLine.contains("now has its location"), model.photosLine)
     }
 }

@@ -122,7 +122,7 @@ public struct Saver: Sendable {
                     let differs = !sameLocation(target, work)
                     try? fm.removeItem(at: work)
                     if differs {
-                        return .failed("It was saved before with a different location, and that copy is kept as it is.")
+                        return .failed("Previously saved in another location")
                     }
                     return .alreadyThere(target)
                 }
@@ -141,7 +141,7 @@ public struct Saver: Sendable {
         }
     }
 
-    public static let diskFull = "The disk the photos are saved to is full."
+    public static let diskFull = "Destination full"
 
     /// Geotag's own working copies left by a save that was cut off (a crash, a
     /// Mac switched off): hidden files named ".<photo>.geotag-<id>.<ext>" in
@@ -364,5 +364,107 @@ public struct QueueStoreFile: QueueStorePort {
         encoder.dateEncodingStrategy = .secondsSince1970
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(entries).write(to: url, options: .atomic)
+    }
+}
+
+// MARK: - Placing saved photos later
+
+/// A copy saved without a location, kept so it can be placed later: when its
+/// camera's offset or zone is set, the gap changes, or new tracks arrive.
+public struct UnplacedEntry: Codable, Equatable, Identifiable, Sendable {
+    public var id: UUID
+    public var personId: UUID
+    /// The copy on this Mac.
+    public var localPath: String
+    public var fileName: String
+    public var taken: String?
+    public var subSeconds: String?
+    public var zone: String?
+    public var model: String?
+
+    public init(personId: UUID, localPath: String, photo: ScannedPhoto) {
+        self.id = UUID()
+        self.personId = personId
+        self.localPath = localPath
+        self.fileName = photo.fileName
+        self.taken = photo.taken
+        self.subSeconds = photo.subSeconds
+        self.zone = photo.zone
+        self.model = photo.model
+    }
+
+    /// The copy as a photo to match: its time, zone and camera as the card had them.
+    public var photo: ScannedPhoto {
+        ScannedPhoto(url: URL(fileURLWithPath: localPath), fileName: fileName, size: 0, taken: taken,
+                     subSeconds: subSeconds, zone: zone, model: model, hasLocation: false)
+    }
+}
+
+public protocol UnplacedStorePort: Sendable {
+    func load() throws -> [UnplacedEntry]
+    func save(_ entries: [UnplacedEntry]) throws
+}
+
+/// `unplaced.json` in Geotag's folder in Application Support, written whole.
+public struct UnplacedStoreFile: UnplacedStorePort {
+    public let url: URL
+
+    public init(url: URL) {
+        self.url = url
+    }
+
+    public static func standard() -> UnplacedStoreFile {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return UnplacedStoreFile(url: support.appendingPathComponent("Geotag/unplaced.json"))
+    }
+
+    public func load() throws -> [UnplacedEntry] {
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        return try JSONDecoder().decode([UnplacedEntry].self, from: Data(contentsOf: url))
+    }
+
+    public func save(_ entries: [UnplacedEntry]) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(entries).write(to: url, options: .atomic)
+    }
+}
+
+extension Saver {
+    /// Writes a location into a copy already saved on this Mac. The new version
+    /// is made beside it under a working name, checked against the copy (same
+    /// picture, same details, the location reads back, the same dates), and
+    /// only then swapped in. Nil when done; else why not, the copy untouched.
+    public func addLocation(to copy: URL, _ position: Position) -> String? {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: copy.path) else { return "The copy is no longer there." }
+        let attributes = (try? fm.attributesOfItem(atPath: copy.path)) ?? [:]
+        let name = copy.lastPathComponent
+        let ext = (name as NSString).pathExtension
+        let stem = (name as NSString).deletingPathExtension
+        let work = copy.deletingLastPathComponent()
+            .appendingPathComponent(".\(stem).geotag-\(UUID().uuidString.prefix(8))" + (ext.isEmpty ? "" : ".\(ext)"))
+        func fail(_ why: String) -> String {
+            try? fm.removeItem(at: work)
+            return why
+        }
+        do {
+            try fm.copyItem(at: copy, to: work)
+            _ = try exifTool.run(Self.gpsArguments(position) + [work.path])
+            var dates: [FileAttributeKey: Any] = [:]
+            if let c = attributes[.creationDate] { dates[.creationDate] = c }
+            if let m = attributes[.modificationDate] { dates[.modificationDate] = m }
+            if !dates.isEmpty { try fm.setAttributes(dates, ofItemAtPath: work.path) }
+        } catch {
+            return fail("The location could not be written: \(error.localizedDescription)")
+        }
+        if let problem = check(copy: work, original: copy, position: position) { return fail(problem) }
+        do {
+            _ = try fm.replaceItemAt(copy, withItemAt: work)
+        } catch {
+            return fail("The copy could not be replaced: \(error.localizedDescription)")
+        }
+        return nil
     }
 }
