@@ -312,7 +312,11 @@ public struct Saver: Sendable {
 
 // MARK: - The upload queue
 
-/// A saved copy waiting to go to the NAS. Sending is stage 8.
+public enum QueueState: String, Codable, Sendable {
+    case waiting, sending, sent, failed
+}
+
+/// A saved copy on its way to the NAS.
 public struct QueueEntry: Codable, Equatable, Identifiable, Sendable {
     public var id: UUID
     public var personId: UUID
@@ -321,15 +325,50 @@ public struct QueueEntry: Codable, Equatable, Identifiable, Sendable {
     /// Its place under the person's NAS folder: "2027.01.12/IMG_0001.jpg".
     public var relativePath: String
     public var added: Date
-    public var state: String
+    public var state: QueueState
+    /// Replaces Geotag's own earlier copy of the same photo on the NAS: its
+    /// location was written in after that copy went.
+    public var update: Bool
+    /// Why it was not sent, or why the last try broke off.
+    public var reason: String?
+    /// When it reached the NAS.
+    public var sent: Date?
+    /// Its name on the NAS, when another photo already had its own.
+    public var sentAs: String?
+    /// Tries that broke off, and when to try it again.
+    public var tries: Int
+    public var notBefore: Date?
 
-    public init(personId: UUID, localPath: String, relativePath: String, added: Date = Date()) {
+    public init(personId: UUID, localPath: String, relativePath: String, added: Date = Date(), update: Bool = false) {
         self.id = UUID()
         self.personId = personId
         self.localPath = localPath
         self.relativePath = relativePath
         self.added = Date(timeIntervalSince1970: added.timeIntervalSince1970.rounded())
-        self.state = "waiting"
+        self.state = .waiting
+        self.update = update
+        self.tries = 0
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, personId, localPath, relativePath, added, state, update, reason, sent, sentAs, tries, notBefore
+    }
+
+    /// Reads queues written before 0.12.0 too, which had no sending details.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        personId = try c.decode(UUID.self, forKey: .personId)
+        localPath = try c.decode(String.self, forKey: .localPath)
+        relativePath = try c.decode(String.self, forKey: .relativePath)
+        added = try c.decode(Date.self, forKey: .added)
+        state = (try? c.decode(QueueState.self, forKey: .state)) ?? .waiting
+        update = try c.decodeIfPresent(Bool.self, forKey: .update) ?? false
+        reason = try c.decodeIfPresent(String.self, forKey: .reason)
+        sent = try c.decodeIfPresent(Date.self, forKey: .sent)
+        sentAs = try c.decodeIfPresent(String.self, forKey: .sentAs)
+        tries = try c.decodeIfPresent(Int.self, forKey: .tries) ?? 0
+        notBefore = try c.decodeIfPresent(Date.self, forKey: .notBefore)
     }
 }
 
@@ -362,7 +401,8 @@ public struct QueueStoreFile: QueueStorePort {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .secondsSince1970
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        // Not spaced out: it is written after every change, and grows on a long trip.
+        encoder.outputFormatting = [.sortedKeys]
         try encoder.encode(entries).write(to: url, options: .atomic)
     }
 }

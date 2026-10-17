@@ -88,6 +88,10 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 
 ## The keychain asks after every update (decided 16 October 2026)
 
+- From 0.12.0 the one keychain item (account `track-service-key`) holds the
+  service key and the NAS password together, as JSON; an item holding the
+  bare key (before 0.12.0) is still read. One item, so the NAS password adds
+  no prompts.
 - The service key stays in the login keychain, as the brief asks. Every new
   build is a stranger to the keychain (no Apple-issued signature, so its
   partition is the build's own hash), and the Mac asks for the password,
@@ -226,6 +230,47 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   card is saved, with its location when it can be placed and without one
   otherwise (the reason shows in Status, the count in the Without location
   tile). A checkmark icon marks saved photos; never a checkbox for status.
+
+## Sending to the NAS (stage 8, 17 October 2026)
+
+- Settings, NAS: address (`smb://10.0.10.10` on David's Mac), backup address
+  (`smb://100.99.144.35`, the NAS on Tailscale), user name, password. Each
+  person's NAS folder in People is a shared folder and a path
+  (`homes/david`); photos go into day folders under it, as on the Mac.
+- `NASOverSMB` uses a shared folder already open on this Mac when it answers
+  within 5 s (Finder's `/Volumes/homes`), else opens it itself with NetFS:
+  no password window, hidden from Finder, soft (a lost connection fails
+  instead of hanging), 30 s to answer. Its own openings are closed again
+  when nothing is waiting. The main address first, then the backup.
+- `NASSender` copies one photo: a hidden `.<stem>.geotag-up-<id>.<ext>` on the
+  NAS, read back from the NAS itself (no cache) and compared by SHA-256 with
+  the Mac's copy, the Mac copy's dates, then its name. Never overwrites: the
+  same file is "already there", another photo gets `_2`, the same photo with
+  other bytes is refused ("Already on the NAS with another location") unless
+  the entry is an update. Only its own unfinished uploads older than an hour
+  are cleared.
+- The queue (`queue.json`) is held by the app model and written after every
+  change; saving and sending never keep their own copies of it. Oldest first,
+  one at a time, every 3 s from launch. NAS away: everything waits, tried
+  again each minute. NAS full: tried again in 5 minutes. A send that breaks
+  off rests 1 to 10 minutes so the others go first. A photo that cannot go
+  (copy gone, refused) is "Not sent" with the reason until Retry failed.
+  Sent entries leave the list after a week; History keeps every photo.
+- A copy given its location later goes again as an update and replaces
+  Geotag's earlier copy on the NAS; still waiting, it simply goes as it is now.
+- Sending runs on GCD threads, never Swift's own pool: a hung connection
+  must not stall the app. A shared folder that hangs is asked once at a time.
+- The Mac asks once whether Geotag may use files on a network volume.
+- Untested against the real NAS until David tries it. Tests use `FakeNAS`
+  (a scratch folder); never write test files to his NAS.
+
+## Tests never touch David's own records
+
+- Every `AppModel` in the self-test gets scratch stores for history, queue,
+  unplaced and people, and a `FakeNAS`. The defaults are his real files: on
+  17 October 2026 a test without its own `unplaced:` added 15 rows to his
+  `unplaced.json` (taken out the same day). The run ends by checking his
+  `people.json`, `queue.json`, `unplaced.json` and History are as they were.
 
 ## Architecture
 

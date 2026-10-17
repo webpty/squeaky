@@ -84,25 +84,12 @@ struct ScreenView: View {
             TracksScreen()
         case .photos:
             PhotosScreen()
+        case .queue:
+            QueueScreen()
         case .history:
             HistoryScreen()
         case .settings:
             SettingsScreen()
-        default:
-            EmptyScreen(title: screen.title)
         }
-    }
-}
-
-/// A section not built yet: its title and nothing else.
-struct EmptyScreen: View {
-    let title: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Style.gap) {
-            ScreenTitle(text: title)
-            Spacer()
-        }
-        .padding(Style.pad * 1.5)
     }
 }

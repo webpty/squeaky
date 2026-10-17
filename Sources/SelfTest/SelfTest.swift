@@ -31,13 +31,17 @@ struct SelfTest {
             ?? FileManager.default.temporaryDirectory
         let scratch = root.appendingPathComponent("geotag-selftest-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        let realBefore = realData()
 
         people(scratch)
         if let samples = ProcessInfo.processInfo.environment["GEOTAG_SAMPLES"] {
             saving(scratch, samples: URL(fileURLWithPath: samples),
                    raws: ProcessInfo.processInfo.environment["GEOTAG_RAWS"].map { URL(fileURLWithPath: $0) })
             await savingEdges(scratch, samples: URL(fileURLWithPath: samples))
-            await placingLater(scratch, samples: URL(fileURLWithPath: samples))
+            await placingLater(scratch, samples: URL(fileURLWithPath: samples), sendFirst: false)
+            await placingLater(scratch, samples: URL(fileURLWithPath: samples), sendFirst: true)
+            nasSending(scratch, samples: URL(fileURLWithPath: samples))
+            await nasQueue(scratch, samples: URL(fileURLWithPath: samples))
         }
         cardKinds()
         cards(scratch)
@@ -60,9 +64,29 @@ struct SelfTest {
             await viewerPicture(scratch, key: key)
         }
 
+        let realAfter = realData()
+        let touched = Set(realBefore.keys).union(realAfter.keys).filter { realBefore[$0] != realAfter[$0] }.sorted()
+        check("tests left David's own Geotag files alone", touched.isEmpty, "\(touched)")
+
         print(failures == 0 ? "all passed" : "\(failures) failed")
         print("scratch: \(scratch.path)")
         exit(failures == 0 ? 0 : 1)
+    }
+
+    /// Size and last change of Geotag's own records on this Mac. The tests
+    /// must work only in their scratch folder, never in these.
+    static func realData() -> [String: String] {
+        let fm = FileManager.default
+        let folder = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Geotag")
+        var out: [String: String] = [:]
+        var paths = ["people.json", "queue.json", "unplaced.json"]
+        paths += ((try? fm.contentsOfDirectory(atPath: folder.appendingPathComponent("History").path)) ?? []).map { "History/\($0)" }
+        for path in paths {
+            let attributes = (try? fm.attributesOfItem(atPath: folder.appendingPathComponent(path).path)) ?? [:]
+            let changed = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+            out[path] = "\(attributes[.size] ?? "-") \(changed)"
+        }
+        return out
     }
 
     /// A small JPEG with the camera details a photo carries.
@@ -323,7 +347,11 @@ extension SelfTest {
             _ = try? await lib.importFile(url, role: .reader)
         }
         let model = AppModel(library: lib, peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("viewer-people.json")),
-                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("viewer-maps")))
+                             history: HistoryStoreFolder(folder: scratch.appendingPathComponent("viewer-history")),
+                             queue: QueueStoreFile(url: scratch.appendingPathComponent("viewer-queue.json")),
+                             unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("viewer-unplaced.json")),
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("viewer-maps")),
+                             nas: FakeNAS(root: scratch.appendingPathComponent("viewer-nas")))
         model.useMaps(MapSource(light: "https://basemaps.cartocdn.com/rastertiles/light_nolabels/{z}/{x}/{y}@2x.png",
                                 dark: "https://basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}@2x.png",
                                 credit: "© OpenStreetMap contributors, © CARTO", key: key))
@@ -497,8 +525,11 @@ extension SelfTest {
         let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("pp-lib"))),
                              peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("pp-people.json")),
                              history: HistoryStoreFolder(folder: scratch.appendingPathComponent("history")),
+                             queue: QueueStoreFile(url: scratch.appendingPathComponent("pp-queue.json")),
+                             unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("pp-unplaced.json")),
                              secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("pp-maps")),
-                             exifTool: ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool")))
+                             exifTool: ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool")),
+                             nas: FakeNAS(root: scratch.appendingPathComponent("pp-nas")))
         let source = CardWatcher.card(at: card)!
         model.choose(source)
         // A card seen before is read for last time's person without asking.
@@ -627,8 +658,11 @@ extension SelfTest {
         }
         let model = AppModel(library: lib, peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("al-people.json")),
                              history: HistoryStoreFolder(folder: scratch.appendingPathComponent("al-history")),
+                             queue: QueueStoreFile(url: scratch.appendingPathComponent("al-queue.json")),
+                             unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("al-unplaced.json")),
                              secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("al-maps")),
-                             exifTool: ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool")))
+                             exifTool: ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool")),
+                             nas: FakeNAS(root: scratch.appendingPathComponent("al-nas")))
         model.useMaps(MapSource(light: "https://basemaps.cartocdn.com/rastertiles/light_nolabels/{z}/{x}/{y}@2x.png",
                                 dark: "https://basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}@2x.png",
                                 credit: "© OpenStreetMap contributors, © CARTO", key: key))
@@ -912,8 +946,10 @@ extension SelfTest {
         let historyFolder = HistoryStoreFolder(folder: scratch.appendingPathComponent("flow-history"))
         let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("flow-lib"))),
                              peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("flow-people.json")),
-                             history: historyFolder, queue: queueFile, secrets: NoSecrets(),
-                             thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("flow-maps")), exifTool: tool)
+                             history: historyFolder, queue: queueFile,
+                             unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("flow-unplaced.json")), secrets: NoSecrets(),
+                             thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("flow-maps")), exifTool: tool,
+                             nas: FakeNAS(root: scratch.appendingPathComponent("flow-nas")))
         var david = model.book.people[0]
         david.saveFolder = scratch.appendingPathComponent("NOT-THERE").path
         model.save(david)
@@ -942,42 +978,55 @@ extension SelfTest {
 
 extension SelfTest {
     /// A photo saved without a location (its camera's offset not set) gets it
-    /// written into the saved copy once the offset is set.
+    /// written into the saved copy once the offset is set. With `sendFirst`,
+    /// the copy without it has already gone to the (stand-in) NAS, and the
+    /// newer copy replaces it there.
     @MainActor
-    static func placingLater(_ scratch: URL, samples: URL) async {
+    static func placingLater(_ scratch: URL, samples: URL, sendFirst: Bool) async {
         let fm = FileManager.default
         let photoFile = samples.appendingPathComponent("DAVL3660.JPG") // 2025:03:23 17:44:20 -05:00, no location
         guard fm.fileExists(atPath: photoFile.path) else { print("skip  later: no DAVL3660.JPG"); return }
+        let tag = sendFirst ? "later-sent" : "later"
         let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
-        let lib = TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("later-lib")))
-        let gpx = scratch.appendingPathComponent("later-walk.gpx")
+        let lib = TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("\(tag)-lib")))
+        let gpx = scratch.appendingPathComponent("\(tag)-walk.gpx")
         let start = Int(ISO8601DateFormatter().date(from: "2025-03-23T22:30:00Z")!.timeIntervalSince1970)
         writeGPX(gpx, start: start, count: 1800, name: "Casco Viejo", lat: 8.952, lon: -79.535)
         _ = try? await lib.importFile(gpx, role: .reader)
-        let card = scratch.appendingPathComponent("LATER-CARD/DCIM/100CANON")
+        let cardRoot = scratch.appendingPathComponent("\(tag.uppercased())-CARD")
+        let card = cardRoot.appendingPathComponent("DCIM/100CANON")
         try? fm.createDirectory(at: card, withIntermediateDirectories: true)
         try? fm.copyItem(at: photoFile, to: card.appendingPathComponent(photoFile.lastPathComponent))
-        let saveTo = scratch.appendingPathComponent("LATER-SAVED")
+        let saveTo = scratch.appendingPathComponent("\(tag.uppercased())-SAVED")
         try? fm.createDirectory(at: saveTo, withIntermediateDirectories: true)
-        let unplacedFile = UnplacedStoreFile(url: scratch.appendingPathComponent("later-unplaced.json"))
-        let queueFile = QueueStoreFile(url: scratch.appendingPathComponent("later-queue.json"))
-        let model = AppModel(library: lib, peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("later-people.json")),
-                             history: HistoryStoreFolder(folder: scratch.appendingPathComponent("later-history")),
+        let unplacedFile = UnplacedStoreFile(url: scratch.appendingPathComponent("\(tag)-unplaced.json"))
+        let queueFile = QueueStoreFile(url: scratch.appendingPathComponent("\(tag)-queue.json"))
+        let nasRoot = scratch.appendingPathComponent("\(tag.uppercased())-NAS")
+        let model = AppModel(library: lib, peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("\(tag)-people.json")),
+                             history: HistoryStoreFolder(folder: scratch.appendingPathComponent("\(tag)-history")),
                              queue: queueFile, unplaced: unplacedFile, secrets: NoSecrets(),
-                             thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("later-maps")), exifTool: tool)
+                             thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("\(tag)-maps")), exifTool: tool,
+                             nas: FakeNAS(root: nasRoot))
         await model.showLibrary()
         var david = model.book.people[0]
         david.saveFolder = saveTo.path
+        if sendFirst { david.nasFolder = "homes/david/Photos" }
         model.save(david)
-        let source = CardWatcher.card(at: scratch.appendingPathComponent("LATER-CARD"))!
+        let source = CardWatcher.card(at: cardRoot)!
         model.choose(source)
         model.askingWhose = nil
         await model.read(source, for: david.id)
-        check("later: the camera's offset is not set", model.rows.first?.placement == .review(.offsetNotSet), "\(String(describing: model.rows.first?.placement))")
+        check("\(tag): the camera's offset is not set", model.rows.first?.placement == .review(.offsetNotSet), "\(String(describing: model.rows.first?.placement))")
         await model.savePhotos()
         let saved = model.results.values.compactMap(\.url).first
-        check("later: saved without a location, and remembered", saved != nil && ((try? unplacedFile.load()) ?? []).count == 1)
+        check("\(tag): saved without a location, and remembered", saved != nil && ((try? unplacedFile.load()) ?? []).count == 1)
         guard let saved else { return }
+        let onNAS = nasRoot.appendingPathComponent("homes/david/Photos/2025.03.23/\(saved.lastPathComponent)")
+        if sendFirst {
+            await model.sendWaiting()
+            check("\(tag): the copy without a location went to the NAS", model.queueEntry(for: saved.path)?.state == .sent
+                  && Saver.sha256(onNAS) == Saver.sha256(saved), model.queueLine)
+        }
         let before = Saver.sha256(saved)
         let dates = (try? fm.attributesOfItem(atPath: saved.path)) ?? [:]
 
@@ -996,14 +1045,256 @@ extension SelfTest {
             where_ = "\(gps[kCGImagePropertyGPSLatitude] ?? "-")\(gps[kCGImagePropertyGPSLatitudeRef] ?? "") \(gps[kCGImagePropertyGPSLongitude] ?? "-")\(gps[kCGImagePropertyGPSLongitudeRef] ?? "")"
         }
         let after = (try? fm.attributesOfItem(atPath: saved.path)) ?? [:]
-        check("later: the location is now in the saved copy", where_.hasPrefix("8.9606") && where_.contains("N") && where_.contains("W"), where_)
-        check("later: the copy changed only by that", Saver.sha256(saved) != before
+        check("\(tag): the location is now in the saved copy", where_.hasPrefix("8.9606") && where_.contains("N") && where_.contains("W"), where_)
+        check("\(tag): the copy changed only by that", Saver.sha256(saved) != before
               && (after[.modificationDate] as? Date) == (dates[.modificationDate] as? Date)
               && (after[.creationDate] as? Date) == (dates[.creationDate] as? Date))
-        check("later: off the list, once on the queue", ((try? unplacedFile.load()) ?? []).isEmpty
-              && ((try? queueFile.load()) ?? []).filter { $0.localPath == saved.path }.count == 1)
+        let queued = ((try? queueFile.load()) ?? []).filter { $0.localPath == saved.path }
+        if sendFirst {
+            check("\(tag): off the list, and on the queue again to replace the NAS copy", ((try? unplacedFile.load()) ?? []).isEmpty
+                  && queued.count == 2 && queued[0].state == .sent && queued[1].state == .waiting && queued[1].update,
+                  "\(queued.map { "\($0.state) \($0.update)" })")
+            await model.sendWaiting()
+            let names = (try? fm.contentsOfDirectory(atPath: onNAS.deletingLastPathComponent().path)) ?? []
+            check("\(tag): the NAS copy replaced by the one with the location, nothing else left", Saver.sha256(onNAS) == Saver.sha256(saved)
+                  && names == [saved.lastPathComponent] && model.queueEntry(for: saved.path)?.state == .sent, "\(names) \(model.queueLine)")
+        } else {
+            check("\(tag): off the list, once on the queue", ((try? unplacedFile.load()) ?? []).isEmpty
+                  && queued.count == 1 && !queued[0].update)
+        }
         let leftovers = (fm.enumerator(atPath: saveTo.path)?.allObjects as? [String] ?? []).filter { $0.contains(".geotag-") }
-        check("later: no working copies left", leftovers.isEmpty, "\(leftovers)")
-        check("later: said on the Photos page", model.photosLine.contains("now has its location"), model.photosLine)
+        check("\(tag): no working copies left", leftovers.isEmpty, "\(leftovers)")
+        check("\(tag): said on the Photos page", model.photosLine.contains("now has its location"), model.photosLine)
+    }
+}
+
+/// A folder standing in for the NAS: the tests never touch David's real one.
+final class FakeNAS: NASPort, @unchecked Sendable {
+    let root: URL
+    private let lock = NSLock()
+    private var reachable = true
+
+    init(root: URL) {
+        self.root = root
+    }
+
+    var online: Bool {
+        get { lock.withLock { reachable } }
+        set { lock.withLock { reachable = newValue } }
+    }
+
+    func connect(share: String) async throws -> NASConnection {
+        guard online else { throw NASError.offline("The NAS can't be reached at smb://test.") }
+        let folder = root.appendingPathComponent(share, isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return NASConnection(folder: folder, address: "smb://test", ours: false)
+    }
+
+    func disconnect(_ connection: NASConnection) async {}
+}
+
+extension SelfTest {
+    /// Sending one photo: checked on arrival, never overwriting, `_2` for
+    /// another photo, Geotag's own earlier copy replaced only as an update,
+    /// and only Geotag's own old leftovers cleared.
+    static func nasSending(_ scratch: URL, samples: URL) {
+        let fm = FileManager.default
+        let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+        let jpgs = ((try? fm.contentsOfDirectory(at: samples, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension.uppercased() == "JPG" }.sorted { $0.path < $1.path }
+        guard let photoFile = jpgs.first(where: { $0.lastPathComponent == "DAVL3660.JPG" }),
+              let otherFile = jpgs.first(where: { $0 != photoFile }) else { print("skip  nas: samples missing"); return }
+        let mac = scratch.appendingPathComponent("SEND-MAC")
+        try? fm.createDirectory(at: mac.appendingPathComponent("other"), withIntermediateDirectories: true)
+        let copy = mac.appendingPathComponent("DAVL3660.jpg")
+        try? fm.copyItem(at: photoFile, to: copy)
+        let day = scratch.appendingPathComponent("SEND-NAS/homes/david/Photos/2025.03.23")
+        let there = day.appendingPathComponent("DAVL3660.jpg")
+        func send(_ file: URL, update: Bool = false) -> Result<SendOutcome, NASError> {
+            do {
+                return .success(try NASSender.send(file, as: "DAVL3660.jpg", into: day, update: update, clean: true, exifTool: tool) { _ in })
+            } catch {
+                return .failure(error as? NASError ?? .failed("\(error)"))
+            }
+        }
+        func hidden() -> [String] { ((try? fm.contentsOfDirectory(atPath: day.path)) ?? []).filter { $0.hasPrefix(".") } }
+
+        let first = send(copy)
+        let a = (try? fm.attributesOfItem(atPath: copy.path)) ?? [:], b = (try? fm.attributesOfItem(atPath: there.path)) ?? [:]
+        check("nas: sent, the day folder made", first == .success(.sent(there)), "\(first)")
+        check("nas: identical on the NAS", Saver.sha256(there) == Saver.sha256(copy))
+        check("nas: the Mac copy's dates", (a[.modificationDate] as? Date) == (b[.modificationDate] as? Date)
+              && (a[.creationDate] as? Date) == (b[.creationDate] as? Date))
+        check("nas: no working copy left", hidden().isEmpty, "\(hidden())")
+        check("nas: the same file again is already there", send(copy) == .success(.alreadyThere(there)))
+
+        let other = mac.appendingPathComponent("other/DAVL3660.jpg")
+        try? fm.copyItem(at: otherFile, to: other)
+        let second = send(other)
+        check("nas: another photo with that name becomes _2", second == .success(.sent(day.appendingPathComponent("DAVL3660_2.jpg")))
+              && Saver.sha256(day.appendingPathComponent("DAVL3660_2.jpg")) == Saver.sha256(other), "\(second)")
+
+        // The same photo with its location written in later.
+        let placed = mac.appendingPathComponent("placed.jpg")
+        try? fm.copyItem(at: copy, to: placed)
+        let moment = ISO8601DateFormatter().date(from: "2025-03-23T22:44:20Z")!
+        let problem = Saver(exifTool: tool, folder: mac).addLocation(to: placed, Position(lat: 8.95, lon: -79.53, alt: nil, moment: moment, fromPoint: 0))
+        check("nas: a location written into a second copy", problem == nil, problem ?? "")
+        let firstHash = Saver.sha256(there)
+        let refused = send(placed)
+        check("nas: not an update, the NAS copy is kept and it says so", refused == .failure(.failed("Already on the NAS with another location"))
+              && Saver.sha256(there) == firstHash, "\(refused)")
+        let replaced = send(placed, update: true)
+        check("nas: as an update, Geotag's earlier copy is replaced", replaced == .success(.replaced(there))
+              && Saver.sha256(there) == Saver.sha256(placed) && hidden().isEmpty, "\(replaced) \(hidden())")
+
+        // Leftovers: only Geotag's own unfinished uploads, an hour old.
+        let old = Date().addingTimeInterval(-7200)
+        for (name, date) in [(".A.geotag-up-ABCDEF12.jpg", old), (".B.geotag-up-12345678.jpg", Date()),
+                             (".his-hidden", old), ("C.geotag-up-ABCDEF12.jpg", old), (".D.geotag-old-ABCDEF12.jpg", old)] {
+            let url = day.appendingPathComponent(name)
+            try? "x".write(to: url, atomically: true, encoding: .utf8)
+            try? fm.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
+        }
+        NASSender.clearLeftovers(in: day)
+        let left = Set((try? fm.contentsOfDirectory(atPath: day.path)) ?? [])
+        check("nas: only Geotag's own old unfinished uploads cleared", !left.contains(".A.geotag-up-ABCDEF12.jpg")
+              && left.isSuperset(of: [".B.geotag-up-12345678.jpg", ".his-hidden", "C.geotag-up-ABCDEF12.jpg", ".D.geotag-old-ABCDEF12.jpg",
+                                      "DAVL3660.jpg", "DAVL3660_2.jpg"]), "\(left.sorted())")
+
+        let gone = send(mac.appendingPathComponent("not-there.jpg"))
+        check("nas: a copy gone from the Mac is said so", gone == .failure(.failed("The copy on this Mac is no longer there.")), "\(gone)")
+
+        // Where people's NAS folders point.
+        let folder = NASFolder(" homes / david/Photos/ ")
+        check("nas: a NAS folder is its shared folder and the path in it", folder?.share == "homes" && folder?.path == "david/Photos"
+              && NASFolder("") == nil && NASFolder("homes")?.path == "")
+        check("nas: addresses", NASOverSMB.host("smb://10.0.10.10") == "10.0.10.10" && NASOverSMB.host("100.99.144.35/") == "100.99.144.35"
+              && NASOverSMB.host("smb://nas.home.arpa/") == "nas.home.arpa" && NASOverSMB.host("  ") == nil)
+    }
+
+    /// The queue through the app model: the NAS away, paused, back; someone
+    /// without a NAS folder; a send cut off by a crash; a copy gone.
+    @MainActor
+    static func nasQueue(_ scratch: URL, samples: URL) async {
+        let fm = FileManager.default
+        let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+        let jpgs = ((try? fm.contentsOfDirectory(at: samples, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension.uppercased() == "JPG" }.sorted { $0.path < $1.path }
+        guard jpgs.count >= 3 else { print("skip  queue: fewer than three JPEG samples"); return }
+
+        // People, and copies on the Mac as a save leaves them, already on the queue.
+        var book = PeopleBook.family()
+        book.people[0].nasFolder = "homes/david/Photos"
+        let peopleFile = PeopleStoreFile(url: scratch.appendingPathComponent("queue-people.json"))
+        try? peopleFile.save(book)
+        let david = book.people[0].id, amanda = book.people[1].id
+        let mac = scratch.appendingPathComponent("QUEUE-MAC")
+        func copied(_ file: URL, _ day: String, as name: String? = nil) -> (URL, String) {
+            let folder = mac.appendingPathComponent(day)
+            try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            let url = folder.appendingPathComponent(name ?? file.lastPathComponent)
+            try? fm.copyItem(at: file, to: url)
+            return (url, "\(day)/\(url.lastPathComponent)")
+        }
+        var entries: [QueueEntry] = []
+        for (i, jpg) in jpgs.prefix(3).enumerated() {
+            let (url, relative) = copied(jpg, "2025.03.2\(i)")
+            entries.append(QueueEntry(personId: david, localPath: url.path, relativePath: relative, added: Date().addingTimeInterval(Double(i - 10))))
+        }
+        let (forAmanda, amandasPlace) = copied(jpgs[0], "amanda")
+        entries.append(QueueEntry(personId: amanda, localPath: forAmanda.path, relativePath: amandasPlace))
+        // The first photo again, as a send a crash cut off left it.
+        let (again, _) = copied(jpgs[0], "again")
+        var cut = QueueEntry(personId: david, localPath: again.path, relativePath: entries[0].relativePath)
+        cut.state = .sending
+        entries.append(cut)
+        let missing = QueueEntry(personId: david, localPath: mac.appendingPathComponent("gone.jpg").path, relativePath: "2025.03.20/gone.jpg")
+        entries.append(missing)
+        let stranger = QueueEntry(personId: UUID(), localPath: entries[1].localPath, relativePath: entries[1].relativePath)
+        entries.append(stranger)
+        let queueFile = QueueStoreFile(url: scratch.appendingPathComponent("queue-queue.json"))
+        try? queueFile.save(entries)
+
+        let fake = FakeNAS(root: scratch.appendingPathComponent("QUEUE-NAS"))
+        fake.online = false
+        let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("queue-lib"))),
+                             peopleStore: peopleFile, history: HistoryStoreFolder(folder: scratch.appendingPathComponent("queue-history")),
+                             queue: queueFile, unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("queue-unplaced.json")),
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("queue-maps")),
+                             exifTool: tool, nas: fake)
+        func state(_ id: UUID) -> QueueState? { model.queueEntries.first { $0.id == id }?.state }
+        check("queue: a send cut off is waiting again", state(cut.id) == .waiting)
+
+        await model.sendWaiting()
+        check("queue: the NAS away, nothing sent, and it says so", model.queueEntries.allSatisfy { $0.state != .sent }
+              && model.queueLine.contains("can't be reached") && model.nasReach == .unreachable, model.queueLine)
+        check("queue: someone off the list, their photo not sent and why", state(stranger.id) == .failed
+              && model.queueEntries.first { $0.id == stranger.id }?.reason == "Their person was removed from People")
+
+        fake.online = true
+        model.setSendPaused(true)
+        await model.sendWaiting()
+        check("queue: paused, nothing sent", model.queueEntries.allSatisfy { $0.state != .sent } && model.queueLine == "Paused.", model.queueLine)
+
+        model.setSendPaused(false)
+        await model.sendWaiting()
+        let nas = scratch.appendingPathComponent("QUEUE-NAS/homes/david/Photos")
+        let davids = entries.prefix(3)
+        check("queue: David's photos sent, each into its day folder", davids.allSatisfy { e in
+            state(e.id) == .sent && Saver.sha256(nas.appendingPathComponent(e.relativePath)) == Saver.sha256(URL(fileURLWithPath: e.localPath))
+        })
+        check("queue: the cut-off one found already there", state(cut.id) == .sent
+              && model.queueEntries.first { $0.id == cut.id }?.sentAs == nil)
+        check("queue: a copy gone from the Mac is not sent, and why", state(missing.id) == .failed
+              && model.queueEntries.first { $0.id == missing.id }?.reason == "The copy on this Mac is no longer there.")
+        check("queue: Amanda's waits for her NAS folder, and it says so", state(entries[3].id) == .waiting
+              && model.queueLine.contains("Amanda has no NAS folder"), model.queueLine)
+        check("queue: the Photos page can tell", model.queueEntry(for: entries[0].localPath)?.state == .sent
+              && model.nasReach == .through("smb://test"))
+        let onDisk = (try? queueFile.load()) ?? []
+        check("queue: written to disk as it went", onDisk.filter { $0.state == .sent }.count == 4 && onDisk.count == entries.count,
+              "\(onDisk.map(\.state))")
+
+        model.retryFailed()
+        check("queue: Retry failed puts them back in line", state(missing.id) == .waiting && state(stranger.id) == .waiting)
+        await model.sendWaiting()
+        check("queue: and they fail again for the same reasons", state(missing.id) == .failed && state(stranger.id) == .failed)
+
+        // Restarted: the list as it was left.
+        let again2 = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("queue-lib"))),
+                              peopleStore: peopleFile, history: HistoryStoreFolder(folder: scratch.appendingPathComponent("queue-history")),
+                              queue: queueFile, unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("queue-unplaced.json")),
+                              secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("queue-maps")),
+                              exifTool: tool, nas: fake)
+        check("queue: after a restart, the same list", again2.queueEntries.map(\.state) == model.queueEntries.map(\.state))
+
+        // Pictures of the Queue page and the NAS card, off-screen.
+        guard ProcessInfo.processInfo.environment["GEOTAG_VIEWER"] != nil else { return }
+        model.nasAddress = "smb://10.0.10.10"
+        model.nasBackupAddress = "smb://100.99.144.35"
+        model.nasUser = "david"
+        model.nasPassword = "not-a-real-one"
+        model.nasLine = "Connected through smb://10.0.10.10."
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        NSApp.appearance = NSAppearance(named: .aqua)
+        let pictures: [(String, AnyView, NSSize)] = [
+            ("queue.png", AnyView(QueueScreenProbe().environmentObject(model)), NSSize(width: 1000, height: 520)),
+            ("nas-card.png", AnyView(NASCardProbe().environmentObject(model)), NSSize(width: 720, height: 300)),
+        ]
+        for (file, view, size) in pictures {
+            let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -6000, y: -6000), size: size), styleMask: [.titled],
+                                  backing: .buffered, defer: false)
+            let host = NSHostingView(rootView: view)
+            window.contentView = host
+            window.orderBack(nil)
+            for _ in 0..<30 { spin(0.05); try? await Task.sleep(for: .milliseconds(50)) }
+            if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                host.cacheDisplay(in: host.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: scratch.appendingPathComponent(file))
+            }
+        }
+        print("queue pictures: \(scratch.path)")
     }
 }

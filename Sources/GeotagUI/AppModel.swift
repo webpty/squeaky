@@ -100,6 +100,35 @@ public final class AppModel: ObservableObject {
     @Published public var historyPerson: UUID?
     @Published public private(set) var historyEntries: [HistoryEntry] = []
 
+    // The NAS, as set in Settings.
+    @Published public var nasAddress = ""
+    @Published public var nasBackupAddress = ""
+    @Published public var nasUser = ""
+    @Published public var nasPassword = ""
+    @Published public var nasLine = ""
+    @Published public private(set) var nasBusy = false
+    /// The NAS as last saved; the fields above may hold edits not saved yet.
+    private var nasSaved = NASOverSMB(addresses: [], user: nil, password: nil)
+
+    // The queue: every saved copy on its way to the NAS, as kept in queue.json.
+    @Published public private(set) var queueEntries: [QueueEntry] = [] {
+        didSet { queueIndex = Dictionary(queueEntries.map { ($0.localPath, $0) }, uniquingKeysWith: { _, last in last }) }
+    }
+    /// The latest entry for each copy on this Mac.
+    private var queueIndex: [String: QueueEntry] = [:]
+    @Published public private(set) var sendingId: UUID?
+    @Published public private(set) var sendPaused = false
+    @Published public private(set) var queueLine = ""
+    @Published public private(set) var nasReach = NASReach.notTried
+    /// The photo going up now; apart, so its progress redraws only the bar.
+    public let meter = SendMeter()
+    private let nasPort: NASPort?
+    private var ourMounts: [String: NASConnection] = [:]
+    private var cleanedFolders: Set<String> = []
+    private var nextTry: Date?
+    private var sendingNow = false
+    private var sendTimer: Timer?
+
     public let library: TrackLibrary
     public let thumbnails: MapThumbnails
     private let peopleStore: PeopleStorePort
@@ -127,7 +156,8 @@ public final class AppModel: ObservableObject {
                 unplaced: UnplacedStorePort = UnplacedStoreFile.standard(),
                 secrets: SecretStorePort = Keychain(),
                 thumbnails: MapThumbnails? = nil,
-                exifTool: ExifTool? = nil) {
+                exifTool: ExifTool? = nil,
+                nas: NASPort? = nil) {
         self.exifTool = exifTool ?? ExifTool.bundled()
         self.library = library
         self.thumbnails = thumbnails ?? MapThumbnails()
@@ -136,6 +166,7 @@ public final class AppModel: ObservableObject {
         self.queue = queue
         self.unplaced = unplaced
         self.secrets = secrets
+        self.nasPort = nas
         openOnCard = defaults.object(forKey: "openOnCard") as? Bool ?? true
         if defaults.object(forKey: "maxGapSeconds") != nil { maxGapSeconds = defaults.integer(forKey: "maxGapSeconds") }
         dateOrder = defaults.string(forKey: "dateOrder").flatMap(DateOrder.init(rawValue:)) ?? .system
@@ -156,8 +187,17 @@ public final class AppModel: ObservableObject {
         }
         serviceAddress = defaults.string(forKey: "trackServiceAddress") ?? ""
         role = defaults.string(forKey: "trackServiceRole").flatMap(KeyRole.init(rawValue:))
-        serviceKey = secrets.read(Self.keyAccount) ?? ""
+        readSecrets()
         mapCredit = defaults.string(forKey: "mapCredit") ?? ""
+        nasAddress = defaults.string(forKey: "nasAddress") ?? ""
+        nasBackupAddress = defaults.string(forKey: "nasBackupAddress") ?? ""
+        nasUser = defaults.string(forKey: "nasUser") ?? ""
+        nasSaved = NASOverSMB(addresses: [nasAddress, nasBackupAddress], user: nasUser, password: nasPassword)
+        sendPaused = defaults.bool(forKey: "sendPaused")
+        // A send cut off by a crash or a shutdown starts again from the beginning.
+        var entries = (try? queue.load()) ?? []
+        for i in entries.indices where entries[i].state == .sending { entries[i].state = .waiting }
+        queueEntries = entries
 
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.cameBack() }
@@ -187,6 +227,7 @@ public final class AppModel: ObservableObject {
         started = true
         applyAppearance()
         startCards()
+        startSending()
         tracks = await library.listed()
         await refresh()
         timer?.invalidate()
@@ -201,10 +242,34 @@ public final class AppModel: ObservableObject {
 
     // MARK: Settings
 
+    /// The service key and the NAS password share one keychain item, so a new
+    /// build of Geotag asks for the Mac's password no more often than before.
+    private struct StoredSecrets: Codable {
+        var serviceKey: String
+        var nasPassword: String
+    }
+
+    private func readSecrets() {
+        let raw = secrets.read(Self.keyAccount) ?? ""
+        if raw.hasPrefix("{"), let stored = try? JSONDecoder().decode(StoredSecrets.self, from: Data(raw.utf8)) {
+            serviceKey = stored.serviceKey
+            nasPassword = stored.nasPassword
+        } else {
+            // Kept before 0.12.0: the service key alone.
+            serviceKey = raw
+        }
+    }
+
+    private func writeSecrets() throws {
+        let stored = StoredSecrets(serviceKey: serviceKey.trimmingCharacters(in: .whitespacesAndNewlines), nasPassword: nasPassword)
+        let data = try JSONEncoder().encode(stored)
+        try secrets.write(Self.keyAccount, String(decoding: data, as: UTF8.self))
+    }
+
     public func saveService() async {
         defaults.set(serviceAddress.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "trackServiceAddress")
         do {
-            try secrets.write(Self.keyAccount, serviceKey.trimmingCharacters(in: .whitespacesAndNewlines))
+            try writeSecrets()
         } catch {
             settingsLine = error.localizedDescription
             return
@@ -386,7 +451,6 @@ public final class AppModel: ObservableObject {
 
         var past = (try? history.load(personId)) ?? []
         var known = Set(past.map(\.key))
-        var waiting = (try? queue.load()) ?? []
         func remember(_ photo: ScannedPhoto) {
             guard !known.contains(photo.key) else { return }
             known.insert(photo.key)
@@ -412,22 +476,20 @@ public final class AppModel: ObservableObject {
                    !later.contains(where: { $0.localPath == url.path }) {
                     later.append(UnplacedEntry(personId: personId, localPath: url.path, photo: row.photo))
                 }
-                let relative = "\(url.deletingLastPathComponent().lastPathComponent)/\(url.lastPathComponent)"
-                waiting.append(QueueEntry(personId: personId, localPath: url.path, relativePath: relative))
-            case .alreadyThere:
+                changeQueue { $0.append(QueueEntry(personId: personId, localPath: url.path, relativePath: Self.relative(url))) }
+            case .alreadyThere(let url):
                 savedCount += 1
                 remember(row.photo)
+                // Its first save put it on the queue; should that be lost, it goes on again.
+                if queueIndex[url.path] == nil {
+                    changeQueue { $0.append(QueueEntry(personId: personId, localPath: url.path, relativePath: Self.relative(url))) }
+                }
             case .failed(let why):
                 failedCount += 1
-                if why == Saver.diskFull {
-                    try? history.save(personId, past)
-                    try? queue.save(waiting)
-                    stopAsked = true
-                }
+                if why == Saver.diskFull { stopAsked = true }
             }
             // Written after every photo, so a crash or a pulled card loses nothing.
             try? history.save(personId, past)
-            try? queue.save(waiting)
             try? unplaced.save(later)
         }
 
@@ -606,7 +668,6 @@ public final class AppModel: ObservableObject {
         placingLater = true
         defer { placingLater = false }
         await loadTimeline()
-        var waiting = (try? queue.load()) ?? []
         var keep: [UnplacedEntry] = []
         var placed = 0
         var problems: [String] = []
@@ -626,13 +687,21 @@ public final class AppModel: ObservableObject {
                 continue
             }
             placed += 1
-            if !waiting.contains(where: { $0.localPath == entry.localPath && $0.state == "waiting" }) {
-                waiting.append(QueueEntry(personId: entry.personId, localPath: entry.localPath,
-                                          relativePath: "\(url.deletingLastPathComponent().lastPathComponent)/\(url.lastPathComponent)"))
+            changeQueue { all in
+                // Not sent yet: what goes is the copy as it is now. Sent, or on
+                // its way: it goes again and replaces Geotag's earlier copy.
+                if let i = all.lastIndex(where: { $0.localPath == entry.localPath && ($0.state == .waiting || $0.state == .failed) }) {
+                    if all[i].state == .failed {
+                        all[i].state = .waiting
+                        all[i].reason = nil
+                    }
+                } else {
+                    all.append(QueueEntry(personId: entry.personId, localPath: entry.localPath,
+                                          relativePath: Self.relative(url), update: true))
+                }
             }
         }
         try? unplaced.save(keep)
-        try? queue.save(waiting)
         guard placed > 0 || !problems.isEmpty, !photosBusy, !saving else { return }
         var line = placed == 0 ? "" : placed == 1 ? "1 photo saved earlier now has its location." : "\(placed) photos saved earlier now have their location."
         if let first = problems.first { line += (line.isEmpty ? "" : " ") + "Not placed: \(first)" }
@@ -648,6 +717,258 @@ public final class AppModel: ObservableObject {
                   let model = row.photo.model, let camera = book.camera(personId: personId, model: model) else { return false }
             return camera.zone != .notSet
         }
+    }
+
+    // MARK: The NAS
+
+    /// "2027.01.12/IMG_0001.jpg": a saved copy's place under its person's folder.
+    static func relative(_ url: URL) -> String {
+        "\(url.deletingLastPathComponent().lastPathComponent)/\(url.lastPathComponent)"
+    }
+
+    /// Every change to the queue goes through here and is written at once, so
+    /// saving and sending never undo each other's changes. Photos sent more
+    /// than a week ago leave the list; History keeps every photo.
+    private func changeQueue(_ change: (inout [QueueEntry]) -> Void) {
+        var next = queueEntries
+        change(&next)
+        let cutoff = Date().addingTimeInterval(-7 * 86_400)
+        next.removeAll { $0.state == .sent && ($0.sent ?? $0.added) < cutoff }
+        queueEntries = next
+        try? queue.save(next)
+    }
+
+    private func changeEntry(_ id: UUID, _ change: (inout QueueEntry) -> Void) {
+        changeQueue { all in
+            if let i = all.firstIndex(where: { $0.id == id }) { change(&all[i]) }
+        }
+    }
+
+    /// Where a copy saved on this Mac stands with the NAS.
+    public func queueEntry(for path: String) -> QueueEntry? {
+        queueIndex[path]
+    }
+
+    private var nas: NASPort { nasPort ?? nasSaved }
+
+    public func saveNAS() async {
+        nasAddress = nasAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        nasBackupAddress = nasBackupAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        nasUser = nasUser.trimmingCharacters(in: .whitespacesAndNewlines)
+        defaults.set(nasAddress, forKey: "nasAddress")
+        defaults.set(nasBackupAddress, forKey: "nasBackupAddress")
+        defaults.set(nasUser, forKey: "nasUser")
+        do {
+            try writeSecrets()
+        } catch {
+            nasLine = error.localizedDescription
+            return
+        }
+        nasSaved = NASOverSMB(addresses: [nasAddress, nasBackupAddress], user: nasUser, password: nasPassword)
+        // New settings are tried now, not at the next minute.
+        nextTry = nil
+        await testNAS()
+    }
+
+    /// Opens the shared folder of every NAS folder in People, and says how it went.
+    public func testNAS() async {
+        let shares = Set(book.people.compactMap { NASFolder($0.nasFolder)?.share }).sorted()
+        guard !shares.isEmpty else {
+            nasLine = "Nobody has a NAS folder yet. Choose one in People."
+            return
+        }
+        nasBusy = true
+        defer { nasBusy = false }
+        var lines: [String] = []
+        var answered = false
+        for share in shares {
+            let label = shares.count == 1 ? "" : "\(share): "
+            do {
+                let connection = try await nas.connect(share: share)
+                if connection.ours { ourMounts[connection.folder.path] = connection }
+                nasReach = .through(connection.address)
+                answered = true
+                lines.append("\(label)Connected through \(connection.address).")
+            } catch {
+                nasReach = .unreachable
+                lines.append("\(label)\(error.localizedDescription)")
+            }
+        }
+        nasLine = lines.joined(separator: " ")
+        if answered { nextTry = nil }
+    }
+
+    private func startSending() {
+        sendTimer?.invalidate()
+        sendTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.sendWaiting() }
+        }
+    }
+
+    public func setSendPaused(_ on: Bool) {
+        sendPaused = on
+        defaults.set(on, forKey: "sendPaused")
+        if on {
+            say(sendingId == nil ? "Paused." : "Pausing after this photo.")
+        } else {
+            nextTry = nil
+            say("")
+        }
+    }
+
+    public func retryFailed() {
+        changeQueue { all in
+            for i in all.indices where all[i].state == .failed {
+                all[i].state = .waiting
+                all[i].reason = nil
+                all[i].tries = 0
+                all[i].notBefore = nil
+            }
+        }
+        nextTry = nil
+    }
+
+    /// The queue's line, set only when it changes: every setting redraws the window.
+    private func say(_ line: String) {
+        if queueLine != line { queueLine = line }
+    }
+
+    /// The oldest photo that can go now: its person has a NAS folder, and it
+    /// is not resting after a try that broke off.
+    private func nextToSend() -> QueueEntry? {
+        let now = Date()
+        return queueEntries
+            .filter { $0.state == .waiting && ($0.notBefore ?? .distantPast) <= now && NASFolder(book.person($0.personId)?.nasFolder) != nil }
+            .min { $0.added < $1.added }
+    }
+
+    /// Sends waiting photos to the NAS, oldest first and one at a time, until
+    /// nothing more can go now, the NAS can't be reached, or sending is paused.
+    /// Called every few seconds from launch; the queue is on disk, so it
+    /// carries on after a restart.
+    public func sendWaiting() async {
+        guard !sendingNow, !sendPaused else { return }
+        if let next = nextTry, Date() < next { return }
+        sendingNow = true
+        defer { sendingNow = false }
+        nextTry = nil
+        // Someone taken off the list: their photos can't go anywhere.
+        if queueEntries.contains(where: { $0.state == .waiting && book.person($0.personId) == nil }) {
+            changeQueue { all in
+                for i in all.indices where all[i].state == .waiting && book.person(all[i].personId) == nil {
+                    all[i].state = .failed
+                    all[i].reason = "Their person was removed from People"
+                }
+            }
+        }
+        while !sendPaused, let entry = nextToSend() {
+            guard let place = NASFolder(book.person(entry.personId)?.nasFolder) else { break }
+            let connection: NASConnection
+            do {
+                connection = try await nas.connect(share: place.share)
+            } catch {
+                nasReach = .unreachable
+                let retry = Date().addingTimeInterval(60)
+                nextTry = retry
+                say("\(error.localizedDescription) Trying again at \(When.current.time(retry)).")
+                return
+            }
+            if connection.ours { ourMounts[connection.folder.path] = connection }
+            if nasReach != .through(connection.address) { nasReach = .through(connection.address) }
+
+            let name = (entry.relativePath as NSString).lastPathComponent
+            let day = (entry.relativePath as NSString).deletingLastPathComponent
+            var folder = place.folder(in: connection.folder)
+            if !day.isEmpty { folder.appendPathComponent(day, isDirectory: true) }
+            let clean = cleanedFolders.insert(folder.path).inserted
+            changeEntry(entry.id) { $0.state = .sending }
+            sendingId = entry.id
+            meter.begin(name)
+            let more = queueEntries.filter { $0.state == .waiting }.count
+            say("Sending \(name) to \(connection.address)." + (more == 0 ? "" : " \(more) more waiting."))
+            let local = URL(fileURLWithPath: entry.localPath)
+            let tool = exifTool, update = entry.update, meter = self.meter
+            // On a thread of its own: a connection that hangs must not hold up
+            // the threads the rest of Geotag runs on.
+            let outcome: Result<SendOutcome, NASError> = await withCheckedContinuation { done in
+                DispatchQueue.global(qos: .utility).async {
+                    do {
+                        done.resume(returning: .success(try NASSender.send(local, as: name, into: folder, update: update,
+                                                                           clean: clean, exifTool: tool) { fraction in
+                            Task { @MainActor in meter.show(fraction, for: name) }
+                        }))
+                    } catch {
+                        done.resume(returning: .failure(error as? NASError ?? .failed(error.localizedDescription)))
+                    }
+                }
+            }
+            sendingId = nil
+            meter.end()
+            switch outcome {
+            case .success(let result):
+                let landed = result.url.lastPathComponent
+                changeEntry(entry.id) { e in
+                    e.state = .sent
+                    e.sent = Date()
+                    e.sentAs = landed == name ? nil : landed
+                    e.reason = nil
+                    e.notBefore = nil
+                }
+            case .failure(.offline(let why)):
+                // It rests a little longer after each break, so the others go first.
+                changeEntry(entry.id) { e in
+                    e.state = .waiting
+                    e.tries += 1
+                    e.reason = why
+                    e.notBefore = Date().addingTimeInterval(Double(min(e.tries, 10)) * 60)
+                }
+            case .failure(.full):
+                changeEntry(entry.id) { $0.state = .waiting }
+                let retry = Date().addingTimeInterval(300)
+                nextTry = retry
+                say("NAS full. Trying again at \(When.current.time(retry)).")
+                return
+            case .failure(.failed(let why)):
+                changeEntry(entry.id) { e in
+                    e.state = .failed
+                    e.reason = why
+                }
+            }
+        }
+        say(sendPaused ? "Paused." : restingLine())
+        let waiting = queueEntries.contains { $0.state == .waiting && NASFolder(book.person($0.personId)?.nasFolder) != nil }
+        if !sendPaused, !waiting { await closeOurMounts() }
+    }
+
+    /// What the queue is waiting on, when nothing is going up.
+    private func restingLine() -> String {
+        let waiting = queueEntries.filter { $0.state == .waiting }
+        let failed = queueEntries.filter { $0.state == .failed }.count
+        var parts: [String] = []
+        let names = Set(waiting.map(\.personId))
+            .compactMap { book.person($0) }
+            .filter { NASFolder($0.nasFolder) == nil }
+            .map(\.name)
+            .sorted()
+        if !names.isEmpty {
+            parts.append("\(names.joined(separator: ", ")) \(names.count == 1 ? "has" : "have") no NAS folder. Choose one in Settings, People.")
+        }
+        let resting = waiting.compactMap(\.notBefore).filter { $0 > Date() }
+        if let soonest = resting.min() {
+            parts.append("\(resting.count) to try again at \(When.current.time(soonest)).")
+        }
+        if failed > 0 { parts.append("\(failed) not sent: see the list.") }
+        if parts.isEmpty, waiting.isEmpty, !queueEntries.isEmpty { return "Everything is on the NAS." }
+        return parts.joined(separator: " ")
+    }
+
+    /// Shared folders Geotag opened, closed again once nothing is waiting.
+    private func closeOurMounts() async {
+        guard !ourMounts.isEmpty else { return }
+        let open = Array(ourMounts.values)
+        ourMounts = [:]
+        cleanedFolders = []
+        for connection in open { await nas.disconnect(connection) }
     }
 
     // MARK: History

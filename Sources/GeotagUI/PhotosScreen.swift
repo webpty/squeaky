@@ -207,10 +207,17 @@ struct PhotosScreen: View {
                 .customizationID("size")
                 TableColumn("Status") { row in
                     if let result = model.results[row.id] {
-                        switch result {
-                        case .saved: Text("Saved").lineLimit(1)
-                        case .alreadyThere: Text("Already saved").foregroundStyle(.secondary).lineLimit(1)
-                        case .failed(let why): Text("Not saved: \(why)").foregroundStyle(.secondary).lineLimit(1)
+                        // Once saved on this Mac, where it stands with the NAS.
+                        if let url = result.url, let entry = model.queueEntry(for: url.path) {
+                            Text(QueueText.photo(entry))
+                                .foregroundStyle(entry.state == .sent ? .primary : .secondary)
+                                .lineLimit(1)
+                        } else {
+                            switch result {
+                            case .saved: Text("Saved").lineLimit(1)
+                            case .alreadyThere: Text("Already saved").foregroundStyle(.secondary).lineLimit(1)
+                            case .failed(let why): Text("Not saved: \(why)").foregroundStyle(.secondary).lineLimit(1)
+                            }
                         }
                     } else {
                         let before = row.status == .alreadyImported

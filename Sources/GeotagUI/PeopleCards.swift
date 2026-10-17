@@ -36,8 +36,15 @@ enum Folders {
     }
 
     /// A NAS folder as kept: the share and the path inside it, so it does not
-    /// depend on where this Mac mounts the share.
+    /// depend on where this Mac mounts the share ("homes-1" is still "homes").
     static func nasPath(_ url: URL) -> String {
+        let keys: Set<URLResourceKey> = [.volumeURLKey, .volumeURLForRemountingKey]
+        if let values = try? url.resourceValues(forKeys: keys), let volume = values.volume,
+           let share = values.volumeURLForRemounting?.lastPathComponent, !share.isEmpty, share != "/" {
+            let root = volume.standardizedFileURL.pathComponents
+            let inside = url.standardizedFileURL.pathComponents.dropFirst(root.count)
+            return ([share] + inside).joined(separator: "/")
+        }
         let parts = url.standardizedFileURL.pathComponents
         if parts.count > 2, parts[1] == "Volumes" { return parts.dropFirst(2).joined(separator: "/") }
         return url.path

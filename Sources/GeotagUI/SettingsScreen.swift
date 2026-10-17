@@ -9,6 +9,7 @@ struct SettingsScreen: View {
             VStack(alignment: .leading, spacing: Style.gap) {
                 ScreenTitle(text: "Settings")
                 TrackServiceCard()
+                NASCard()
                 PeopleCard()
                 CamerasCard()
                 MatchingCard()
