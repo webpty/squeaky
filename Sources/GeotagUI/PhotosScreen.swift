@@ -137,11 +137,11 @@ struct PhotosScreen: View {
                     Text(row.photo.fileName).lineLimit(1)
                 }
                 .width(min: 100, ideal: 120)
-                TableColumn("Taken") { row in
+                TableColumn("Date and time") { row in
                     Text(PhotoText.taken(row.photo)).monospacedDigit().lineLimit(1)
                 }
                 .width(min: 170, ideal: 200)
-                TableColumn("Camera") { row in
+                TableColumn("Camera model") { row in
                     Text(row.photo.model ?? "Unknown").lineLimit(1)
                 }
                 .width(min: 100, ideal: 130)

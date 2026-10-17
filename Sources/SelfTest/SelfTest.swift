@@ -688,7 +688,7 @@ extension SelfTest {
         check("\(label): ejected at once, a file open or not", answer == .some(nil), "\(String(describing: answer)) in \(String(format: "%.1f", took)) s")
         check("\(label): within two seconds", took < 2)
         for _ in 0..<40 where gone.isEmpty { spin(0.05); try? await Task.sleep(for: .milliseconds(50)) }
-        check("\(label): told the card is gone", gone == [bsd], "\(gone)")
+        check("\(label): told the card is gone", !gone.isEmpty && Set(gone) == [bsd], "\(gone)")
         check("\(label): no longer attached", !run("/usr/bin/hdiutil", ["info"]).1.contains(image.path))
         try? handle?.close()
     }

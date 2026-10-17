@@ -76,6 +76,14 @@ public final class CardGuard {
             let guardian = Unmanaged<CardGuard>.fromOpaque(context!).takeUnretainedValue()
             return MainActor.assumeIsolated { guardian.approve(disk) }
         }, me)
+        // Every disk already there is announced once, and every new one. A card
+        // that is in but open nowhere (Geotag was not running, or it could not
+        // be opened before) is opened now; a new card normally arrives through
+        // the Mac's own opening first, so this waits a moment and looks again.
+        DARegisterDiskAppearedCallback(session, nil, { disk, context in
+            let guardian = Unmanaged<CardGuard>.fromOpaque(context!).takeUnretainedValue()
+            MainActor.assumeIsolated { guardian.appeared(disk) }
+        }, me)
         DARegisterDiskDisappearedCallback(session, nil, { disk, context in
             let guardian = Unmanaged<CardGuard>.fromOpaque(context!).takeUnretainedValue()
             MainActor.assumeIsolated { guardian.disappeared(disk) }
@@ -190,6 +198,18 @@ public final class CardGuard {
             guard accepts(d), hasMarker(url) else { continue }
             log.info("already open at start: \(Self.summary(d), privacy: .public)")
             takeOver(disk, at: url)
+        }
+    }
+
+    private func appeared(_ disk: DADisk) {
+        guard accepts(Self.description(disk)) else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self, let bsd = Self.bsdName(disk) else { return }
+            let d = Self.description(disk)
+            guard d[kDADiskDescriptionVolumePathKey as String] == nil, d[kDADiskDescriptionVolumeKindKey as String] != nil,
+                  !self.opening.contains(bsd), !self.letThrough.contains(bsd), self.held[bsd] == nil else { return }
+            log.info("in but open nowhere, opening \(bsd, privacy: .public)")
+            self.openHidden(disk)
         }
     }
 
