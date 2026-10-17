@@ -53,13 +53,15 @@ struct TrackServiceCard: View {
                         .textFieldStyle(.roundedBorder)
                 }
             }
-            HStack(spacing: Style.gap) {
+            HStack(alignment: .firstTextBaseline, spacing: Style.gap) {
                 Button {
                     Task { await model.saveService() }
                 } label: {
                     Text("Save").buttonLabel()
                 }
                 .keyboardShortcut(.defaultAction)
+                // Greyed out until the address or key changes.
+                .disabled(!model.serviceUnsaved)
                 Button {
                     Task { await model.testService() }
                 } label: {
@@ -68,7 +70,7 @@ struct TrackServiceCard: View {
                 if model.settingsBusy {
                     ProgressView().controlSize(.small)
                 }
-                StatusLine(text: model.settingsLine)
+                StatusLine(text: model.settingsLine, lines: 2)
             }
             .disabled(model.settingsBusy)
 

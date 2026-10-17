@@ -42,7 +42,9 @@ struct SelfTest {
             await placingLater(scratch, samples: URL(fileURLWithPath: samples), sendFirst: true)
             nasSending(scratch, samples: URL(fileURLWithPath: samples))
             await nasQueue(scratch, samples: URL(fileURLWithPath: samples))
+            await nasBatch(scratch, samples: URL(fileURLWithPath: samples))
         }
+        await settingsFeedback(scratch)
         cardKinds()
         cards(scratch)
         matching(scratch)
@@ -1002,11 +1004,12 @@ extension SelfTest {
         let unplacedFile = UnplacedStoreFile(url: scratch.appendingPathComponent("\(tag)-unplaced.json"))
         let queueFile = QueueStoreFile(url: scratch.appendingPathComponent("\(tag)-queue.json"))
         let nasRoot = scratch.appendingPathComponent("\(tag.uppercased())-NAS")
+        let notes = RecordingNotifier()
         let model = AppModel(library: lib, peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("\(tag)-people.json")),
                              history: HistoryStoreFolder(folder: scratch.appendingPathComponent("\(tag)-history")),
                              queue: queueFile, unplaced: unplacedFile, secrets: NoSecrets(),
                              thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("\(tag)-maps")), exifTool: tool,
-                             nas: FakeNAS(root: nasRoot))
+                             nas: FakeNAS(root: nasRoot), notifier: notes)
         await model.showLibrary()
         var david = model.book.people[0]
         david.saveFolder = saveTo.path
@@ -1026,6 +1029,7 @@ extension SelfTest {
             await model.sendWaiting()
             check("\(tag): the copy without a location went to the NAS", model.queueEntry(for: saved.path)?.state == .sent
                   && Saver.sha256(onNAS) == Saver.sha256(saved), model.queueLine)
+            check("\(tag): and a notification says so", notes.posted == ["1 photo is on the NAS."], "\(notes.posted)")
         }
         let before = Saver.sha256(saved)
         let dates = (try? fm.attributesOfItem(atPath: saved.path)) ?? [:]
@@ -1058,6 +1062,7 @@ extension SelfTest {
             let names = (try? fm.contentsOfDirectory(atPath: onNAS.deletingLastPathComponent().path)) ?? []
             check("\(tag): the NAS copy replaced by the one with the location, nothing else left", Saver.sha256(onNAS) == Saver.sha256(saved)
                   && names == [saved.lastPathComponent] && model.queueEntry(for: saved.path)?.state == .sent, "\(names) \(model.queueLine)")
+            check("\(tag): a notification for that batch too", notes.posted.count == 2, "\(notes.posted)")
         } else {
             check("\(tag): off the list, once on the queue", ((try? unplacedFile.load()) ?? []).isEmpty
                   && queued.count == 1 && !queued[0].update)
@@ -1068,11 +1073,24 @@ extension SelfTest {
     }
 }
 
+/// Notifications kept for the tests to read, instead of shown on the Mac.
+final class RecordingNotifier: NotifierPort, @unchecked Sendable {
+    private let lock = NSLock()
+    private var texts: [String] = []
+
+    var posted: [String] { lock.withLock { texts } }
+
+    func post(_ text: String) {
+        lock.withLock { texts.append(text) }
+    }
+}
+
 /// A folder standing in for the NAS: the tests never touch David's real one.
 final class FakeNAS: NASPort, @unchecked Sendable {
     let root: URL
     private let lock = NSLock()
     private var reachable = true
+    private var wait = 0.0
 
     init(root: URL) {
         self.root = root
@@ -1083,7 +1101,14 @@ final class FakeNAS: NASPort, @unchecked Sendable {
         set { lock.withLock { reachable = newValue } }
     }
 
+    /// Seconds it takes to answer.
+    var delay: Double {
+        get { lock.withLock { wait } }
+        set { lock.withLock { wait = newValue } }
+    }
+
     func connect(share: String) async throws -> NASConnection {
+        if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
         guard online else { throw NASError.offline("The NAS can't be reached at smb://test.") }
         let folder = root.appendingPathComponent(share, isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -1218,11 +1243,12 @@ extension SelfTest {
 
         let fake = FakeNAS(root: scratch.appendingPathComponent("QUEUE-NAS"))
         fake.online = false
+        let notes = RecordingNotifier()
         let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("queue-lib"))),
                              peopleStore: peopleFile, history: HistoryStoreFolder(folder: scratch.appendingPathComponent("queue-history")),
                              queue: queueFile, unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("queue-unplaced.json")),
                              secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("queue-maps")),
-                             exifTool: tool, nas: fake)
+                             exifTool: tool, nas: fake, notifier: notes)
         func state(_ id: UUID) -> QueueState? { model.queueEntries.first { $0.id == id }?.state }
         check("queue: a send cut off is waiting again", state(cut.id) == .waiting)
 
@@ -1231,11 +1257,13 @@ extension SelfTest {
               && model.queueLine.contains("can't be reached") && model.nasReach == .unreachable, model.queueLine)
         check("queue: someone off the list, their photo not sent and why", state(stranger.id) == .failed
               && model.queueEntries.first { $0.id == stranger.id }?.reason == "Their person was removed from People")
+        check("queue: no notification while it waits for the NAS", notes.posted.isEmpty, "\(notes.posted)")
 
         fake.online = true
         model.setSendPaused(true)
         await model.sendWaiting()
         check("queue: paused, nothing sent", model.queueEntries.allSatisfy { $0.state != .sent } && model.queueLine == "Paused.", model.queueLine)
+        check("queue: no notification while paused", notes.posted.isEmpty, "\(notes.posted)")
 
         model.setSendPaused(false)
         await model.sendWaiting()
@@ -1255,11 +1283,15 @@ extension SelfTest {
         let onDisk = (try? queueFile.load()) ?? []
         check("queue: written to disk as it went", onDisk.filter { $0.state == .sent }.count == 4 && onDisk.count == entries.count,
               "\(onDisk.map(\.state))")
+        check("queue: one notification for the whole batch", notes.posted == ["4 photos are on the NAS. 2 were not sent."], "\(notes.posted)")
+        await model.sendWaiting()
+        check("queue: none again with nothing new", notes.posted.count == 1, "\(notes.posted)")
 
         model.retryFailed()
         check("queue: Retry failed puts them back in line", state(missing.id) == .waiting && state(stranger.id) == .waiting)
         await model.sendWaiting()
         check("queue: and they fail again for the same reasons", state(missing.id) == .failed && state(stranger.id) == .failed)
+        check("queue: and a notification says so", notes.posted.last == "2 photos were not sent.", "\(notes.posted)")
 
         // Restarted: the list as it was left.
         let again2 = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("queue-lib"))),
@@ -1275,7 +1307,8 @@ extension SelfTest {
         model.nasBackupAddress = "smb://100.99.144.35"
         model.nasUser = "david"
         model.nasPassword = "not-a-real-one"
-        model.nasLine = "Connected through smb://10.0.10.10."
+        // The longest line the card shows, to see it wrap.
+        model.nasLine = "Saved. The NAS can't be reached at 10.0.10.10 or 100.99.144.35."
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
         NSApp.appearance = NSAppearance(named: .aqua)
@@ -1296,5 +1329,114 @@ extension SelfTest {
             }
         }
         print("queue pictures: \(scratch.path)")
+    }
+
+    /// A card being saved while the photos already saved go up: one
+    /// notification once it is all done, never one per photo.
+    @MainActor
+    static func nasBatch(_ scratch: URL, samples: URL) async {
+        let fm = FileManager.default
+        let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+        let card = scratch.appendingPathComponent("BATCH-CARD")
+        let dcim = card.appendingPathComponent("DCIM/100CANON")
+        try? fm.createDirectory(at: dcim, withIntermediateDirectories: true)
+        for f in ((try? fm.contentsOfDirectory(at: samples, includingPropertiesForKeys: nil)) ?? []).filter({ PhotoKinds.isPhoto($0) }) {
+            try? fm.copyItem(at: f, to: dcim.appendingPathComponent(f.lastPathComponent))
+        }
+        let saveTo = scratch.appendingPathComponent("BATCH-SAVED")
+        try? fm.createDirectory(at: saveTo, withIntermediateDirectories: true)
+        let notes = RecordingNotifier()
+        let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("batch-lib"))),
+                             peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("batch-people.json")),
+                             history: HistoryStoreFolder(folder: scratch.appendingPathComponent("batch-history")),
+                             queue: QueueStoreFile(url: scratch.appendingPathComponent("batch-queue.json")),
+                             unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("batch-unplaced.json")),
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("batch-maps")),
+                             exifTool: tool, nas: FakeNAS(root: scratch.appendingPathComponent("BATCH-NAS")), notifier: notes)
+        var david = model.book.people[0]
+        david.saveFolder = saveTo.path
+        david.nasFolder = "homes/david"
+        model.save(david)
+        let source = CardWatcher.card(at: card)!
+        model.choose(source)
+        model.askingWhose = nil
+        await model.read(source, for: david.id)
+        let photos = model.readyToSave.count
+        // Sending keeps up with saving, as on the home network.
+        let saving = Task { await model.savePhotos() }
+        var started = false, sentWhileSaving = 0, notifiedWhileSaving = false
+        for _ in 0..<2000 {
+            try? await Task.sleep(for: .milliseconds(30))
+            if model.saving { started = true }
+            await model.sendWaiting()
+            if model.saving {
+                sentWhileSaving = max(sentWhileSaving, model.queueEntries.filter { $0.state == .sent }.count)
+                if !notes.posted.isEmpty { notifiedWhileSaving = true }
+            }
+            if (started && !model.saving) || model.saveDone == photos { break }
+        }
+        await saving.value
+        check("batch: photos went up while the card was still being saved", sentWhileSaving > 0, "\(sentWhileSaving) sent")
+        check("batch: no notification until the card was all saved", !notifiedWhileSaving, "\(notes.posted)")
+        await model.sendWaiting()
+        let sent = model.queueEntries.filter { $0.state == .sent }.count
+        check("batch: every saved photo on the NAS", sent == photos && photos > 0, "\(sent) of \(photos)")
+        check("batch: one notification, once all were saved and sent", notes.posted == [AppModel.batchText(sent: photos, failed: 0)],
+              "\(notes.posted)")
+    }
+
+    /// Save says so at once, then what the NAS or the service answers, and is
+    /// only there when something changed. The notification's words.
+    @MainActor
+    static func settingsFeedback(_ scratch: URL) async {
+        check("words: one photo", AppModel.batchText(sent: 1, failed: 0) == "1 photo is on the NAS.")
+        check("words: a batch", AppModel.batchText(sent: 19, failed: 0) == "19 photos are on the NAS.")
+        check("words: some not sent", AppModel.batchText(sent: 17, failed: 2) == "17 photos are on the NAS. 2 were not sent.")
+        check("words: one not sent", AppModel.batchText(sent: 3, failed: 1) == "3 photos are on the NAS. 1 was not sent.")
+        check("words: none sent", AppModel.batchText(sent: 0, failed: 1) == "1 photo was not sent."
+              && AppModel.batchText(sent: 0, failed: 2) == "2 photos were not sent.")
+
+        var book = PeopleBook.family()
+        book.people[0].nasFolder = "homes/david"
+        let peopleFile = PeopleStoreFile(url: scratch.appendingPathComponent("feedback-people.json"))
+        try? peopleFile.save(book)
+        let fake = FakeNAS(root: scratch.appendingPathComponent("FEEDBACK-NAS"))
+        let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("feedback-lib"))),
+                             peopleStore: peopleFile, history: HistoryStoreFolder(folder: scratch.appendingPathComponent("feedback-history")),
+                             queue: QueueStoreFile(url: scratch.appendingPathComponent("feedback-queue.json")),
+                             unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("feedback-unplaced.json")),
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("feedback-maps")),
+                             nas: fake, notifier: RecordingNotifier())
+        check("save: nothing to save at first", !model.nasUnsaved && !model.serviceUnsaved)
+        let before = model.nasUser
+        model.nasUser = before + "x"
+        check("save: a changed field makes Save available", model.nasUnsaved)
+        model.nasUser = before
+        check("save: changed back, nothing to save", !model.nasUnsaved)
+        model.nasUser = before + "x"
+        fake.delay = 0.4
+        let saving = Task { await model.saveNAS() }
+        try? await Task.sleep(for: .milliseconds(150))
+        check("save: says saved, and that it is checking", model.nasLine == "Saved. Checking the NAS" && model.nasBusy, model.nasLine)
+        await saving.value
+        check("save: then what the NAS answered", model.nasLine == "Saved. Connected through test.", model.nasLine)
+        check("save: nothing left to save", !model.nasUnsaved && !model.nasBusy)
+        fake.delay = 0
+        await model.testNAS()
+        check("save: Test connection says what the NAS answered", model.nasLine == "Connected through test.", model.nasLine)
+        fake.online = false
+        await model.testNAS()
+        check("save: or that it can't be reached", model.nasLine == "The NAS can't be reached at smb://test.", model.nasLine)
+        model.nasUser = before
+        await model.saveNAS()
+        check("save: saved even when the NAS is away, and says both", model.nasLine == "Saved. The NAS can't be reached at smb://test.", model.nasLine)
+
+        let key = model.serviceKey
+        model.serviceKey = key + "x"
+        check("save: a changed key makes the service's Save available", model.serviceUnsaved)
+        await model.saveService()
+        check("save: the service's Save says saved first", model.settingsLine.hasPrefix("Saved. ") && !model.serviceUnsaved, model.settingsLine)
+        model.serviceKey = key
+        await model.saveService()
     }
 }

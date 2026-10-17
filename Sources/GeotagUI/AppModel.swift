@@ -49,6 +49,23 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var serviceStatus: ServiceStatus?
     @Published public var settingsLine = ""
     @Published public private(set) var settingsBusy = false
+    /// The service as last saved, so Save is only there when there is something to save.
+    @Published private var savedService = ServiceFields()
+
+    private struct ServiceFields: Equatable {
+        var address = ""
+        var key = ""
+
+        init(address: String = "", key: String = "") {
+            self.address = address.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.key = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    /// The address or key differs from what was saved.
+    public var serviceUnsaved: Bool {
+        ServiceFields(address: serviceAddress, key: serviceKey) != savedService
+    }
 
     // Tracks.
     @Published public private(set) var tracks: [Track] = []
@@ -107,8 +124,38 @@ public final class AppModel: ObservableObject {
     @Published public var nasPassword = ""
     @Published public var nasLine = ""
     @Published public private(set) var nasBusy = false
-    /// The NAS as last saved; the fields above may hold edits not saved yet.
-    private var nasSaved = NASOverSMB(addresses: [], user: nil, password: nil)
+    /// The NAS as last saved: what sending uses, while the fields above may
+    /// hold edits not saved yet.
+    @Published private var savedNAS = NASFields()
+
+    private struct NASFields: Equatable {
+        var address = ""
+        var backup = ""
+        var user = ""
+        var password = ""
+
+        init(address: String = "", backup: String = "", user: String = "", password: String = "") {
+            self.address = address.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.backup = backup.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.user = user.trimmingCharacters(in: .whitespacesAndNewlines)
+            self.password = password
+        }
+
+        var port: NASOverSMB { NASOverSMB(addresses: [address, backup], user: user, password: password) }
+    }
+
+    private var nasFields: NASFields {
+        NASFields(address: nasAddress, backup: nasBackupAddress, user: nasUser, password: nasPassword)
+    }
+
+    /// A field differs from what was saved.
+    public var nasUnsaved: Bool { nasFields != savedNAS }
+
+    /// Photos that reached the NAS, and that were not sent, since the last
+    /// notification: one notification per batch, never one per photo.
+    private var batchSent = 0
+    private var batchFailed = 0
+    private let notifier: NotifierPort
 
     // The queue: every saved copy on its way to the NAS, as kept in queue.json.
     @Published public private(set) var queueEntries: [QueueEntry] = [] {
@@ -157,7 +204,9 @@ public final class AppModel: ObservableObject {
                 secrets: SecretStorePort = Keychain(),
                 thumbnails: MapThumbnails? = nil,
                 exifTool: ExifTool? = nil,
-                nas: NASPort? = nil) {
+                nas: NASPort? = nil,
+                notifier: NotifierPort? = nil) {
+        self.notifier = notifier ?? MacNotifier.shared
         self.exifTool = exifTool ?? ExifTool.bundled()
         self.library = library
         self.thumbnails = thumbnails ?? MapThumbnails()
@@ -188,11 +237,12 @@ public final class AppModel: ObservableObject {
         serviceAddress = defaults.string(forKey: "trackServiceAddress") ?? ""
         role = defaults.string(forKey: "trackServiceRole").flatMap(KeyRole.init(rawValue:))
         readSecrets()
+        savedService = ServiceFields(address: serviceAddress, key: serviceKey)
         mapCredit = defaults.string(forKey: "mapCredit") ?? ""
         nasAddress = defaults.string(forKey: "nasAddress") ?? ""
         nasBackupAddress = defaults.string(forKey: "nasBackupAddress") ?? ""
         nasUser = defaults.string(forKey: "nasUser") ?? ""
-        nasSaved = NASOverSMB(addresses: [nasAddress, nasBackupAddress], user: nasUser, password: nasPassword)
+        savedNAS = nasFields
         sendPaused = defaults.bool(forKey: "sendPaused")
         // A send cut off by a crash or a shutdown starts again from the beginning.
         var entries = (try? queue.load()) ?? []
@@ -228,6 +278,11 @@ public final class AppModel: ObservableObject {
         applyAppearance()
         startCards()
         startSending()
+        // A click on a notification opens the Queue page.
+        MacNotifier.onOpen = { [weak self] in
+            self?.screen = .queue
+            Windows.bringForward()
+        }
         tracks = await library.listed()
         await refresh()
         timer?.invalidate()
@@ -260,40 +315,44 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    private func writeSecrets() throws {
-        let stored = StoredSecrets(serviceKey: serviceKey.trimmingCharacters(in: .whitespacesAndNewlines), nasPassword: nasPassword)
-        let data = try JSONEncoder().encode(stored)
+    private func writeSecrets(serviceKey: String, nasPassword: String) throws {
+        let data = try JSONEncoder().encode(StoredSecrets(serviceKey: serviceKey, nasPassword: nasPassword))
         try secrets.write(Self.keyAccount, String(decoding: data, as: UTF8.self))
     }
 
+    /// Saves the address and key, says so at once, then what the service answers.
     public func saveService() async {
-        defaults.set(serviceAddress.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "trackServiceAddress")
+        let fields = ServiceFields(address: serviceAddress, key: serviceKey)
         do {
-            try writeSecrets()
+            // The NAS password as last saved goes with it, never an edit not saved yet.
+            try writeSecrets(serviceKey: fields.key, nasPassword: savedNAS.password)
         } catch {
             settingsLine = error.localizedDescription
             return
         }
-        await testService()
+        defaults.set(fields.address, forKey: "trackServiceAddress")
+        savedService = fields
+        await testService(saying: "Saved. ")
         if role != nil { await refresh() }
     }
 
-    public func testService() async {
+    public func testService(saying prefix: String = "") async {
         guard let service else {
-            settingsLine = ServiceError.notSetUp.localizedDescription
+            settingsLine = prefix + ServiceError.notSetUp.localizedDescription
             return
         }
         settingsBusy = true
         defer { settingsBusy = false }
+        settingsLine = prefix + "Checking the service"
         do {
             let status = try await service.status()
             serviceStatus = status
             role = status.role
             defaults.set(status.role.rawValue, forKey: "trackServiceRole")
             let who = status.role == .owner ? "Owner key" : "Reading key"
-            settingsLine = "\(who). \(status.tracks) \(status.tracks == 1 ? "track" : "tracks") on the service."
+            settingsLine = prefix + "\(who). \(status.tracks) \(status.tracks == 1 ? "track" : "tracks") on the service."
         } catch {
-            settingsLine = error.localizedDescription
+            settingsLine = prefix + error.localizedDescription
         }
     }
 
@@ -749,53 +808,71 @@ public final class AppModel: ObservableObject {
         queueIndex[path]
     }
 
-    private var nas: NASPort { nasPort ?? nasSaved }
+    /// Sending uses the NAS as last saved.
+    private var nas: NASPort { nasPort ?? savedNAS.port }
 
+    /// Saves the NAS settings, says so at once, then what the NAS answers.
     public func saveNAS() async {
-        nasAddress = nasAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-        nasBackupAddress = nasBackupAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-        nasUser = nasUser.trimmingCharacters(in: .whitespacesAndNewlines)
-        defaults.set(nasAddress, forKey: "nasAddress")
-        defaults.set(nasBackupAddress, forKey: "nasBackupAddress")
-        defaults.set(nasUser, forKey: "nasUser")
+        let fields = nasFields
         do {
-            try writeSecrets()
+            // The service key as last saved goes with it, never an edit not saved yet.
+            try writeSecrets(serviceKey: savedService.key, nasPassword: fields.password)
         } catch {
             nasLine = error.localizedDescription
             return
         }
-        nasSaved = NASOverSMB(addresses: [nasAddress, nasBackupAddress], user: nasUser, password: nasPassword)
+        defaults.set(fields.address, forKey: "nasAddress")
+        defaults.set(fields.backup, forKey: "nasBackupAddress")
+        defaults.set(fields.user, forKey: "nasUser")
+        savedNAS = fields
         // New settings are tried now, not at the next minute.
         nextTry = nil
-        await testNAS()
+        await testNAS(saying: "Saved. ")
     }
 
-    /// Opens the shared folder of every NAS folder in People, and says how it went.
-    public func testNAS() async {
+    /// Opens the shared folder of every NAS folder in People with the settings
+    /// on screen, saved or not, and says how it went.
+    public func testNAS(saying prefix: String = "") async {
         let shares = Set(book.people.compactMap { NASFolder($0.nasFolder)?.share }).sorted()
         guard !shares.isEmpty else {
-            nasLine = "Nobody has a NAS folder yet. Choose one in People."
+            nasLine = prefix + "Nobody has a NAS folder yet. Choose one in People."
             return
         }
         nasBusy = true
         defer { nasBusy = false }
+        nasLine = prefix + "Checking the NAS"
+        let port = nasPort ?? nasFields.port
         var lines: [String] = []
         var answered = false
         for share in shares {
-            let label = shares.count == 1 ? "" : "\(share): "
             do {
-                let connection = try await nas.connect(share: share)
+                let connection = try await port.connect(share: share)
                 if connection.ours { ourMounts[connection.folder.path] = connection }
                 nasReach = .through(connection.address)
                 answered = true
-                lines.append("\(label)Connected through \(connection.address).")
+                let host = NASOverSMB.host(connection.address) ?? connection.address
+                lines.append(shares.count == 1 ? "Connected through \(host)." : "\(share): connected through \(host).")
             } catch {
                 nasReach = .unreachable
-                lines.append("\(label)\(error.localizedDescription)")
+                lines.append((shares.count == 1 ? "" : "\(share): ") + error.localizedDescription)
             }
         }
-        nasLine = lines.joined(separator: " ")
+        nasLine = prefix + lines.joined(separator: " ")
         if answered { nextTry = nil }
+    }
+
+    /// "19 photos are on the NAS." or "17 photos are on the NAS. 2 were not sent."
+    public static func batchText(sent: Int, failed: Int) -> String {
+        var parts: [String] = []
+        if sent > 0 { parts.append(sent == 1 ? "1 photo is on the NAS." : "\(sent.formatted()) photos are on the NAS.") }
+        if failed > 0 {
+            if sent > 0 {
+                parts.append(failed == 1 ? "1 was not sent." : "\(failed.formatted()) were not sent.")
+            } else {
+                parts.append(failed == 1 ? "1 photo was not sent." : "\(failed.formatted()) photos were not sent.")
+            }
+        }
+        return parts.joined(separator: " ")
     }
 
     private func startSending() {
@@ -858,6 +935,7 @@ public final class AppModel: ObservableObject {
                 for i in all.indices where all[i].state == .waiting && book.person(all[i].personId) == nil {
                     all[i].state = .failed
                     all[i].reason = "Their person was removed from People"
+                    batchFailed += 1
                 }
             }
         }
@@ -885,7 +963,8 @@ public final class AppModel: ObservableObject {
             sendingId = entry.id
             meter.begin(name)
             let more = queueEntries.filter { $0.state == .waiting }.count
-            say("Sending \(name) to \(connection.address)." + (more == 0 ? "" : " \(more) more waiting."))
+            let host = NASOverSMB.host(connection.address) ?? connection.address
+            say("Sending \(name) to \(host)." + (more == 0 ? "" : " \(more) more waiting."))
             let local = URL(fileURLWithPath: entry.localPath)
             let tool = exifTool, update = entry.update, meter = self.meter
             // On a thread of its own: a connection that hangs must not hold up
@@ -906,6 +985,7 @@ public final class AppModel: ObservableObject {
             meter.end()
             switch outcome {
             case .success(let result):
+                batchSent += 1
                 let landed = result.url.lastPathComponent
                 changeEntry(entry.id) { e in
                     e.state = .sent
@@ -929,6 +1009,7 @@ public final class AppModel: ObservableObject {
                 say("NAS full. Trying again at \(When.current.time(retry)).")
                 return
             case .failure(.failed(let why)):
+                batchFailed += 1
                 changeEntry(entry.id) { e in
                     e.state = .failed
                     e.reason = why
@@ -937,6 +1018,13 @@ public final class AppModel: ObservableObject {
         }
         say(sendPaused ? "Paused." : restingLine())
         let waiting = queueEntries.contains { $0.state == .waiting && NASFolder(book.person($0.personId)?.nasFolder) != nil }
+        // All that can go has gone, and nothing is still being saved or placed:
+        // one notification for the whole batch.
+        if !sendPaused, !waiting, !saving, !placingLater, batchSent + batchFailed > 0 {
+            notifier.post(Self.batchText(sent: batchSent, failed: batchFailed))
+            batchSent = 0
+            batchFailed = 0
+        }
         if !sendPaused, !waiting { await closeOurMounts() }
     }
 

@@ -6,6 +6,11 @@ import GeotagUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var quitWatch: Any?
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Before launch ends, so a click on a notification that opened Geotag counts.
+        MacNotifier.listen()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Command-Q always quits, even with a window or a file chooser open
         // inside Geotag: they are closed first, then Geotag quits.

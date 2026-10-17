@@ -261,8 +261,22 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Sending runs on GCD threads, never Swift's own pool: a hung connection
   must not stall the app. A shared folder that hangs is asked once at a time.
 - The Mac asks once whether Geotag may use files on a network volume.
-- Untested against the real NAS until David tries it. Tests use `FakeNAS`
-  (a scratch folder); never write test files to his NAS.
+- First real send, 17 October 2026: his 19 photos into homes/david through
+  the share Finder already had open, in 20 seconds. The Tailscale address is
+  still untried. Tests use `FakeNAS` (a scratch folder); never write test
+  files to his NAS.
+- Save on the NAS and Track service cards says "Saved." at once, then the
+  answer ("Saved. Checking the NAS", then "Saved. Connected through
+  10.0.10.10."), and is greyed out until a field changes (David, 17 October
+  2026: "no indication of the state"). Test connection tries the fields on
+  screen; sending uses the saved settings. Messages name the NAS by its
+  number, without "smb://".
+- A Mac notification per finished batch (`MacNotifier`, one at a time under
+  the identifier `geotag-nas`): "19 photos are on the NAS." or "17 photos are
+  on the NAS. 2 were not sent." Never per photo: not while a card is being
+  saved or photos placed, not while waiting for the NAS or paused. Clicking
+  it opens the Queue page. It posts only from the app itself; the self-test
+  records the words instead (`RecordingNotifier`).
 
 ## Tests never touch David's own records
 

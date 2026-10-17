@@ -210,6 +210,8 @@ struct NASCard: View {
                 } label: {
                     Text("Save").buttonLabel()
                 }
+                // Greyed out until a field changes.
+                .disabled(!model.nasUnsaved)
                 Button {
                     Task { await model.testNAS() }
                 } label: {

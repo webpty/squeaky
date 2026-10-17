@@ -320,7 +320,7 @@ public struct NASOverSMB: NASPort {
         var tried: [String] = []
         for address in addresses {
             guard let host = Self.host(address) else { continue }
-            tried.append(address)
+            tried.append(host)
             if let open = Self.mounted(host: host, share: share) {
                 if await Self.alive(open) { return NASConnection(folder: open, address: address, ours: false) }
                 continue // open but not answering: the next address
