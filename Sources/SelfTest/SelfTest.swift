@@ -46,6 +46,8 @@ struct SelfTest {
             heif(scratch, samples: URL(fileURLWithPath: samples))
             await firmware(scratch, samples: URL(fileURLWithPath: samples),
                            raws: ProcessInfo.processInfo.environment["GEOTAG_RAWS"].map { URL(fileURLWithPath: $0) })
+            await lenses(scratch, samples: URL(fileURLWithPath: samples),
+                         raws: ProcessInfo.processInfo.environment["GEOTAG_RAWS"].map { URL(fileURLWithPath: $0) })
             await clocks(scratch, samples: URL(fileURLWithPath: samples),
                          raws: ProcessInfo.processInfo.environment["GEOTAG_RAWS"].map { URL(fileURLWithPath: $0) })
         }
@@ -1663,7 +1665,7 @@ extension SelfTest {
         model.nasLine = "Saved. Connected through 10.0.10.10."
         model.screen = .settings
         await draw("07-settings-top", RootView(), 1100, 720)
-        await draw("08-settings-all", SheetProbe(.settings), 760, 1900)
+        await draw("08-settings-all", SheetProbe(.settings), 760, 2200)
         await draw("09-person", SheetProbe(.person), 560, 230)
         await draw("10-camera", SheetProbe(.camera), 600, 320)
 
@@ -2079,5 +2081,114 @@ extension SelfTest {
         let after = model.book.camera(personId: model.book.people[0].id, model: "Canon EOS R5m2")
         check("firmware: a card of older photos does not take the version back", after?.firmware == "1.1.1"
               && after?.firmwareSeen == camera?.firmwareSeen, after?.firmware ?? "-")
+    }
+}
+
+extension SelfTest {
+    /// The lenses the photos name: read with the rest of each photo, an
+    /// extender left off, one per lens with the camera and day of its latest
+    /// photo, and Canon's page for each.
+    @MainActor
+    static func lenses(_ scratch: URL, samples: URL, raws: URL?) async {
+        let fm = FileManager.default
+        check("lenses: the lens without its extender", Lenses.name("RF600mm F4 L IS USM +RF1.4x") == "RF600mm F4 L IS USM"
+              && Lenses.name("EF100-400mm f/4.5-5.6L IS II USM +1.4x III") == "EF100-400mm f/4.5-5.6L IS II USM"
+              && Lenses.name(" RF70-200mm F2.8 L IS USM Z ") == "RF70-200mm F2.8 L IS USM Z"
+              && Lenses.name(nil) == nil && Lenses.name("") == nil && Lenses.name("----") == nil)
+        check("lenses: a serial of zeros is none, a real one keeps its leading zeros",
+              Lenses.serial("0000000000") == nil && Lenses.serial("0000131373") == "0000131373"
+              && Lenses.serial(" 1490000207 ") == "1490000207" && Lenses.serial(nil) == nil && Lenses.serial("") == nil)
+        // The pages checked on Canon U.S.A.'s site, 18 October 2026.
+        let pages = [("RF70-200mm F2.8 L IS USM Z", "rf70-200mm-f2-8-l-is-usm-z"), ("RF70-200mm F2.8 L IS USM", "rf70-200mm-f2-8-l-is-usm"),
+                     ("RF600mm F4 L IS USM", "rf600mm-f4-l-is-usm"), ("RF24-105mm F4 L IS USM", "rf24-105mm-f4-l-is-usm"),
+                     ("RF-S18-150mm F3.5-6.3 IS STM", "rf-s18-150mm-f3-5-6-3-is-stm"), ("EF600mm f/4L IS III USM", "ef-600mm-f-4l-is-iii-usm"),
+                     ("EF70-200mm f/2.8L IS III USM", "ef-70-200mm-f-2-8l-is-iii-usm"), ("EF-S18-55mm f/3.5-5.6 IS II", "ef-s-18-55mm-f-3-5-5-6-is-ii")]
+        let wrong = pages.filter { Lenses.page(forLens: $0.0)?.absoluteString != "https://www.usa.canon.com/support/p/\($0.1)" }.map(\.0)
+        check("lenses: Canon's page for each lens, named as Canon names its pages", wrong.isEmpty
+              && Lenses.page(forLens: "TAMRON SP 90mm F/2.8 Di VC USD MACRO1:1 F017") == nil, "\(wrong)")
+
+        // Read with everything else: JPEG, CR3 and CR2; the P950's own lens is never named.
+        let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+        var files = ["390A5795.JPG", "DAVL2909.JPG", "DAVL0311.CR3"].map { samples.appendingPathComponent($0) }
+        if let raws { files += ["IMG_0126.CR2", "_MG_2587.CR2", "DSCN0014.NRW"].map { raws.appendingPathComponent($0) } }
+        files = files.filter { fm.fileExists(atPath: $0.path) }
+        let read = ((try? PhotoScanner(exifTool: tool).scan(files) { _ in }) ?? [])
+            .map { "\($0.fileName) \(Lenses.name($0.lens) ?? "-") \(Lenses.serial($0.lensSerial) ?? "-")" }
+        let wanted = ["390A5795.JPG RF70-200mm F2.8 L IS USM Z 1490000207", "DAVL2909.JPG RF600mm F4 L IS USM 2510000103",
+                      "DAVL0311.CR3 RF70-200mm F2.8 L IS USM Z 1490000207", "IMG_0126.CR2 EF-S18-55mm f/3.5-5.6 IS II 0000131373",
+                      "_MG_2587.CR2 TAMRON SP 90mm F/2.8 Di VC USD MACRO1:1 F017 -", "DSCN0014.NRW - -"]
+        check("lenses: read from JPEG, CR3 and CR2 with the rest of each photo",
+              read == Array(wanted.prefix(read.count)) && read.count == files.count, "\(read)")
+
+        // Kept per lens, from its latest photo.
+        let david = UUID(), amanda = UUID()
+        func photo(_ name: String, _ camera: String, _ lens: String?, _ serial: String?, _ taken: String?) -> ScannedPhoto {
+            ScannedPhoto(url: URL(fileURLWithPath: "/nowhere/\(name)"), fileName: name, size: 1, taken: taken, subSeconds: nil,
+                         zone: nil, model: camera, lens: lens, lensSerial: serial)
+        }
+        func show(_ lenses: [Lens]) -> [String] {
+            lenses.map { "\($0.model) \($0.serial ?? "-") \($0.camera) \($0.seen.map { Moments.reading.string(from: $0) } ?? "-")" }
+        }
+        var known = Lenses.noting([
+            photo("A.JPG", "Canon EOS R5m2", "RF70-200mm F2.8 L IS USM Z", "1490000207", "2025:03:23 17:44:20"),
+            photo("B.JPG", "Canon EOS R5m2", "RF600mm F4 L IS USM", "2510000103", "2025:09:06 10:00:36"),
+            photo("C.CR3", "Canon EOS R5m2", "RF70-200mm F2.8 L IS USM Z", "1490000207", "2026:01:01 10:30:47"),
+            photo("D.JPG", "Canon EOS R5m2", "RF600mm F4 L IS USM +RF1.4x", "2510000103", "2025:09:06 11:00:00"),
+            photo("E.JPG", "Canon EOS R5m2", nil, nil, "2026:01:02 09:00:00"),
+        ], personId: david, into: [])
+        check("lenses: one per lens, with or without an extender, from its latest photo", show(known) == [
+            "RF70-200mm F2.8 L IS USM Z 1490000207 Canon EOS R5m2 2026:01:01 10:30:47",
+            "RF600mm F4 L IS USM 2510000103 Canon EOS R5m2 2025:09:06 11:00:00"], "\(show(known))")
+        let older = Lenses.noting([photo("F.JPG", "Canon EOS R7", "RF70-200mm F2.8 L IS USM Z", "1490000207", "2025:09:08 12:51:41")],
+                                  personId: david, into: known)
+        check("lenses: a card of older photos does not take a lens back", older == known, "\(show(older))")
+        known = Lenses.noting([photo("G.JPG", "Canon EOS R5m2", "RF70-200mm F2.8 L IS USM Z +RF2x", "1490000207", "2026:10:18 09:00:00"),
+                               photo("H.CR2", "Canon EOS REBEL T3i", "TAMRON SP 90mm F/2.8 Di VC USD MACRO1:1 F017", "0000000000", nil)],
+                              personId: amanda, into: known)
+        check("lenses: a later photo moves a lens to its camera and person; one with no serial or date is listed too",
+              show(known) == ["RF70-200mm F2.8 L IS USM Z 1490000207 Canon EOS R5m2 2026:10:18 09:00:00",
+                              "RF600mm F4 L IS USM 2510000103 Canon EOS R5m2 2025:09:06 11:00:00",
+                              "TAMRON SP 90mm F/2.8 Di VC USD MACRO1:1 F017 - Canon EOS REBEL T3i -"]
+              && known.map(\.personId) == [amanda, david, amanda], "\(show(known))")
+
+        let saved = When.current
+        When.current = When(order: .yearMonthDay, clock24: true)
+        let line = LensTextProbe.line(known[0], owner: "Amanda"), bare = LensTextProbe.line(known[2], owner: nil)
+        When.current = saved
+        check("lenses: the Settings line", line == "Amanda · Canon EOS R5m2 · Serial 1490000207 · Last seen 2026-10-18"
+              && bare == "Canon EOS REBEL T3i", "\(line) / \(bare)")
+
+        let old = #"{"cameras":[],"people":[{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","name":"David"}]}"#
+        let decoded = try? JSONDecoder().decode(PeopleBook.self, from: Data(old.utf8))
+        check("lenses: a people file from before lenses still reads", decoded?.people.count == 1 && decoded?.lenses.isEmpty == true)
+
+        // A card read: its lenses kept on this Mac, and the same card read again changes nothing.
+        let cardRoot = scratch.appendingPathComponent("LENS-CARD")
+        let card = cardRoot.appendingPathComponent("DCIM/100CANON")
+        try? fm.createDirectory(at: card, withIntermediateDirectories: true)
+        for name in ["DAVL3660.JPG", "DAVL2909.JPG", "DAVL0311.CR3"] {
+            try? fm.copyItem(at: samples.appendingPathComponent(name), to: card.appendingPathComponent(name))
+        }
+        let peopleFile = PeopleStoreFile(url: scratch.appendingPathComponent("lens-people.json"))
+        let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("lens-lib"))),
+                             peopleStore: peopleFile, history: HistoryStoreFolder(folder: scratch.appendingPathComponent("lens-history")),
+                             queue: QueueStoreFile(url: scratch.appendingPathComponent("lens-queue.json")),
+                             unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("lens-unplaced.json")),
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("lens-maps")),
+                             exifTool: tool, nas: FakeNAS(root: scratch.appendingPathComponent("LENS-NAS")), notifier: RecordingNotifier(),
+                             places: FakePlaces())
+        let source = CardWatcher.card(at: cardRoot)!
+        model.choose(source)
+        model.askingWhose = nil
+        let davidId = model.book.people[0].id
+        await model.read(source, for: davidId)
+        let kept = (try? peopleFile.load()).flatMap { $0 }?.lenses ?? []
+        check("lenses: a card's lenses kept on this Mac with the camera and day", show(model.book.lenses) == [
+            "RF70-200mm F2.8 L IS USM Z 1490000207 Canon EOS R5m2 2026:01:01 10:30:47",
+            "RF600mm F4 L IS USM 2510000103 Canon EOS R5m2 2025:09:06 10:00:36"]
+              && kept == model.book.lenses && kept.allSatisfy { $0.personId == davidId }, "\(show(model.book.lenses))")
+        let before = try? Data(contentsOf: peopleFile.url)
+        await model.read(source, for: davidId)
+        check("lenses: the same card read again changes nothing", (try? Data(contentsOf: peopleFile.url)) == before && kept == model.book.lenses)
     }
 }

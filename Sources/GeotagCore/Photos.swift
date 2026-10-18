@@ -29,9 +29,13 @@ public struct ScannedPhoto: Identifiable, Equatable, Sendable {
     /// The camera's software version when the photo was taken: "1.1.1".
     /// Read only for the newest photo of each model on a card.
     public var firmware: String?
+    /// The lens as the camera names it, and its serial number.
+    public var lens: String?
+    public var lensSerial: String?
 
     public init(url: URL, fileName: String, size: Int64, taken: String?, subSeconds: String?, zone: String?, model: String?,
-                hasLocation: Bool = false, ownLat: Double? = nil, ownLon: Double? = nil, firmware: String? = nil) {
+                hasLocation: Bool = false, ownLat: Double? = nil, ownLon: Double? = nil, firmware: String? = nil,
+                lens: String? = nil, lensSerial: String? = nil) {
         self.url = url
         self.fileName = fileName
         self.size = size
@@ -43,6 +47,8 @@ public struct ScannedPhoto: Identifiable, Equatable, Sendable {
         self.ownLat = ownLat
         self.ownLon = ownLon
         self.firmware = firmware
+        self.lens = lens
+        self.lensSerial = lensSerial
     }
 
     /// Name, size and time taken: what says two photos are the same one.
@@ -86,7 +92,7 @@ public struct PhotoScanner: Sendable {
             let batch = Array(files[start..<min(start + 100, files.count)])
             let data = try exifTool.run(["-j", "-q", "-q", "-fast2", "-charset", "filename=utf8",
                                          "-DateTimeOriginal", "-SubSecTimeOriginal", "-OffsetTimeOriginal", "-OffsetTime", "-Model",
-                                         "-GPSLatitude#", "-GPSLongitude#"]
+                                         "-GPSLatitude#", "-GPSLongitude#", "-LensModel", "-LensSerialNumber"]
                                         + batch.map(\.path))
             let rows = (try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
             var byPath: [String: [String: Any]] = [:]
@@ -105,7 +111,8 @@ public struct PhotoScanner: Sendable {
                                         zone: text("OffsetTimeOriginal") ?? text("OffsetTime"), model: text("Model"),
                                         hasLocation: located,
                                         ownLat: located ? (row["GPSLatitude"] as? NSNumber)?.doubleValue : nil,
-                                        ownLon: located ? (row["GPSLongitude"] as? NSNumber)?.doubleValue : nil))
+                                        ownLon: located ? (row["GPSLongitude"] as? NSNumber)?.doubleValue : nil,
+                                        lens: text("LensModel"), lensSerial: text("LensSerialNumber")))
             }
             done += batch.count
             progress(done)

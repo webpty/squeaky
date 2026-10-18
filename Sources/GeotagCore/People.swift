@@ -84,14 +84,26 @@ public struct Camera: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
-/// Everyone and their cameras, as kept on this Mac.
+/// Everyone, their cameras and the lenses their photos name, as kept on this Mac.
 public struct PeopleBook: Codable, Equatable, Sendable {
     public var people: [Person]
     public var cameras: [Camera]
+    public var lenses: [Lens]
 
-    public init(people: [Person] = [], cameras: [Camera] = []) {
+    public init(people: [Person] = [], cameras: [Camera] = [], lenses: [Lens] = []) {
         self.people = people
         self.cameras = cameras
+        self.lenses = lenses
+    }
+
+    private enum CodingKeys: String, CodingKey { case people, cameras, lenses }
+
+    /// A book from before 0.14.1 has no lenses.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        people = try c.decode([Person].self, forKey: .people)
+        cameras = try c.decode([Camera].self, forKey: .cameras)
+        lenses = try c.decodeIfPresent([Lens].self, forKey: .lenses) ?? []
     }
 
     /// The family and their five cameras, as David listed them on 16 October 2026.

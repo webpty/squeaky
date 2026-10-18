@@ -12,6 +12,7 @@ struct SettingsScreen: View {
                 NASCard()
                 PeopleCard()
                 CamerasCard()
+                if !model.book.lenses.isEmpty { LensesCard() }
                 MatchingCard()
                 PhotosListCard()
                 CardsCard()

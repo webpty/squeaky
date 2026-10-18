@@ -267,6 +267,68 @@ struct CamerasCard: View {
     }
 }
 
+// MARK: Lenses
+
+enum LensText {
+    /// "David · Canon EOS R5m2 · Serial 1490000207 · Last seen 2026.01.01".
+    static func line(_ lens: Lens, owner: String?) -> String {
+        var parts: [String] = []
+        if let owner { parts.append(owner) }
+        parts.append(lens.camera)
+        if let serial = lens.serial { parts.append("Serial \(serial)") }
+        if let seen = lens.seen { parts.append("Last seen \(When.current.day(seen, zone: TimeZone(secondsFromGMT: 0)!))") }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// The Lenses card's wording, for the self-test.
+public enum LensTextProbe {
+    public static func line(_ lens: Lens, owner: String?) -> String { LensText.line(lens, owner: owner) }
+}
+
+/// Every lens the photos have named, each person's together, with a button
+/// to the maker's page where Canon offers lens firmware (David, 18 October
+/// 2026). Shown once a card has named one.
+struct LensesCard: View {
+    @EnvironmentObject var model: AppModel
+
+    private var lenses: [Lens] {
+        let order = Dictionary(model.book.people.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return model.book.lenses.sorted {
+            let a = order[$0.personId] ?? .max, b = order[$1.personId] ?? .max
+            if a != b { return a < b }
+            if $0.model != $1.model { return $0.model.localizedStandardCompare($1.model) == .orderedAscending }
+            return ($0.serial ?? "") < ($1.serial ?? "")
+        }
+    }
+
+    var body: some View {
+        let lenses = lenses
+        Card(title: "Lenses") {
+            VStack(spacing: 0) {
+                ForEach(lenses) { lens in
+                    HStack(spacing: Style.gap) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(lens.model).font(.headline).lineLimit(1)
+                            Text(LensText.line(lens, owner: model.book.person(lens.personId)?.name))
+                                .foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        Spacer(minLength: Style.gap)
+                        if let page = Lenses.page(forLens: lens.model) {
+                            Link(destination: page) {
+                                Text("Latest firmware").buttonLabel()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                    if lens.id != lenses.last?.id { Divider() }
+                }
+            }
+        }
+    }
+}
+
 struct CameraEditor: View {
     enum Clock: String, CaseIterable, Identifiable {
         case notSet, onTime, ahead, behind

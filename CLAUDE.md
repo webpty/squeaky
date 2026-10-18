@@ -301,6 +301,24 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Photos name the lens and its serial number but never its firmware; the
   camera shows that only in its own Firmware menu.
 
+## Lenses (0.14.1, 18 October 2026)
+
+- Every card read notes the lenses its photos name (`LensModel` and
+  `LensSerialNumber`, in the fast read at no extra cost): one entry per lens,
+  model and serial, kept in `people.json` with whose card and which camera
+  its latest photo came from and that photo's day (`Lenses.noting`). A later
+  photo moves it to that camera; an older card never takes it back. A serial
+  of zeros (some makers' lenses) counts as none.
+- An extender is not a lens: whatever follows a "+" in the lens name is left
+  off, so a lens used with and without one is one entry. David has the
+  extenders (18 October 2026). How the cameras write an extender into the
+  name is not proven on one of his photos yet.
+- Settings has a Lenses card once a card has named one, each person's lenses
+  together, with a "Latest firmware" button to Canon U.S.A.'s page for the
+  lens (`Lenses.page`). The page's name follows the lens as the camera writes
+  it, checked on eight Canon pages (RF, RF-S, EF, EF-S); other makers' lenses
+  get no button. The P950 names no lens.
+
 ## Dump, tag and save (17 October 2026)
 
 - Geotag is not a sorting app (David: "it's dump, tag and save; triage can

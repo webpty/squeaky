@@ -713,6 +713,7 @@ public final class AppModel: ObservableObject {
             rows = ImportList.rows(photos, history: past, book: book, personId: personId)
             refreshBreaks()
             noteFirmware(photos, personId: personId)
+            noteLenses(photos, personId: personId)
             await loadTimeline()
             rematch()
             photosLine = rows.isEmpty ? "No photos on \(source.name)." : ""
@@ -841,6 +842,13 @@ public final class AppModel: ObservableObject {
             changed.append(camera)
         }
         if !changed.isEmpty { store { book in changed.forEach { book.save($0) } } }
+    }
+
+    /// Every lens the card's photos name, with the camera it was on and the
+    /// day of its latest photo (David, 18 October 2026).
+    func noteLenses(_ photos: [ScannedPhoto], personId: UUID) {
+        let next = Lenses.noting(photos, personId: personId, into: book.lenses)
+        if next != book.lenses { store { $0.lenses = next } }
     }
 
     // MARK: Places and breaks
