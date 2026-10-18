@@ -236,6 +236,27 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   then kept it: his R5 Mark II and R7 save .HIF when HDR PQ is on, he does
   not edit photos, and a block would leave such photos unsaved on a card.
 
+## Folders by day and place (18 October 2026)
+
+- Every photo goes into a folder named by its day and the place it was
+  taken: "2026.12.03 Ushuaia", "2026.12.03 Puerto Williams" (David: "place
+  the day, then location, each a folder"). A photo with no location, or whose
+  place cannot be named, goes into the day's own folder, "2026.12.03". The
+  NAS gets the same folders. A photo placed later stays where it was saved;
+  folders made before 0.13.4 keep their names.
+- The place is OpenStreetMap's reverse lookup (`PlaceNames`, zoom 14), the
+  first of town, village, city, hamlet, municipality, suburb, county,
+  state_district, state, else the country. Checked on the trip's places on
+  18 October 2026: Buenos Aires, Ushuaia, Puerto Williams, El Calafate, El
+  Chalten, Puerto Natales, Torres del Paine, Stanley, Grytviken; the open sea
+  and the Antarctic landings have no answer, so their folders are the day
+  alone. Zoom 12 named South Georgia after Argentina's province; the city
+  before the town named Puerto Williams "Cape Horn"; the hamlet before the
+  city named Puerto Natales "Huertos Endesa".
+- No internet: the first unanswered lookup ends the lookups for that save
+  (`PlaceLookup.unreachable`), and the rest go by their day alone instead of
+  each waiting ten seconds. Tests never go online (`FakePlaces`).
+
 ## Dump, tag and save (17 October 2026)
 
 - Geotag is not a sorting app (David: "it's dump, tag and save; triage can

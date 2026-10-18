@@ -159,6 +159,8 @@ public final class AppModel: ObservableObject {
     private var batchSent = 0
     private var batchFailed = 0
     private let notifier: NotifierPort
+    /// Names the place each photo was taken, for its folder.
+    private let places: PlaceNaming
 
     // The queue: every saved copy on its way to the NAS, as kept in queue.json.
     @Published public private(set) var queueEntries: [QueueEntry] = [] {
@@ -209,8 +211,10 @@ public final class AppModel: ObservableObject {
                 thumbnails: MapThumbnails? = nil,
                 exifTool: ExifTool? = nil,
                 nas: NASPort? = nil,
-                notifier: NotifierPort? = nil) {
+                notifier: NotifierPort? = nil,
+                places: PlaceNaming? = nil) {
         self.notifier = notifier ?? MacNotifier.shared
+        self.places = places ?? PlaceNames.shared
         self.exifTool = exifTool ?? ExifTool.bundled()
         self.library = library
         self.thumbnails = thumbnails ?? MapThumbnails()
@@ -522,12 +526,23 @@ public final class AppModel: ObservableObject {
                                      subSeconds: photo.subSeconds, imported: Date()))
         }
         var savedCount = 0, failedCount = 0
+        var lookUpPlaces = true
         for row in todo {
             if stopAsked || readingRound != round || self.source?.id != source.id { break }
             photosLine = "Saving \(saveDone + 1) of \(saveTotal)"
             // A photo that cannot be placed is saved as it is, without a location.
-            let item = SaveItem(photo: row.photo, placement: row.placement ?? .review(.noTrack), withoutLocation: row.needsReview)
-            let result = await Task.detached { saver.save(item) }.value
+            var item = SaveItem(photo: row.photo, placement: row.placement ?? .review(.noTrack), withoutLocation: row.needsReview)
+            // Its place names its folder. Once OpenStreetMap stops answering,
+            // the rest go by their day alone rather than each waiting on it.
+            if lookUpPlaces, let spot = Self.spot(item) {
+                switch await places.place(lat: spot.lat, lon: spot.lon) {
+                case .found(let name): item.place = name
+                case .nothing: break
+                case .unreachable: lookUpPlaces = false
+                }
+            }
+            let named = item
+            let result = await Task.detached { saver.save(named) }.value
             results[row.id] = result
             saveDone += 1
             switch result {
@@ -578,6 +593,14 @@ public final class AppModel: ObservableObject {
 
     public func stopSaving() {
         stopAsked = true
+    }
+
+    /// Where a photo is, for naming its folder: the track's position written
+    /// into it, or its own; nil for one saved without a location.
+    static func spot(_ item: SaveItem) -> (lat: Double, lon: Double)? {
+        if let p = item.position { return (p.lat, p.lon) }
+        if case .ownLocation = item.placement, let lat = item.photo.ownLat, let lon = item.photo.ownLon { return (lat, lon) }
+        return nil
     }
 
     /// A card picked. One Geotag has seen before is read straight away for

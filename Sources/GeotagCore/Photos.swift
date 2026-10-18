@@ -23,9 +23,12 @@ public struct ScannedPhoto: Identifiable, Equatable, Sendable {
     public var model: String?
     /// The camera wrote a location of its own.
     public var hasLocation: Bool
+    /// That location, signed (south and west negative), when there is one.
+    public var ownLat: Double?
+    public var ownLon: Double?
 
     public init(url: URL, fileName: String, size: Int64, taken: String?, subSeconds: String?, zone: String?, model: String?,
-                hasLocation: Bool = false) {
+                hasLocation: Bool = false, ownLat: Double? = nil, ownLon: Double? = nil) {
         self.url = url
         self.fileName = fileName
         self.size = size
@@ -34,6 +37,8 @@ public struct ScannedPhoto: Identifiable, Equatable, Sendable {
         self.zone = zone
         self.model = model
         self.hasLocation = hasLocation
+        self.ownLat = ownLat
+        self.ownLon = ownLon
     }
 
     /// Name, size and time taken: what says two photos are the same one.
@@ -90,10 +95,13 @@ public struct PhotoScanner: Sendable {
                     return s.isEmpty ? nil : s
                 }
                 let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0 }.map(Int64.init) ?? 0
+                let located = Self.hasLocation(row)
                 out.append(ScannedPhoto(url: url, fileName: url.lastPathComponent, size: size,
                                         taken: text("DateTimeOriginal"), subSeconds: text("SubSecTimeOriginal"),
                                         zone: text("OffsetTimeOriginal") ?? text("OffsetTime"), model: text("Model"),
-                                        hasLocation: Self.hasLocation(row)))
+                                        hasLocation: located,
+                                        ownLat: located ? (row["GPSLatitude"] as? NSNumber)?.doubleValue : nil,
+                                        ownLon: located ? (row["GPSLongitude"] as? NSNumber)?.doubleValue : nil))
             }
             done += batch.count
             progress(done)

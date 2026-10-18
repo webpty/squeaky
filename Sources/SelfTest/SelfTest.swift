@@ -906,6 +906,14 @@ extension SelfTest {
     static func savingEdges(_ scratch: URL, samples: URL) async {
         let fm = FileManager.default
         // A moment 59.996 s into the minute is written as 59.99, never 60.00.
+        let taken = ScannedPhoto(url: URL(fileURLWithPath: "/x.jpg"), fileName: "x.jpg", size: 1, taken: "2025:03:23 17:44:20",
+                                 subSeconds: nil, zone: nil, model: nil)
+        let undated = ScannedPhoto(url: URL(fileURLWithPath: "/y.jpg"), fileName: "y.jpg", size: 1, taken: nil, subSeconds: nil, zone: nil, model: nil)
+        check("folders: day and place", Saver.folderName(taken, place: "Ushuaia") == "2025.03.23 Ushuaia")
+        check("folders: the day alone with no place", Saver.folderName(taken, place: nil) == "2025.03.23" && Saver.folderName(taken, place: "  ") == "2025.03.23")
+        check("folders: a place's slashes and colons made safe", Saver.folderName(taken, place: "Puerto Natales/Última: Esperanza") == "2025.03.23 Puerto Natales-Última- Esperanza",
+              Saver.folderName(taken, place: "Puerto Natales/Última: Esperanza"))
+        check("folders: no date, the place still", Saver.folderName(undated, place: "Ushuaia") == "Undated Ushuaia")
         let edge = Date(timeIntervalSince1970: 1_799_999_999.996)
         let args = Saver.gpsArguments(Position(lat: 1, lon: 1, alt: nil, moment: edge, fromPoint: 0))
         check("save: no 60th second", args.contains { $0 == "-GPS:GPSTimeStamp=07:59:59.99" }, args.first { $0.hasPrefix("-GPS:GPSTimeStamp") } ?? "")
@@ -966,12 +974,13 @@ extension SelfTest {
         try? fm.createDirectory(at: saveTo, withIntermediateDirectories: true)
         let queueFile = QueueStoreFile(url: scratch.appendingPathComponent("flow-queue.json"))
         let historyFolder = HistoryStoreFolder(folder: scratch.appendingPathComponent("flow-history"))
+        let flowPlaces = FakePlaces()
         let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("flow-lib"))),
                              peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("flow-people.json")),
                              history: historyFolder, queue: queueFile,
                              unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("flow-unplaced.json")), secrets: NoSecrets(),
                              thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("flow-maps")), exifTool: tool,
-                             nas: FakeNAS(root: scratch.appendingPathComponent("flow-nas")))
+                             nas: FakeNAS(root: scratch.appendingPathComponent("flow-nas")), places: flowPlaces)
         var david = model.book.people[0]
         david.saveFolder = scratch.appendingPathComponent("NOT-THERE").path
         model.save(david)
@@ -992,6 +1001,11 @@ extension SelfTest {
         check("flow: every ready photo saved", model.results.count == ready && model.results.values.allSatisfy { $0.url != nil }, "\(model.photosLine)")
         check("flow: History has them", remembered.count == ready, "\(remembered.count) of \(ready)")
         check("flow: the queue has them, by day folder", queued.count == ready && queued.allSatisfy { $0.relativePath.split(separator: "/").count == 2 }, "\(queued.map(\.relativePath))")
+        let placed = queued.filter { $0.relativePath.contains(" Greenland/") }.map(\.relativePath).sorted()
+        let dayOnly = queued.filter { !$0.relativePath.split(separator: "/")[0].contains(" ") }
+        check("flow: photos with a location in a folder of their day and place", placed == ["2025.09.05 Greenland/DAVL2443.CR3", "2025.09.06 Greenland/DAVL2909.jpg"],
+              "\(queued.map(\.relativePath))")
+        check("flow: photos with none in their day's folder alone", dayOnly.count == ready - 2, "\(dayOnly.map(\.relativePath))")
         check("flow: they now count as imported before", model.rows.allSatisfy { $0.status == .alreadyImported && !$0.ticked })
         await model.savePhotos()
         check("flow: nothing left to save", model.readyToSave.isEmpty && ((try? queueFile.load()) ?? []).count == ready)
@@ -1029,7 +1043,7 @@ extension SelfTest {
                              history: HistoryStoreFolder(folder: scratch.appendingPathComponent("\(tag)-history")),
                              queue: queueFile, unplaced: unplacedFile, secrets: NoSecrets(),
                              thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("\(tag)-maps")), exifTool: tool,
-                             nas: FakeNAS(root: nasRoot), notifier: notes)
+                             nas: FakeNAS(root: nasRoot), notifier: notes, places: FakePlaces())
         await model.showLibrary()
         var david = model.book.people[0]
         david.saveFolder = saveTo.path
@@ -1090,6 +1104,25 @@ extension SelfTest {
         let leftovers = (fm.enumerator(atPath: saveTo.path)?.allObjects as? [String] ?? []).filter { $0.contains(".geotag-") }
         check("\(tag): no working copies left", leftovers.isEmpty, "\(leftovers)")
         check("\(tag): said on the Photos page", model.photosLine.contains("now has its location"), model.photosLine)
+    }
+}
+
+/// Places named without going online: Greenland in the far north, Ushuaia in
+/// the far south, nothing in between, or no answer at all.
+@MainActor
+final class FakePlaces: PlaceNaming {
+    let answer: (Double, Double) -> PlaceLookup
+    private(set) var asked = 0
+
+    init(_ answer: @escaping (Double, Double) -> PlaceLookup = { lat, _ in
+        lat > 60 ? .found("Greenland") : lat < -40 ? .found("Ushuaia") : .nothing
+    }) {
+        self.answer = answer
+    }
+
+    func place(lat: Double, lon: Double) async -> PlaceLookup {
+        asked += 1
+        return answer(lat, lon)
     }
 }
 
@@ -1376,13 +1409,16 @@ extension SelfTest {
         let saveTo = scratch.appendingPathComponent("BATCH-SAVED")
         try? fm.createDirectory(at: saveTo, withIntermediateDirectories: true)
         let notes = RecordingNotifier()
+        // No internet: OpenStreetMap does not answer.
+        let offline = FakePlaces { _, _ in .unreachable }
         let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("batch-lib"))),
                              peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("batch-people.json")),
                              history: HistoryStoreFolder(folder: scratch.appendingPathComponent("batch-history")),
                              queue: QueueStoreFile(url: scratch.appendingPathComponent("batch-queue.json")),
                              unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("batch-unplaced.json")),
                              secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("batch-maps")),
-                             exifTool: tool, nas: FakeNAS(root: scratch.appendingPathComponent("BATCH-NAS")), notifier: notes)
+                             exifTool: tool, nas: FakeNAS(root: scratch.appendingPathComponent("BATCH-NAS")), notifier: notes,
+                             places: offline)
         var david = model.book.people[0]
         david.saveFolder = saveTo.path
         david.nasFolder = "homes/david"
@@ -1413,6 +1449,9 @@ extension SelfTest {
         check("batch: every saved photo on the NAS", sent == photos && photos > 0, "\(sent) of \(photos)")
         check("batch: one notification, once all were saved and sent", notes.posted == [AppModel.batchText(sent: photos, failed: 0)],
               "\(notes.posted)")
+        check("batch: no internet, asked once, every folder by its day alone", offline.asked == 1
+              && model.queueEntries.allSatisfy { !$0.relativePath.split(separator: "/")[0].contains(" ") },
+              "asked \(offline.asked): \(model.queueEntries.map(\.relativePath))")
     }
 
     /// Save says so at once, then what the NAS or the service answers, and is
@@ -1551,7 +1590,8 @@ extension SelfTest {
                              history: HistoryStoreFolder(folder: scratch.appendingPathComponent("gal-history")),
                              queue: queueFile, unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("gal-unplaced.json")),
                              secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("gal-maps")),
-                             exifTool: tool, nas: FakeNAS(root: scratch.appendingPathComponent("GAL-NAS")), notifier: RecordingNotifier())
+                             exifTool: tool, nas: FakeNAS(root: scratch.appendingPathComponent("GAL-NAS")), notifier: RecordingNotifier(),
+                             places: FakePlaces())
         if let key {
             model.useMaps(MapSource(light: "https://basemaps.cartocdn.com/rastertiles/light_nolabels/{z}/{x}/{y}@2x.png",
                                     dark: "https://basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}@2x.png",

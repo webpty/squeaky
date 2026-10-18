@@ -7,11 +7,14 @@ public struct SaveItem: Sendable {
     public var photo: ScannedPhoto
     public var placement: Placement
     public var withoutLocation: Bool
+    /// The town or area the photo was taken in, which names its folder.
+    public var place: String?
 
-    public init(photo: ScannedPhoto, placement: Placement, withoutLocation: Bool) {
+    public init(photo: ScannedPhoto, placement: Placement, withoutLocation: Bool, place: String? = nil) {
         self.photo = photo
         self.placement = placement
         self.withoutLocation = withoutLocation
+        self.place = place
     }
 
     /// The position to write, or nil when the copy keeps the card's bytes.
@@ -59,10 +62,28 @@ public struct Saver: Sendable {
         return day.range(of: #"^\d{4}\.\d{2}\.\d{2}$"#, options: .regularExpression) != nil ? day : "Undated"
     }
 
+    /// "2027.01.12 Ushuaia": the day and the place a photo was taken, each
+    /// pair a folder of its own; the day alone for a photo with no location,
+    /// or whose place could not be named (David, 18 October 2026).
+    public static func folderName(_ photo: ScannedPhoto, place: String?) -> String {
+        let day = dayFolder(photo)
+        guard let place = cleanPlace(place) else { return day }
+        return "\(day) \(place)"
+    }
+
+    /// A place name fit for a folder on the Mac and the NAS.
+    static func cleanPlace(_ place: String?) -> String? {
+        var text = (place ?? "").replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+        text = text.components(separatedBy: .newlines).joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        while text.hasPrefix(".") { text.removeFirst() }
+        text = String(text.prefix(60)).trimmingCharacters(in: .whitespaces)
+        return text.isEmpty ? nil : text
+    }
+
     public func save(_ item: SaveItem) -> SaveResult {
         let fm = FileManager.default
         let source = item.photo.url
-        let day = folder.appendingPathComponent(Self.dayFolder(item.photo), isDirectory: true)
+        let day = folder.appendingPathComponent(Self.folderName(item.photo, place: item.place), isDirectory: true)
         do {
             try fm.createDirectory(at: day, withIntermediateDirectories: true)
         } catch {
