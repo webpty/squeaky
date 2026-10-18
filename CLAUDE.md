@@ -232,6 +232,9 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   (17 October 2026): `.HEIC` and Canon-style `.HIF` files made by the Mac's
   own converter (`sips`) from an R5 Mark II JPEG are read, saved with their
   location and checked; a HIF shot by the camera itself is still untried.
+- HEIF stays (David, 17 October 2026). He first asked for it to be blocked,
+  then kept it: his R5 Mark II and R7 save .HIF when HDR PQ is on, he does
+  not edit photos, and a block would leave such photos unsaved on a card.
 
 ## Dump, tag and save (17 October 2026)
 
