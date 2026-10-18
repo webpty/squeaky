@@ -228,8 +228,10 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - History and `queue.json` are written after every photo. A missing save
   folder or a full disk stops the save with one line.
 - Tested on R5 Mark II CR3 and JPEG, R7 JPEG, Canon EOS 600D and REBEL T3i
-  CR2, and COOLPIX P950 NRW (published samples from raw.pixls.us); HEIF not
-  yet, nobody has supplied one.
+  CR2, and COOLPIX P950 NRW (published samples from raw.pixls.us). HEIF
+  (17 October 2026): `.HEIC` and Canon-style `.HIF` files made by the Mac's
+  own converter (`sips`) from an R5 Mark II JPEG are read, saved with their
+  location and checked; a HIF shot by the camera itself is still untried.
 
 ## Dump, tag and save (17 October 2026)
 

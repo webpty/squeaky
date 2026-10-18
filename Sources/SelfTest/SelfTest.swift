@@ -43,6 +43,7 @@ struct SelfTest {
             nasSending(scratch, samples: URL(fileURLWithPath: samples))
             await nasQueue(scratch, samples: URL(fileURLWithPath: samples))
             await nasBatch(scratch, samples: URL(fileURLWithPath: samples))
+            heif(scratch, samples: URL(fileURLWithPath: samples))
         }
         await settingsFeedback(scratch)
         download(scratch)
@@ -1666,5 +1667,82 @@ extension SelfTest {
               && b?.program == "second", "\(names) \(String(describing: b?.program))")
         let left = ((try? fm.contentsOfDirectory(atPath: fm.temporaryDirectory.path)) ?? []).filter { $0.hasPrefix("geotag-download-") }
         check("download: no working folder left behind", left.isEmpty, "\(left)")
+
+        // The real thing: the installed Geotag packed exactly as the menu packs
+        // it, into the scratch folder, and the copy inside checked.
+        guard let real = ProcessInfo.processInfo.environment["GEOTAG_REAL_APP"] else { return }
+        let realFolder = scratch.appendingPathComponent("REAL-DOWNLOAD")
+        try? fm.createDirectory(at: realFolder, withIntermediateDirectories: true)
+        guard let image = try? Installer.save(app: URL(fileURLWithPath: real), version: appVersion, into: realFolder) else {
+            check("download: the installed Geotag packed", false)
+            return
+        }
+        let mount = scratch.appendingPathComponent("real-look")
+        try? fm.createDirectory(at: mount, withIntermediateDirectories: true)
+        guard hdiutil(["attach", "-readonly", "-nobrowse", "-mountpoint", mount.path, image.path]) == 0 else {
+            check("download: the installed Geotag's disk image opens", false)
+            return
+        }
+        defer { _ = hdiutil(["detach", "-quiet", mount.path]) }
+        let copy = mount.appendingPathComponent("Geotag.app")
+        let version = NSDictionary(contentsOf: copy.appendingPathComponent("Contents/Info.plist"))?["CFBundleShortVersionString"] as? String
+        let sign = Process()
+        sign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        sign.arguments = ["--verify", "--deep", "--strict", copy.path]
+        sign.standardError = FileHandle.nullDevice
+        try? sign.run()
+        sign.waitUntilExit()
+        let exiftool = fm.fileExists(atPath: copy.appendingPathComponent("Contents/Resources/ExifTool/exiftool").path)
+        let size = ((try? fm.attributesOfItem(atPath: image.path))?[.size] as? NSNumber)?.intValue ?? 0
+        check("download: the installed Geotag packed whole", version == appVersion && sign.terminationStatus == 0 && exiftool,
+              "\(image.lastPathComponent), \(size / 1_000_000) MB, version \(version ?? "-"), signature \(sign.terminationStatus == 0 ? "valid" : "broken"), ExifTool \(exiftool)")
+    }
+}
+
+extension SelfTest {
+    /// HEIF photos, as the R5 Mark II can shoot them (".HIF") and as the Mac
+    /// writes them (".HEIC"), made from one of David's samples with the Mac's
+    /// own converter, then read and saved with a location like any card photo.
+    static func heif(_ scratch: URL, samples: URL) {
+        let fm = FileManager.default
+        let source = samples.appendingPathComponent("DAVL3660.JPG")
+        guard fm.fileExists(atPath: source.path) else { print("skip  heif: no DAVL3660.JPG"); return }
+        let card = scratch.appendingPathComponent("HEIF-CARD/DCIM/100CANON")
+        try? fm.createDirectory(at: card, withIntermediateDirectories: true)
+        var made: [URL] = []
+        for name in ["DAVL9001.HEIC", "DAVL9002.HIF"] {
+            let heic = card.appendingPathComponent(name.replacingOccurrences(of: ".HIF", with: ".HEIC") == name ? name : "converting.HEIC")
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/sips")
+            p.arguments = ["-s", "format", "heic", source.path, "--out", heic.path]
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError = FileHandle.nullDevice
+            try? p.run()
+            p.waitUntilExit()
+            let target = card.appendingPathComponent(name)
+            if heic != target { try? fm.moveItem(at: heic, to: target) }
+            if fm.fileExists(atPath: target.path) { made.append(target) }
+        }
+        check("heif: two HEIF photos made from a sample", made.count == 2, "\(made.map(\.lastPathComponent))")
+        let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+        let photos = (try? PhotoScanner(exifTool: tool).scan(made) { _ in }) ?? []
+        check("heif: read like any photo, time, zone and camera", photos.count == 2
+              && photos.allSatisfy { $0.taken == "2025:03:23 17:44:20" && $0.zone == "-05:00" && $0.model == "Canon EOS R5m2" },
+              "\(photos.map { "\($0.fileName) \($0.taken ?? "-") \($0.zone ?? "-") \($0.model ?? "-")" })")
+        let saver = Saver(exifTool: tool, folder: scratch.appendingPathComponent("HEIF-SAVED"))
+        let moment = ISO8601DateFormatter().date(from: "2025-03-23T22:44:20Z")!
+        for photo in photos {
+            let result = saver.save(SaveItem(photo: photo, placement: .matched(Position(lat: -54.8091, lon: -68.2971, alt: 3, moment: moment, fromPoint: 0)),
+                                             withoutLocation: false))
+            var seen = "-"
+            if let url = result.url, let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+               let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+               let gps = props[kCGImagePropertyGPSDictionary] as? [CFString: Any] {
+                seen = "\(gps[kCGImagePropertyGPSLatitude] ?? "-")\(gps[kCGImagePropertyGPSLatitudeRef] ?? "") \(gps[kCGImagePropertyGPSLongitude] ?? "-")\(gps[kCGImagePropertyGPSLongitudeRef] ?? "") \(gps[kCGImagePropertyGPSProcessingMethod] ?? "-")"
+            }
+            let ok: Bool
+            if case .saved = result { ok = seen.hasPrefix("54.8091") && seen.contains("S") && seen.contains("W") && seen.contains("Geotag.app") } else { ok = false }
+            check("heif: \(photo.fileName) saved with its location, checked", ok, "\(result) | the Mac reads \(seen)")
+        }
     }
 }
