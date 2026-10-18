@@ -116,6 +116,24 @@ public final class AppModel: ObservableObject {
     /// The Download menu's disk image being made.
     @Published public private(set) var makingDownload = false
 
+    // Places and breaks in the card's list.
+    /// What OpenStreetMap named each photo's spot, by row.
+    @Published public private(set) var foundPlaces: [String: PlaceLookup] = [:]
+    /// Names typed with "Name place", by row; they win over OpenStreetMap's.
+    @Published public private(set) var givenPlaces: [String: String] = [:]
+    /// Every photo's spot asked about, or nothing more to wait for.
+    @Published public private(set) var placesSettled = false
+    /// The spot each found place was asked for, so a photo that moves is asked again.
+    private var placeSpots: [String: String] = [:]
+    private var lookingUpPlaces = false
+    private var lookUpAgain = false
+    /// OpenStreetMap did not answer for this card: no more asking until the next one.
+    private var placesUnanswered = false
+    /// A break this long between two photos is marked in the list (a setting).
+    @Published public private(set) var breakMinutes = 20
+    /// The break before a photo, in seconds, where it is at least that long.
+    @Published public private(set) var breaks: [String: Int] = [:]
+
     // History.
     @Published public var historyPerson: UUID?
     @Published public private(set) var historyEntries: [HistoryEntry] = []
@@ -226,6 +244,7 @@ public final class AppModel: ObservableObject {
         self.nasPort = nas
         openOnCard = defaults.object(forKey: "openOnCard") as? Bool ?? true
         if defaults.object(forKey: "maxGapSeconds") != nil { maxGapSeconds = defaults.integer(forKey: "maxGapSeconds") }
+        if defaults.object(forKey: "breakMinutes") != nil { breakMinutes = defaults.integer(forKey: "breakMinutes") }
         dateOrder = defaults.string(forKey: "dateOrder").flatMap(DateOrder.init(rawValue:)) ?? .system
         clock24 = defaults.object(forKey: "clock24") as? Bool
         When.current = When(order: dateOrder, clock24: clock24)
@@ -449,6 +468,7 @@ public final class AppModel: ObservableObject {
                 self.readingRound += 1
                 self.source = nil
                 self.rows = []
+                self.clearPlaces()
                 self.importPerson = nil
                 if self.ejecting != bsd { self.photosLine = "\(gone?.name ?? "The card") was taken out." }
             }
@@ -526,20 +546,23 @@ public final class AppModel: ObservableObject {
                                      subSeconds: photo.subSeconds, imported: Date()))
         }
         var savedCount = 0, failedCount = 0
-        var lookUpPlaces = true
+        // Every photo's place first, for its folder: the lookups still going
+        // are waited for, so none is asked twice.
+        photosLine = "Looking up places"
+        await lookUpRowPlaces()
+        while lookingUpPlaces { try? await Task.sleep(for: .milliseconds(100)) }
         for row in todo {
             if stopAsked || readingRound != round || self.source?.id != source.id { break }
             photosLine = "Saving \(saveDone + 1) of \(saveTotal)"
             // A photo that cannot be placed is saved as it is, without a location.
             var item = SaveItem(photo: row.photo, placement: row.placement ?? .review(.noTrack), withoutLocation: row.needsReview)
-            // Its place names its folder. Once OpenStreetMap stops answering,
-            // the rest go by their day alone rather than each waiting on it.
-            if lookUpPlaces, let spot = Self.spot(item) {
-                switch await places.place(lat: spot.lat, lon: spot.lon) {
-                case .found(let name): item.place = name
-                case .nothing: break
-                case .unreachable: lookUpPlaces = false
-                }
+            // Its place names its folder: the name typed for it, else
+            // OpenStreetMap's, looked up before saving began.
+            if let given = givenPlaces[row.id] {
+                item.place = given
+            } else if let spot = Self.spot(item), placeSpots[row.id] == Self.spotKey(spot),
+                      case .found(let name)? = foundPlaces[row.id] {
+                item.place = name
             }
             let named = item
             let result = await Task.detached { saver.save(named) }.value
@@ -611,6 +634,7 @@ public final class AppModel: ObservableObject {
         self.source = source
         rows = []
         results = [:]
+        clearPlaces()
         photosLine = ""
         if let person = lastPerson(for: source) {
             askingWhose = nil
@@ -628,6 +652,7 @@ public final class AppModel: ObservableObject {
         askingWhose = nil
         aligning = false
         rows = []
+        clearPlaces()
         photosLine = "Ejecting \(card.name)"
         cardGuard.eject(bsd) { [weak self] problem in
             guard let self else { return }
@@ -678,6 +703,7 @@ public final class AppModel: ObservableObject {
             let past = (try? history.load(personId)) ?? []
             guard readingRound == round, self.source?.id == source.id else { return }
             rows = ImportList.rows(photos, history: past, book: book, personId: personId)
+            refreshBreaks()
             await loadTimeline()
             rematch()
             photosLine = rows.isEmpty ? "No photos on \(source.name)." : ""
@@ -742,6 +768,102 @@ public final class AppModel: ObservableObject {
             let camera = photo.model.flatMap { book.camera(personId: personId, model: $0) }
             rows[i].placement = Matcher.place(photo, camera: camera, timeline: timeline, gap: maxGapSeconds)
         }
+        // Placed photos may have moved: their places are asked again.
+        Task { await lookUpRowPlaces() }
+    }
+
+    // MARK: Places and breaks
+
+    /// "-54.8065,-68.3030": the spot a place was asked for.
+    static func spotKey(_ spot: (lat: Double, lon: Double)) -> String {
+        String(format: "%.4f,%.4f", spot.lat, spot.lon)
+    }
+
+    private func clearPlaces() {
+        foundPlaces = [:]
+        givenPlaces = [:]
+        placeSpots = [:]
+        placesSettled = false
+        placesUnanswered = false
+        breaks = [:]
+    }
+
+    /// Each photo's place, for the Place column and its folder: asked of
+    /// OpenStreetMap a spot at a time (it keeps its answers), and again for a
+    /// photo whose spot moved. Once it stops answering, the rest are left
+    /// until the next change.
+    public func lookUpRowPlaces() async {
+        if lookingUpPlaces {
+            lookUpAgain = true
+            return
+        }
+        lookingUpPlaces = true
+        defer { lookingUpPlaces = false }
+        repeat {
+            lookUpAgain = false
+            let round = readingRound
+            var found = foundPlaces
+            var spots = placeSpots
+            var sinceShown = 0
+            for row in rows {
+                let item = SaveItem(photo: row.photo, placement: row.placement ?? .review(.noTrack), withoutLocation: row.needsReview)
+                guard let spot = Self.spot(item) else {
+                    found[row.id] = nil
+                    spots[row.id] = nil
+                    continue
+                }
+                let key = Self.spotKey(spot)
+                if spots[row.id] == key, found[row.id] != nil { continue }
+                // No internet: the rest are not asked, rather than each waiting on it.
+                if placesUnanswered { continue }
+                let answer = await places.place(lat: spot.lat, lon: spot.lon)
+                guard readingRound == round else { return }
+                if answer == .unreachable {
+                    placesUnanswered = true
+                    continue
+                }
+                found[row.id] = answer
+                spots[row.id] = key
+                sinceShown += 1
+                // Shown as they come, a batch at a time.
+                if sinceShown >= 25 {
+                    foundPlaces = found
+                    placeSpots = spots
+                    sinceShown = 0
+                }
+            }
+            guard readingRound == round else { return }
+            foundPlaces = found
+            placeSpots = spots
+            placesSettled = true
+        } while lookUpAgain
+    }
+
+    /// The place a photo's folder will be named after: the name typed for
+    /// it, else OpenStreetMap's; nil for none.
+    public func placeName(_ row: ImportRow) -> String? {
+        if let given = givenPlaces[row.id] { return given }
+        if case .found(let name)? = foundPlaces[row.id] { return name }
+        return nil
+    }
+
+    /// "Name place": that name for those photos' folder, over OpenStreetMap's.
+    /// An empty name gives them OpenStreetMap's back.
+    public func givePlace(_ name: String, to ids: Set<String>) {
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        var given = givenPlaces
+        for id in ids { given[id] = clean.isEmpty ? nil : clean }
+        givenPlaces = given
+    }
+
+    public func setBreakMinutes(_ minutes: Int) {
+        breakMinutes = min(max(minutes, 1), 600)
+        defaults.set(breakMinutes, forKey: "breakMinutes")
+        refreshBreaks()
+    }
+
+    private func refreshBreaks() {
+        breaks = Breaks.find(rows.map(\.photo), minutes: breakMinutes)
     }
 
     /// Photos saved earlier without a location, tried again: a camera's offset

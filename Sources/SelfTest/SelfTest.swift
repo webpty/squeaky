@@ -46,6 +46,7 @@ struct SelfTest {
             heif(scratch, samples: URL(fileURLWithPath: samples))
         }
         await settingsFeedback(scratch)
+        await naming(scratch)
         download(scratch)
         cardKinds()
         cards(scratch)
@@ -1635,6 +1636,7 @@ extension SelfTest {
         await draw("01-photos-read", RootView(), 1100, 720)
         await draw("02-alignment", AlignmentProbe(), 1100, 760, wait: key == nil ? 40 : 120)
         await draw("03-whose-card", SheetProbe(.whose), 520, 170)
+        await draw("03b-name-place", SheetProbe(.namePlace), 460, 150)
 
         // Saved and sent.
         await model.savePhotos()
@@ -1801,5 +1803,81 @@ extension SelfTest {
             if case .saved = result { ok = seen.hasPrefix("54.8091") && seen.contains("S") && seen.contains("W") && seen.contains("Geotag.app") } else { ok = false }
             check("heif: \(photo.fileName) saved with its location, checked", ok, "\(result) | the Mac reads \(seen)")
         }
+    }
+}
+
+extension SelfTest {
+    /// "Name place…" and the Gap column: a card from a walk in Ushuaia, then a
+    /// long break, then photos off the track; some named by hand.
+    @MainActor
+    static func naming(_ scratch: URL) async {
+        let fm = FileManager.default
+        // The gaps alone.
+        func shot(_ name: String, _ taken: String?) -> ScannedPhoto {
+            ScannedPhoto(url: URL(fileURLWithPath: "/card/\(name)"), fileName: name, size: 1, taken: taken, subSeconds: nil, zone: nil, model: nil)
+        }
+        let list = [shot("A.JPG", "2026:12:05 09:00:00"), shot("B.JPG", "2026:12:05 09:10:00"), shot("C.JPG", nil),
+                    shot("D.JPG", "2026:12:05 09:40:00"), shot("E.JPG", "2026:12:05 09:41:00"), shot("F.JPG", "2026:12:05 14:00:30")]
+        let gaps = Breaks.find(list, minutes: 20)
+        check("gaps: the photos after a break of 20 min or more, the one with no time passed over",
+              gaps == ["/card/D.JPG": 1_800, "/card/F.JPG": 15_570], "\(gaps)")
+        check("gaps: written plainly", PhotoTextProbe.gap(1_800) == "30 min" && PhotoTextProbe.gap(15_570) == "4 h 19 min"
+              && PhotoTextProbe.gap(7_200) == "2 h" && PhotoTextProbe.gap(97_200) == "1 d 3 h")
+
+        // Through the app model.
+        let lib = TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("name-lib")))
+        let start = 1_792_162_800 // 2026-10-16 15:00 UTC, 12:00 in Ushuaia
+        writeGPX(scratch.appendingPathComponent("name-walk.gpx"), start: start, count: 1800, name: "Ushuaia walk", lat: -54.812, lon: -68.33)
+        _ = try? await lib.importFile(scratch.appendingPathComponent("name-walk.gpx"), role: .reader)
+        let cardRoot = scratch.appendingPathComponent("NAME-CARD")
+        let card = cardRoot.appendingPathComponent("DCIM/100CANON")
+        try? fm.createDirectory(at: card, withIntermediateDirectories: true)
+        for (i, time) in ["12:02:00", "12:05:00", "12:08:00", "13:10:00", "13:12:00"].enumerated() {
+            writePhoto(card.appendingPathComponent(String(format: "IMG_%04d.JPG", i + 1)), model: "Canon EOS R5m2", zone: "-03:00",
+                       taken: "2026:10:16 \(time)")
+        }
+        var book = PeopleBook.family()
+        book.people[0].saveFolder = scratch.appendingPathComponent("NAME-SAVED").path
+        try? fm.createDirectory(at: scratch.appendingPathComponent("NAME-SAVED"), withIntermediateDirectories: true)
+        for i in 0..<book.cameras.count where book.cameras[i].model == "Canon EOS R5m2" { book.cameras[i].offsetSeconds = 0 }
+        let peopleFile = PeopleStoreFile(url: scratch.appendingPathComponent("name-people.json"))
+        try? peopleFile.save(book)
+        let osm = FakePlaces()
+        let model = AppModel(library: lib, peopleStore: peopleFile,
+                             history: HistoryStoreFolder(folder: scratch.appendingPathComponent("name-history")),
+                             queue: QueueStoreFile(url: scratch.appendingPathComponent("name-queue.json")),
+                             unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("name-unplaced.json")),
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("name-maps")),
+                             exifTool: ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool")),
+                             nas: FakeNAS(root: scratch.appendingPathComponent("NAME-NAS")), notifier: RecordingNotifier(), places: osm)
+        await model.showLibrary()
+        let source = CardWatcher.card(at: cardRoot)!
+        model.choose(source)
+        model.askingWhose = nil
+        await model.read(source, for: model.book.people[0].id)
+        model.aligning = false
+        for _ in 0..<100 where !model.placesSettled { try? await Task.sleep(for: .milliseconds(20)) }
+        let rows = model.rows
+        guard rows.count == 5 else { check("naming: the card read", false, "\(rows.count) rows"); return }
+        check("naming: the walk's photos placed in Ushuaia, the two after it with no place",
+              rows.map { model.placeName($0) ?? "-" } == ["Ushuaia", "Ushuaia", "Ushuaia", "-", "-"] && model.placesSettled,
+              "\(rows.map { model.placeName($0) ?? "-" })")
+        check("naming: the break before the photos after the walk", model.breaks == [rows[3].id: 3_720], "\(model.breaks)")
+
+        // Named by hand: one photo from the walk, and the two after it.
+        model.givePlace("  Port Lockroy ", to: [rows[2].id, rows[3].id, rows[4].id])
+        check("naming: a typed name wins over OpenStreetMap's", rows.map { model.placeName($0) ?? "-" }
+              == ["Ushuaia", "Ushuaia", "Port Lockroy", "Port Lockroy", "Port Lockroy"])
+        await model.savePhotos()
+        let folders = model.queueEntries.map(\.relativePath).sorted()
+        check("naming: saved into a folder of the day and each photo's place", folders == [
+            "2026.10.16 Port Lockroy/IMG_0003.jpg", "2026.10.16 Port Lockroy/IMG_0004.jpg", "2026.10.16 Port Lockroy/IMG_0005.jpg",
+            "2026.10.16 Ushuaia/IMG_0001.jpg", "2026.10.16 Ushuaia/IMG_0002.jpg",
+        ], "\(folders)")
+        model.givePlace("", to: [rows[2].id])
+        check("naming: an empty name gives OpenStreetMap's back", model.placeName(rows[2]) == "Ushuaia")
+        model.setBreakMinutes(90)
+        check("naming: a longer setting, no break marked", model.breaks.isEmpty, "\(model.breaks)")
+        model.setBreakMinutes(20)
     }
 }

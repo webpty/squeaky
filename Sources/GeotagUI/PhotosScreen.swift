@@ -1,4 +1,5 @@
 import AppKit
+import QuickLook
 import QuickLookThumbnailing
 import SwiftUI
 import GeotagCore
@@ -22,6 +23,14 @@ enum PhotoText {
 
     static func size(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    /// "1 h 25 min", "45 min", "2 d 3 h": a break between two photos.
+    static func gap(_ seconds: Int) -> String {
+        let minutes = seconds / 60, hours = minutes / 60, days = hours / 24
+        if days > 0 { return hours % 24 == 0 ? "\(days) d" : "\(days) d \(hours % 24) h" }
+        if hours > 0 { return minutes % 60 == 0 ? "\(hours) h" : "\(hours) h \(minutes % 60) min" }
+        return "\(minutes) min"
     }
 
     static func location(_ row: ImportRow, gap: Int) -> String {
@@ -55,11 +64,15 @@ struct PhotosScreen: View {
     @State private var reviewOnly = false
     @State private var columns = TableColumnCustomization<ImportRow>()
     @AppStorage("photoColumns") private var savedColumns = Data()
+    @State private var selection = Set<ImportRow.ID>()
+    /// The photo shown big, as Finder's space bar shows it.
+    @State private var previewing: URL?
+    @State private var naming = false
 
     /// The columns the Columns button can show or hide, in table order.
     static let toggleable: [(id: String, title: String)] = [
-        ("preview", "Preview"), ("name", "Name"), ("status", "Status"), ("taken", "Date and time"),
-        ("camera", "Camera model"), ("size", "Size"),
+        ("preview", "Preview"), ("name", "Name"), ("status", "Status"), ("place", "Place"), ("gap", "Gap"),
+        ("taken", "Date and time"), ("camera", "Camera model"), ("size", "Size"),
     ]
 
     private func shows(_ id: String) -> Binding<Bool> {
@@ -95,6 +108,12 @@ struct PhotosScreen: View {
                     Text("See photos on the map").buttonLabel()
                 }
                 .disabled(model.photosBusy || model.saving || model.alignable.isEmpty)
+                Button {
+                    naming = true
+                } label: {
+                    Text("Name place…").buttonLabel()
+                }
+                .disabled(model.saving || selection.isEmpty)
                 if model.saving {
                     Button {
                         model.stopSaving()
@@ -178,7 +197,7 @@ struct PhotosScreen: View {
             }
             .frame(minHeight: 40)
 
-            Table(shown, columnCustomization: $columns) {
+            Table(shown, selection: $selection, columnCustomization: $columns) {
                 TableColumn("") { row in
                     // A checkmark once the photo is saved, now or on an earlier card.
                     if model.isSaved(row) {
@@ -206,6 +225,24 @@ struct PhotosScreen: View {
                 }
                 .width(min: 150, ideal: 240)
                 .customizationID("status")
+                // The place its folder is named after: typed, else OpenStreetMap's.
+                TableColumn("Place") { row in
+                    if let name = model.placeName(row) {
+                        Text(name).lineLimit(1)
+                    } else if model.placesSettled {
+                        Text("No place").foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
+                .width(min: 90, ideal: 140)
+                .customizationID("place")
+                // A long break before this photo: often a new place.
+                TableColumn("Gap") { row in
+                    if let seconds = model.breaks[row.id] {
+                        Text(PhotoText.gap(seconds)).monospacedDigit().lineLimit(1)
+                    }
+                }
+                .width(min: 60, ideal: 80)
+                .customizationID("gap")
                 TableColumn("Date and time") { row in
                     Text(PhotoText.taken(row.photo)).monospacedDigit().lineLimit(1)
                 }
@@ -223,6 +260,20 @@ struct PhotosScreen: View {
                 .customizationID("size")
             }
             .clipShape(RoundedRectangle(cornerRadius: Style.radius))
+            // The space bar shows the selected photo big, as Finder does; again closes it.
+            .onKeyPress(.space) {
+                if previewing != nil {
+                    previewing = nil
+                    return .handled
+                }
+                guard let row = shown.first(where: { selection.contains($0.id) }) else { return .ignored }
+                previewing = row.photo.url
+                return .handled
+            }
+            .onChange(of: selection) { _, now in
+                if previewing != nil, let row = shown.first(where: { now.contains($0.id) }) { previewing = row.photo.url }
+            }
+            .quickLookPreview($previewing, in: shown.map(\.photo.url))
         }
         .padding(Style.pad * 1.5)
         .onAppear {
@@ -239,6 +290,61 @@ struct PhotosScreen: View {
             AlignmentView()
                 .textSelection(.enabled)
         }
+        .sheet(isPresented: $naming) {
+            NamePlace(ids: selection, current: commonPlace)
+        }
+        .onChange(of: model.rows.map(\.id)) { _, now in
+            // A new card: nothing of the last one stays chosen.
+            selection.formIntersection(now)
+        }
+    }
+
+    /// The place every selected photo has, to start the name from; empty when they differ.
+    private var commonPlace: String {
+        let names = Set(model.rows.filter { selection.contains($0.id) }.map { model.placeName($0) ?? "" })
+        return names.count == 1 ? names.first ?? "" : ""
+    }
+}
+
+/// "Name place…": the name of the place the selected photos were taken, for
+/// their folder. Empty gives them OpenStreetMap's name back.
+struct NamePlace: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    let ids: Set<ImportRow.ID>
+    @State private var name: String
+
+    init(ids: Set<ImportRow.ID>, current: String) {
+        self.ids = ids
+        _name = State(initialValue: current)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Style.gap) {
+            Text("Name place").font(.headline).lineLimit(1)
+            HStack(spacing: Style.gap) {
+                Text("Place").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
+                TextField("", text: $name).textFieldStyle(.roundedBorder)
+            }
+            HStack {
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Cancel").buttonLabel()
+                }
+                .keyboardShortcut(.cancelAction)
+                Button {
+                    model.givePlace(name, to: ids)
+                    dismiss()
+                } label: {
+                    Text("Save").buttonLabel()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(Style.pad * 1.5)
+        .frame(width: 460)
     }
 }
 
@@ -485,6 +591,21 @@ struct MatchingCard: View {
     }
 }
 
+/// The Photos list's own setting: how long a break between two photos is
+/// marked in its Gap column.
+struct PhotosListCard: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        Card(title: "Photos") {
+            Stepper(value: Binding(get: { model.breakMinutes }, set: { model.setBreakMinutes($0) }), in: 1...600) {
+                Text("Mark gaps longer than: \(PhotoText.gap(model.breakMinutes * 60))").lineLimit(1)
+            }
+            .fixedSize()
+        }
+    }
+}
+
 struct CardsCard: View {
     @EnvironmentObject var model: AppModel
 
@@ -499,6 +620,11 @@ struct CardsCard: View {
     }
 }
 
+/// The Photos page's wording, for the self-test.
+public enum PhotoTextProbe {
+    public static func gap(_ seconds: Int) -> String { PhotoText.gap(seconds) }
+}
+
 /// The Photos screen on its own, for pictures made off-screen.
 public struct PhotosScreenProbe: View {
     public init() {}
@@ -508,7 +634,7 @@ public struct PhotosScreenProbe: View {
 /// The sheets and the long Settings page on their own, for pictures made off-screen.
 public struct SheetProbe: View {
     public enum Kind: String, CaseIterable, Sendable {
-        case whose, person, camera, settings, sidebar
+        case whose, person, camera, settings, sidebar, namePlace
     }
 
     @EnvironmentObject var model: AppModel
@@ -532,6 +658,8 @@ public struct SheetProbe: View {
             case .sidebar:
                 // Drawn on its own: off-screen, the window's sidebar shows blank.
                 Sidebar().frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .namePlace:
+                NamePlace(ids: [], current: "Port Lockroy")
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))

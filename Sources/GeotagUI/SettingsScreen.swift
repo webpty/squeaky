@@ -13,6 +13,7 @@ struct SettingsScreen: View {
                 PeopleCard()
                 CamerasCard()
                 MatchingCard()
+                PhotosListCard()
                 CardsCard()
                 DatesCard()
                 Card(title: "Appearance") {
