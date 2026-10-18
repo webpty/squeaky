@@ -302,10 +302,15 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   set"); the Without location count and filter keep counting those photos.
 - History shows dates in the format chosen in Settings, under "Date and
   time".
-- `./build.sh dmg` builds `build/Geotag <version>.dmg`: the app, ad hoc
-  signed, beside a shortcut to Applications. Each Mac approves the first
-  launch once under Privacy & Security. Apple chips only: David removed the
-  Intel version on 17 October 2026 ("don't need it"); do not bring it back.
+- The disk image for another Mac comes from the Download menu, next to
+  Tracks in the Mac's menu bar: "Save to Downloads" makes it there and then
+  from the running Geotag (`Installer`, `hdiutil`), puts "Geotag
+  <version>.dmg" in Downloads over one of the same name, and shows it in
+  Finder (David, 17 October 2026: in the app, made on demand so it works on
+  every Mac, replacing the copy already there). `./build.sh dmg` still makes
+  one in `build/` for development. Each Mac approves the first launch once
+  under Privacy & Security. Apple chips only: David removed the Intel version
+  on 17 October 2026 ("don't need it"); do not bring it back.
 - Builds name their chip (`--triple arm64-apple-macosx14.0`); run the
   self-test from `.build/arm64-apple-macosx/release/SelfTest`.
 

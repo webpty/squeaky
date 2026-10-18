@@ -233,6 +233,22 @@ public struct TracksMenu: View {
     }
 }
 
+/// The Download menu's item, next to Tracks in the Mac's menu bar.
+public struct DownloadMenu: View {
+    @ObservedObject var model: AppModel
+
+    public init(model: AppModel) {
+        self.model = model
+    }
+
+    public var body: some View {
+        Button("Save to Downloads") {
+            Task { await model.saveDownload() }
+        }
+        .disabled(model.makingDownload)
+    }
+}
+
 /// The Tracks page on its own, for pictures made off-screen.
 public struct TracksScreenProbe: View {
     public init() {}

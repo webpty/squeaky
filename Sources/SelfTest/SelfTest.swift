@@ -45,6 +45,7 @@ struct SelfTest {
             await nasBatch(scratch, samples: URL(fileURLWithPath: samples))
         }
         await settingsFeedback(scratch)
+        download(scratch)
         cardKinds()
         cards(scratch)
         matching(scratch)
@@ -1610,5 +1611,60 @@ extension SelfTest {
         }
         NSApp.appearance = NSAppearance(named: .aqua)
         print("gallery: \(out.path)")
+    }
+}
+
+extension SelfTest {
+    /// The Download menu's disk image, made from a small stand-in app into a
+    /// scratch folder, never David's Downloads: the app beside a shortcut to
+    /// Applications, and a second one made over the first.
+    static func download(_ scratch: URL) {
+        let fm = FileManager.default
+        let bundle = scratch.appendingPathComponent("Stand-in.app")
+        let program = bundle.appendingPathComponent("Contents/MacOS/Geotag")
+        try? fm.createDirectory(at: program.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? "first".write(to: program, atomically: true, encoding: .utf8)
+        let folder = scratch.appendingPathComponent("DOWNLOADS")
+        try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        func hdiutil(_ args: [String]) -> Int32 {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+            p.arguments = args
+            p.standardOutput = FileHandle.nullDevice
+            p.standardError = FileHandle.nullDevice
+            try? p.run()
+            p.waitUntilExit()
+            return p.terminationStatus
+        }
+        /// What the disk image holds: its top level, where the shortcut points, and the app's program.
+        func look(_ image: URL) -> (inside: Set<String>, link: String?, program: String?)? {
+            let mount = scratch.appendingPathComponent("download-look-\(UUID().uuidString.prefix(8))")
+            try? fm.createDirectory(at: mount, withIntermediateDirectories: true)
+            guard hdiutil(["attach", "-readonly", "-nobrowse", "-mountpoint", mount.path, image.path]) == 0 else { return nil }
+            defer { _ = hdiutil(["detach", "-quiet", mount.path]) }
+            return (Set((try? fm.contentsOfDirectory(atPath: mount.path)) ?? []),
+                    try? fm.destinationOfSymbolicLink(atPath: mount.appendingPathComponent("Applications").path),
+                    try? String(contentsOf: mount.appendingPathComponent("Geotag.app/Contents/MacOS/Geotag"), encoding: .utf8))
+        }
+
+        let first: URL?
+        do { first = try Installer.save(app: bundle, version: "9.9.9", into: folder) } catch {
+            check("download: made", false, error.localizedDescription)
+            return
+        }
+        check("download: made, named by version", first?.lastPathComponent == "Geotag 9.9.9.dmg", "\(String(describing: first))")
+        let a = first.flatMap(look)
+        check("download: Geotag beside a shortcut to Applications", a?.inside == ["Geotag.app", "Applications"]
+              && a?.link == "/Applications" && a?.program == "first", "\(String(describing: a))")
+
+        try? "second".write(to: program, atomically: true, encoding: .utf8)
+        let second = try? Installer.save(app: bundle, version: "9.9.9", into: folder)
+        let names = ((try? fm.contentsOfDirectory(atPath: folder.path)) ?? []).sorted()
+        let b = second.flatMap(look)
+        check("download: made again over the one already there", second == first && names == ["Geotag 9.9.9.dmg"]
+              && b?.program == "second", "\(names) \(String(describing: b?.program))")
+        let left = ((try? fm.contentsOfDirectory(atPath: fm.temporaryDirectory.path)) ?? []).filter { $0.hasPrefix("geotag-download-") }
+        check("download: no working folder left behind", left.isEmpty, "\(left)")
     }
 }

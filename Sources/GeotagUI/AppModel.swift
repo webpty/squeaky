@@ -113,6 +113,9 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var results: [String: SaveResult] = [:]
     private var stopAsked = false
 
+    /// The Download menu's disk image being made.
+    @Published public private(set) var makingDownload = false
+
     // History.
     @Published public var historyPerson: UUID?
     @Published public private(set) var historyEntries: [HistoryEntry] = []
@@ -1057,6 +1060,32 @@ public final class AppModel: ObservableObject {
         ourMounts = [:]
         cleanedFolders = []
         for connection in open { await nas.disconnect(connection) }
+    }
+
+    // MARK: Download
+
+    /// The Download menu: a disk image of this Geotag, made now, put in the
+    /// Downloads folder over one of the same name, and shown there in Finder.
+    public func saveDownload() async {
+        guard !makingDownload else { return }
+        makingDownload = true
+        defer { makingDownload = false }
+        let app = Bundle.main.bundleURL
+        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        let made: Result<URL, Error> = await withCheckedContinuation { done in
+            DispatchQueue.global(qos: .userInitiated).async {
+                done.resume(returning: Result { try Installer.save(app: app, version: appVersion, into: downloads) })
+            }
+        }
+        switch made {
+        case .success(let url):
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        case .failure(let error):
+            let alert = NSAlert()
+            alert.messageText = "Geotag was not saved to Downloads."
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
     }
 
     // MARK: History

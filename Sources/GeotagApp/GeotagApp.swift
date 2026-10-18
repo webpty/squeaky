@@ -69,6 +69,9 @@ struct GeotagApp: App {
             CommandMenu("Tracks") {
                 TracksMenu(model: model)
             }
+            CommandMenu("Download") {
+                DownloadMenu(model: model)
+            }
         }
 
         Window("Tracks", id: "tracks") {
