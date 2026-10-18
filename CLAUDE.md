@@ -318,6 +318,11 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   lens (`Lenses.page`). The page's name follows the lens as the camera writes
   it, checked on eight Canon pages (RF, RF-S, EF, EF-S); other makers' lenses
   get no button. The P950 names no lens.
+- Each lens row has a pencil for its firmware version, typed in by hand from
+  the camera's Firmware menu (0.14.2, David, 18 October 2026). Kept with the
+  day it was typed ("Firmware 1.0.6, 2026.10.18") and never touched by later
+  cards; Save stays greyed out until the version changes, and an empty one
+  removes it.
 
 ## Dump, tag and save (17 October 2026)
 

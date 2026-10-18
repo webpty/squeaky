@@ -851,6 +851,18 @@ public final class AppModel: ObservableObject {
         if next != book.lenses { store { $0.lenses = next } }
     }
 
+    /// A lens's firmware version as typed in, kept with the day it was typed;
+    /// an empty one takes it away. The same version again changes nothing.
+    public func setFirmware(_ text: String, lens id: String) {
+        let version = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let i = book.lenses.firstIndex(where: { $0.id == id }),
+              book.lenses[i].firmware != (version.isEmpty ? nil : version) else { return }
+        store {
+            $0.lenses[i].firmware = version.isEmpty ? nil : version
+            $0.lenses[i].firmwareSet = version.isEmpty ? nil : Date()
+        }
+    }
+
     // MARK: Places and breaks
 
     /// "-54.8065,-68.3030": the spot a place was asked for.

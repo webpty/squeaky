@@ -279,18 +279,27 @@ enum LensText {
         if let seen = lens.seen { parts.append("Last seen \(When.current.day(seen, zone: TimeZone(secondsFromGMT: 0)!))") }
         return parts.joined(separator: " · ")
     }
+
+    /// "Firmware 1.0.6, 2026.10.18": the version typed in, and the day it was.
+    static func firmware(_ lens: Lens) -> String? {
+        guard let version = lens.firmware else { return nil }
+        return "Firmware \(version)" + (lens.firmwareSet.map { ", \(When.current.day($0))" } ?? "")
+    }
 }
 
 /// The Lenses card's wording, for the self-test.
 public enum LensTextProbe {
     public static func line(_ lens: Lens, owner: String?) -> String { LensText.line(lens, owner: owner) }
+    public static func firmware(_ lens: Lens) -> String? { LensText.firmware(lens) }
 }
 
 /// Every lens the photos have named, each person's together, with a button
-/// to the maker's page where Canon offers lens firmware (David, 18 October
+/// to the maker's page where Canon offers lens firmware, and the pencil to
+/// type in the version the camera's Firmware menu shows (David, 18 October
 /// 2026). Shown once a card has named one.
 struct LensesCard: View {
     @EnvironmentObject var model: AppModel
+    @State private var editing: Lens?
 
     private var lenses: [Lens] {
         let order = Dictionary(model.book.people.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
@@ -312,6 +321,9 @@ struct LensesCard: View {
                             Text(lens.model).font(.headline).lineLimit(1)
                             Text(LensText.line(lens, owner: model.book.person(lens.personId)?.name))
                                 .foregroundStyle(.secondary).lineLimit(1)
+                            if let firmware = LensText.firmware(lens) {
+                                Text(firmware).foregroundStyle(.secondary).lineLimit(1)
+                            }
                         }
                         Spacer(minLength: Style.gap)
                         if let page = Lenses.page(forLens: lens.model) {
@@ -320,12 +332,67 @@ struct LensesCard: View {
                             }
                             .buttonStyle(.bordered)
                         }
+                        RoundIconButton(symbol: "pencil", label: "Edit") { editing = lens }
                     }
                     .padding(.vertical, 8)
                     if lens.id != lenses.last?.id { Divider() }
                 }
             }
         }
+        .sheet(item: $editing) { lens in
+            LensEditor(lens: lens) { version in
+                model.setFirmware(version, lens: lens.id)
+            }
+            .textSelection(.enabled)
+        }
+    }
+}
+
+/// The lens's firmware version, typed in from the camera's Firmware menu.
+struct LensEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    let lens: Lens
+    let onSave: (String) -> Void
+    @State private var version: String
+
+    init(lens: Lens, onSave: @escaping (String) -> Void) {
+        self.lens = lens
+        self.onSave = onSave
+        _version = State(initialValue: lens.firmware ?? "")
+    }
+
+    private var changed: Bool {
+        version.trimmingCharacters(in: .whitespacesAndNewlines) != (lens.firmware ?? "")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Style.gap) {
+            Text(lens.model).font(.headline).lineLimit(1)
+            HStack(spacing: Style.gap) {
+                Text("Firmware").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
+                TextField("", text: $version).textFieldStyle(.roundedBorder)
+            }
+            HStack {
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Cancel").buttonLabel()
+                }
+                .keyboardShortcut(.cancelAction)
+                Button {
+                    onSave(version)
+                    dismiss()
+                } label: {
+                    Text("Save").buttonLabel()
+                }
+                .keyboardShortcut(.defaultAction)
+                // Greyed out until the version changes.
+                .disabled(!changed)
+            }
+        }
+        .padding(Style.pad * 1.5)
+        .frame(width: 460)
     }
 }
 

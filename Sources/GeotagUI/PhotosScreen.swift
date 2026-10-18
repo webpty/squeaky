@@ -648,7 +648,7 @@ public struct PhotosScreenProbe: View {
 /// The sheets and the long Settings page on their own, for pictures made off-screen.
 public struct SheetProbe: View {
     public enum Kind: String, CaseIterable, Sendable {
-        case whose, person, camera, settings, sidebar, namePlace
+        case whose, person, camera, settings, sidebar, namePlace, lens
     }
 
     @EnvironmentObject var model: AppModel
@@ -674,6 +674,9 @@ public struct SheetProbe: View {
                 Sidebar().frame(maxWidth: .infinity, maxHeight: .infinity)
             case .namePlace:
                 NamePlace(ids: [], current: "Port Lockroy")
+            case .lens:
+                LensEditor(lens: model.book.lenses.first
+                           ?? Lens(model: "RF600mm F4 L IS USM", serial: nil, personId: UUID(), camera: "Canon EOS R5m2", seen: nil)) { _ in }
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))

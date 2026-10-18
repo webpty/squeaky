@@ -13,15 +13,22 @@ public struct Lens: Codable, Identifiable, Equatable, Sendable {
     public var camera: String
     /// When that photo was taken, by the camera's clock.
     public var seen: Date?
+    /// The firmware version typed in by hand, from the camera's Firmware
+    /// menu, and when it was typed (David, 18 October 2026).
+    public var firmware: String?
+    public var firmwareSet: Date?
 
     public var id: String { Lenses.key(model: model, serial: serial) }
 
-    public init(model: String, serial: String?, personId: UUID, camera: String, seen: Date?) {
+    public init(model: String, serial: String?, personId: UUID, camera: String, seen: Date?,
+                firmware: String? = nil, firmwareSet: Date? = nil) {
         self.model = model
         self.serial = serial
         self.personId = personId
         self.camera = camera
         self.seen = seen
+        self.firmware = firmware
+        self.firmwareSet = firmwareSet
     }
 }
 
@@ -76,7 +83,7 @@ public enum Lenses {
     /// in. Each lens counts from its latest photo on the card: a new lens is
     /// added; a known one moves to that photo's camera and day only when the
     /// photo is later than the one it was last seen in, so an older card
-    /// never takes it back.
+    /// never takes it back. A firmware version typed in stays.
     public static func noting(_ photos: [ScannedPhoto], personId: UUID, into known: [Lens]) -> [Lens] {
         var latest: [String: (lens: Lens, order: Int)] = [:]
         for (i, photo) in photos.enumerated() {
@@ -89,7 +96,10 @@ public enum Lenses {
         var out = known
         for found in latest.values.sorted(by: { $0.order < $1.order }).map(\.lens) {
             if let i = out.firstIndex(where: { $0.id == found.id }) {
-                if (found.seen ?? .distantPast) > (out[i].seen ?? .distantPast) { out[i] = found }
+                guard (found.seen ?? .distantPast) > (out[i].seen ?? .distantPast) else { continue }
+                out[i].personId = found.personId
+                out[i].camera = found.camera
+                out[i].seen = found.seen
             } else {
                 out.append(found)
             }

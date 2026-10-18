@@ -1663,11 +1663,13 @@ extension SelfTest {
         model.nasUser = "david"
         model.nasPassword = "not-a-real-one"
         model.nasLine = "Saved. Connected through 10.0.10.10."
+        if let first = model.book.lenses.first { model.setFirmware("1.0.6", lens: first.id) }
         model.screen = .settings
         await draw("07-settings-top", RootView(), 1100, 720)
         await draw("08-settings-all", SheetProbe(.settings), 760, 2200)
         await draw("09-person", SheetProbe(.person), 560, 230)
         await draw("10-camera", SheetProbe(.camera), 600, 320)
+        await draw("10b-lens", SheetProbe(.lens), 460, 150)
 
         // The Tracks window and the track viewer.
         await draw("11-tracks", TracksScreenProbe(), 900, 620, wait: key == nil ? 40 : 100)
@@ -2190,5 +2192,32 @@ extension SelfTest {
         let before = try? Data(contentsOf: peopleFile.url)
         await model.read(source, for: davidId)
         check("lenses: the same card read again changes nothing", (try? Data(contentsOf: peopleFile.url)) == before && kept == model.book.lenses)
+
+        // The firmware typed in by hand: kept with its day, the same version
+        // again changes nothing, a later photo keeps it, an empty one removes it.
+        let lensId = model.book.lenses[0].id
+        model.setFirmware(" 1.0.6 ", lens: lensId)
+        let typed = model.book.lenses[0]
+        let onDisk = (try? peopleFile.load()).flatMap { $0 }?.lenses.first
+        check("lens firmware: typed in, kept with the day it was typed", typed.firmware == "1.0.6"
+              && abs(typed.firmwareSet?.timeIntervalSinceNow ?? 99) < 60 && onDisk == typed, "\(typed.firmware ?? "-")")
+        model.setFirmware("1.0.6", lens: lensId)
+        check("lens firmware: the same version again keeps its day", model.book.lenses[0] == typed)
+        let later = Lenses.noting([photo("I.JPG", "Canon EOS R7", "RF70-200mm F2.8 L IS USM Z", "1490000207", "2026:10:18 10:00:00")],
+                                  personId: davidId, into: model.book.lenses)
+        check("lens firmware: stays when a later photo moves the lens", later[0].camera == "Canon EOS R7"
+              && later[0].firmware == "1.0.6" && later[0].firmwareSet == typed.firmwareSet)
+        model.setFirmware("", lens: lensId)
+        check("lens firmware: an empty one takes it away", model.book.lenses[0].firmware == nil && model.book.lenses[0].firmwareSet == nil
+              && (try? peopleFile.load()).flatMap { $0 }?.lenses.first?.firmware == nil)
+
+        let saved2 = When.current
+        When.current = When(order: .yearMonthDay, clock24: true)
+        let day = Date(timeIntervalSince1970: 1_792_342_800) // 2026-10-18 17:00 UTC, midday in Panama
+        let shown = LensTextProbe.firmware(Lens(model: "RF600mm F4 L IS USM", serial: nil, personId: davidId, camera: "Canon EOS R5m2",
+                                                seen: nil, firmware: "1.0.6", firmwareSet: day))
+        let none = LensTextProbe.firmware(Lens(model: "RF600mm F4 L IS USM", serial: nil, personId: davidId, camera: "Canon EOS R5m2", seen: nil))
+        When.current = saved2
+        check("lens firmware: the line under the lens", shown == "Firmware 1.0.6, 2026-10-18" && none == nil, shown ?? "-")
     }
 }
