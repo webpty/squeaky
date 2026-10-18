@@ -413,6 +413,24 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Builds name their chip (`--triple arm64-apple-macosx14.0`); run the
   self-test from `.build/arm64-apple-macosx/release/SelfTest`.
 
+## Big cards (0.14.3, 18 October 2026)
+
+- His CFexpress card (3,630 photos, an R5 card in a USB reader that calls
+  itself a fixed disk) was taken, held hidden and read-only, and read; then
+  Geotag crashed drawing the Photos list. On cards of a few hundred photos
+  or more the Mac's own table warns "Application performed a reentrant
+  operation in its NSTableView delegate" (a bare SwiftUI Table of numbers
+  does it too, on macOS 26.6.2), and during that pass a cell view's
+  `@EnvironmentObject` is not found: a fatal error. Views drawn inside a
+  Table cell never use `@EnvironmentObject`; hand them the model
+  (`PhotoStatus(model:row:)`). Closures in `TableColumn` may read the
+  screen's own `model`.
+- `GEOTAG_TABLE_STRESS=<count>` runs only the big-card test: a scratch card
+  of that many photos, read while the Photos page shows, scrolled end to
+  end. It reproduced the crash with the old cell and passes with the new.
+- The list of a card is changed in one step (`rematch`, after saving), not
+  row by row: row by row copies the whole list for every photo.
+
 ## Tests never touch David's own records
 
 - Every `AppModel` in the self-test gets scratch stores for history, queue,

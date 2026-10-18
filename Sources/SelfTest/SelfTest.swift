@@ -32,6 +32,12 @@ struct SelfTest {
         let scratch = root.appendingPathComponent("geotag-selftest-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
         let realBefore = realData()
+        if ProcessInfo.processInfo.environment["GEOTAG_TABLE_STRESS"] != nil {
+            await tableStress(scratch, count: Int(ProcessInfo.processInfo.environment["GEOTAG_TABLE_STRESS"] ?? "") ?? 3600)
+            check("tests left David's own Geotag files alone", realData() == realBefore)
+            print(failures == 0 ? "all passed" : "\(failures) failed")
+            exit(failures == 0 ? 0 : 1)
+        }
 
         people(scratch)
         if let samples = ProcessInfo.processInfo.environment["GEOTAG_SAMPLES"] {
@@ -2219,5 +2225,78 @@ extension SelfTest {
         let none = LensTextProbe.firmware(Lens(model: "RF600mm F4 L IS USM", serial: nil, personId: davidId, camera: "Canon EOS R5m2", seen: nil))
         When.current = saved2
         check("lens firmware: the line under the lens", shown == "Firmware 1.0.6, 2026-10-18" && none == nil, shown ?? "-")
+    }
+}
+
+extension SelfTest {
+    /// A card of thousands of photos on the Photos page, read while the page
+    /// shows, then drawn and scrolled end to end while the model changes under
+    /// it (GEOTAG_TABLE_STRESS=1, on its own). Geotag crashed on a CFexpress
+    /// card of 3,630 photos (18 October 2026): a table cell reached for the
+    /// window's objects where they were not reachable.
+    @MainActor
+    static func tableStress(_ scratch: URL, count: Int = 3600) async {
+        let fm = FileManager.default
+        let cardRoot = scratch.appendingPathComponent("BIG-CARD")
+        let card = cardRoot.appendingPathComponent("DCIM/100EOSR5")
+        try? fm.createDirectory(at: card, withIntermediateDirectories: true)
+        let start = 1_792_162_800
+        for i in 0..<count {
+            writePhoto(card.appendingPathComponent(String(format: "DAVM%04d.JPG", i + 1)), model: "Canon EOS R5m2", zone: "-03:00",
+                       taken: Moments.reading.string(from: Date(timeIntervalSince1970: TimeInterval(start + i * 7))))
+        }
+        var book = PeopleBook.family()
+        for i in 0..<book.cameras.count where book.cameras[i].model == "Canon EOS R5m2" { book.cameras[i].offsetSeconds = 0 }
+        let peopleFile = PeopleStoreFile(url: scratch.appendingPathComponent("big-people.json"))
+        try? peopleFile.save(book)
+        let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("big-lib"))),
+                             peopleStore: peopleFile, history: HistoryStoreFolder(folder: scratch.appendingPathComponent("big-history")),
+                             queue: QueueStoreFile(url: scratch.appendingPathComponent("big-queue.json")),
+                             unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("big-unplaced.json")),
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("big-maps")),
+                             exifTool: ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool")),
+                             nas: FakeNAS(root: scratch.appendingPathComponent("BIG-NAS")), notifier: RecordingNotifier(), places: FakePlaces())
+        let source = CardWatcher.card(at: cardRoot)!
+        model.choose(source)
+        model.askingWhose = nil
+
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        model.screen = .photos
+        let window = NSWindow(contentRect: NSRect(x: -9000, y: -9000, width: 1100, height: 720), styleMask: [.titled, .resizable],
+                              backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: RootView().environmentObject(model))
+        window.contentView = host
+        window.orderBack(nil)
+        for _ in 0..<10 { spin(0.04); try? await Task.sleep(for: .milliseconds(40)) }
+        await model.read(source, for: model.book.people[0].id)
+        for _ in 0..<50 { spin(0.04); try? await Task.sleep(for: .milliseconds(40)) }
+
+        func findTable(_ view: NSView) -> NSTableView? {
+            if let table = view as? NSTableView { return table }
+            for sub in view.subviews { if let table = findTable(sub) { return table } }
+            return nil
+        }
+        guard let table = findTable(host) else {
+            check("big card: the Photos table is drawn", false)
+            return
+        }
+        let rows = table.numberOfRows
+        for (n, row) in Array(stride(from: 0, to: rows, by: 40)).enumerated() {
+            table.scrollRowToVisible(row)
+            if n % 10 == 0 { model.setBreakMinutes(n % 20 == 0 ? 20 : 30) }
+            spin(0.01)
+        }
+        for row in stride(from: rows - 1, through: 0, by: -97) {
+            table.scrollRowToVisible(row)
+            spin(0.005)
+        }
+        window.setContentSize(NSSize(width: 940, height: 620))
+        spin(0.3)
+        window.setContentSize(NSSize(width: 1440, height: 860))
+        spin(0.3)
+        check("big card: \(count) photos read, drawn and scrolled end to end", model.rows.count == count && rows == count,
+              "\(model.rows.count) rows, table \(rows)")
+        window.orderOut(nil)
     }
 }

@@ -230,7 +230,7 @@ struct PhotosScreen: View {
                 .customizationID("name")
                 // Next to the name, so it shows even in the smallest window.
                 TableColumn("Status") { row in
-                    PhotoStatus(row: row)
+                    PhotoStatus(model: model, row: row)
                 }
                 .width(min: 150, ideal: 240)
                 .customizationID("status")
@@ -359,9 +359,11 @@ struct NamePlace: View {
 
 /// What happened to a photo: before saving, its location or why it has none;
 /// once saved, where it stands with the NAS, and why it has no location when
-/// it has none.
+/// it has none. The model is handed in, never looked up: a table cell can be
+/// drawn where the window's own objects are not reachable, and Geotag crashed
+/// that way on a card of 3,630 photos (18 October 2026).
 struct PhotoStatus: View {
-    @EnvironmentObject var model: AppModel
+    @ObservedObject var model: AppModel
     let row: ImportRow
 
     var body: some View {

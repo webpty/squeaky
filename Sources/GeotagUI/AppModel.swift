@@ -604,11 +604,15 @@ public final class AppModel: ObservableObject {
         }
 
         // What was saved now counts as imported before.
+        // Changed as one list: row by row, a card of thousands copies the whole
+        // list for every photo and redraws the table as many times.
         let seen = Set(past.map(\.key))
-        for i in rows.indices where seen.contains(rows[i].photo.key) {
-            rows[i].status = .alreadyImported
-            rows[i].ticked = false
+        var marked = rows
+        for i in marked.indices where seen.contains(marked[i].photo.key) {
+            marked[i].status = .alreadyImported
+            marked[i].ticked = false
         }
+        rows = marked
         if historyPerson == personId { historyEntries = past }
         // Ejected or another card chosen meanwhile: that line stands.
         guard readingRound == round else { return }
@@ -802,11 +806,14 @@ public final class AppModel: ObservableObject {
     public func rematch() {
         Task { await placeLater() }
         guard let personId = importPerson, !rows.isEmpty else { return }
-        for i in rows.indices {
-            let photo = rows[i].photo
+        // One change to the list, not one per photo (see savePhotos).
+        var placed = rows
+        for i in placed.indices {
+            let photo = placed[i].photo
             let camera = photo.model.flatMap { book.camera(personId: personId, model: $0) }
-            rows[i].placement = Matcher.place(photo, camera: camera, timeline: timeline, gap: maxGapSeconds)
+            placed[i].placement = Matcher.place(photo, camera: camera, timeline: timeline, gap: maxGapSeconds)
         }
+        rows = placed
         // Placed photos may have moved: their places are asked again.
         Task { await lookUpRowPlaces() }
     }
