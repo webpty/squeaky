@@ -811,8 +811,29 @@ extension SelfTest {
         check("card kinds: a FAT card", CardGuard.cardLike(d("msdos", content: "DOS_FAT_32")))
         check("card kinds: not a drive's hidden start-up part",
               !CardGuard.cardLike(d("msdos", name: "EFI", removable: false, content: "C12A7328-F81F-11D2-BA4B-00A0C93EC93B")))
-        check("card kinds: not the Mac's own disk", !CardGuard.cardLike(d("exfat", inside: true)))
+        check("card kinds: not the Mac's own disk",
+              !CardGuard.cardLike(d("exfat", inside: true, removable: false, ejectable: false, proto: "Apple Fabric")))
+        check("card kinds: not a FAT part of the Mac's own disk", !CardGuard.cardLike(d("msdos", name: "SHARED", inside: true,
+              removable: false, ejectable: false, content: "Microsoft Basic Data", proto: "Apple Fabric")))
+        check("card kinds: a card in the Mac's own SD slot",
+              CardGuard.cardLike(d("exfat", inside: true, removable: true, ejectable: true, proto: "Secure Digital")))
+        check("card kinds: a card in the Mac's own SD slot, even when the slot calls it fixed",
+              CardGuard.cardLike(d("exfat", inside: true, removable: false, ejectable: false, proto: "Secure Digital")))
         check("card kinds: not an APFS or HFS drive", !CardGuard.cardLike(d("apfs")) && !CardGuard.cardLike(d("hfs")))
+
+        // This Mac's own disks, as the Mac itself describes them: none is a card.
+        if let session = DASessionCreate(kCFAllocatorDefault) {
+            let names = ((try? FileManager.default.contentsOfDirectory(atPath: "/dev")) ?? [])
+                .filter { $0.range(of: #"^disk[0-9]+(s[0-9]+)?$"#, options: .regularExpression) != nil }
+            let inside = names.compactMap { name -> (String, [String: Any])? in
+                guard let disk = DADiskCreateFromBSDName(kCFAllocatorDefault, session, name),
+                      let d = DADiskCopyDescription(disk) as? [String: Any],
+                      d[kDADiskDescriptionDeviceInternalKey as String] as? Bool == true else { return nil }
+                return (name, d)
+            }
+            let taken = inside.filter { CardGuard.cardLike($0.1) }.map(\.0)
+            check("card kinds: none of this Mac's own \(inside.count) disks and parts counts as a card", !inside.isEmpty && taken.isEmpty, "\(taken)")
+        }
     }
 }
 

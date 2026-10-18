@@ -39,15 +39,23 @@ public final class CardGuard {
         self.accepts = accepts ?? CardGuard.cardLike
     }
 
-    /// Not inside the Mac, FAT or exFAT: what a camera card is, in any kind of
-    /// reader. SD readers call themselves removable; CFexpress, CFast and XQD
-    /// readers often call themselves fixed disks on USB or Thunderbolt, so the
-    /// reader's own words are not asked for. A disk with no DCIM folder is
-    /// let through as usual.
+    /// FAT or exFAT and not one of the Mac's own disks: what a camera card is,
+    /// in any kind of reader. Outside the Mac, SD readers call themselves
+    /// removable and CFexpress, CFast and XQD readers often call themselves
+    /// fixed disks on USB or Thunderbolt, so the reader's own words are not
+    /// asked for. A slot built into the Mac (MacBook Pro, Mac Studio) calls
+    /// itself internal: its card counts when it is removable or the slot says
+    /// Secure Digital, which the Mac's own disks never do (David, 18 October
+    /// 2026). A disk with no DCIM folder is let through as usual.
     public nonisolated static func cardLike(_ d: [String: Any]) -> Bool {
         let kind = (d[kDADiskDescriptionVolumeKindKey as String] as? String)?.lowercased() ?? ""
         guard ["msdos", "exfat", "fat32", "vfat"].contains(kind) else { return false }
-        guard d[kDADiskDescriptionDeviceInternalKey as String] as? Bool != true else { return false }
+        if d[kDADiskDescriptionDeviceInternalKey as String] as? Bool == true {
+            let removable = d[kDADiskDescriptionMediaRemovableKey as String] as? Bool == true
+                || d[kDADiskDescriptionMediaEjectableKey as String] as? Bool == true
+            let slot = (d[kDADiskDescriptionDeviceProtocolKey as String] as? String)?.lowercased() == "secure digital"
+            guard removable || slot else { return false }
+        }
         // A drive's hidden start-up partition is FAT too, and never a card.
         let content = (d[kDADiskDescriptionMediaContentKey as String] as? String)?.uppercased() ?? ""
         let name = (d[kDADiskDescriptionVolumeNameKey as String] as? String)?.uppercased() ?? ""

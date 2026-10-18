@@ -182,6 +182,12 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   Release button (David's decision): to see a card in Finder, quit Geotag.
 - The Mac may answer "busy" to Geotag's own opening and open the card all
   the same; check whether it is open before calling it a failure.
+- A card in an SD slot built into a Mac (MacBook Pro, Mac Studio) is taken
+  too (0.14.4, David, 18 October 2026). Such a slot calls itself internal,
+  so an internal FAT or exFAT disk counts when it is removable or ejectable
+  or its protocol is Secure Digital; the Mac's own disks never are. Not tried
+  on a real slot: David's Mac mini has none. The self-test asks the Mac about
+  each of its own disks and checks none is taken.
 - Eject forces the whole disk closed (`kDADiskUnmountOptionForce |
   kDADiskUnmountOptionWhole`, on the whole disk, never a partition) and
   ejects it; under a second, open files or not.
