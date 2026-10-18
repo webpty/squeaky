@@ -178,7 +178,8 @@ enum OffsetText {
         if seconds == 0 { return "On time" }
         let a = abs(seconds)
         var parts: [String] = []
-        if a >= 3600 { parts.append("\(a / 3600) h") }
+        if a >= 86_400 { parts.append("\(a / 86_400) d") }
+        if a % 86_400 >= 3600 { parts.append("\(a % 86_400 / 3600) h") }
         if a % 3600 >= 60 { parts.append("\(a % 3600 / 60) min") }
         if a % 60 > 0 { parts.append("\(a % 60) s") }
         return parts.joined(separator: " ") + (seconds > 0 ? " ahead" : " behind")
@@ -221,8 +222,19 @@ struct CamerasCard: View {
                                   OffsetText.zone(camera.zone),
                                   OffsetText.describe(camera.offsetSeconds)].joined(separator: " · "))
                                 .foregroundStyle(.secondary).lineLimit(1)
+                            // The newest software its photos have shown, and when.
+                            if let firmware = camera.firmware {
+                                Text("Firmware \(firmware)" + (camera.firmwareSeen.map { ", \(When.current.day($0, zone: TimeZone(secondsFromGMT: 0)!))" } ?? ""))
+                                    .foregroundStyle(.secondary).lineLimit(1)
+                            }
                         }
                         Spacer(minLength: Style.gap)
+                        if let page = Firmware.page(forModel: camera.model) {
+                            Link(destination: page) {
+                                Text("Latest firmware").buttonLabel()
+                            }
+                            .buttonStyle(.bordered)
+                        }
                         RoundIconButton(symbol: "pencil", label: "Edit") { editing = camera }
                         RoundIconButton(symbol: "trash", label: "Remove") { removing = camera }
                     }
@@ -280,6 +292,7 @@ struct CameraEditor: View {
     let onSave: (Camera) -> Void
 
     @State private var clock = Clock.notSet
+    @State private var days = 0
     @State private var hours = 0
     @State private var minutes = 0
     @State private var seconds = 0
@@ -334,6 +347,8 @@ struct CameraEditor: View {
                 HStack(spacing: Style.gap) {
                     Text("By").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
                     HStack(spacing: 8) {
+                        // Days too: a clock set to the wrong date is out by days or years.
+                        number($days, "d", 0...99_999)
                         number($hours, "h", 0...23)
                         number($minutes, "min", 0...59)
                         number($seconds, "s", 0...59)
@@ -383,7 +398,8 @@ struct CameraEditor: View {
         guard let offset = camera.offsetSeconds else { clock = .notSet; return }
         clock = offset == 0 ? .onTime : offset > 0 ? .ahead : .behind
         let a = abs(offset)
-        hours = a / 3600
+        days = a / 86_400
+        hours = a % 86_400 / 3600
         minutes = a % 3600 / 60
         seconds = a % 60
     }
@@ -415,7 +431,7 @@ struct CameraEditor: View {
         case .notSet: camera.zone = .notSet
         case .named(let id): camera.zone = .fixed(id)
         }
-        let total = hours * 3600 + minutes * 60 + seconds
+        let total = days * 86_400 + hours * 3600 + minutes * 60 + seconds
         switch clock {
         case .notSet: camera.offsetSeconds = nil
         case .onTime: camera.offsetSeconds = 0

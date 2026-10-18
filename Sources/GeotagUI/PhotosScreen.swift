@@ -25,6 +25,14 @@ enum PhotoText {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
+    /// "The Canon EOS R7's clock is 520 d 20 h 5 min behind. Set it in the
+    /// camera: Set time and date in camera, in the menu bar."
+    static func clockNote(_ wrong: [(camera: Camera, offset: Int)]) -> String {
+        guard !wrong.isEmpty else { return "" }
+        let each = wrong.map { "The \($0.camera.model)'s clock is \(OffsetText.describe($0.offset))." }
+        return each.joined(separator: " ") + " Set it in the camera: Set time and date in camera, in the menu bar."
+    }
+
     /// "1 h 25 min", "45 min", "2 d 3 h": a break between two photos.
     static func gap(_ seconds: Int) -> String {
         let minutes = seconds / 60, hours = minutes / 60, days = hours / 24
@@ -173,7 +181,8 @@ struct PhotosScreen: View {
                 } else if model.photosBusy {
                     ProgressView().controlSize(.small)
                 }
-                StatusLine(text: model.photosLine, lines: 2)
+                // Nothing else to say: a camera whose clock is far out, and where to set it.
+                StatusLine(text: model.photosLine.isEmpty ? PhotoText.clockNote(model.wrongClocks) : model.photosLine, lines: 2)
                 Spacer()
                 Menu {
                     ForEach(Self.toggleable, id: \.id) { column in
@@ -587,6 +596,10 @@ struct MatchingCard: View {
                 Text("Maximum gap: \(model.maxGapSeconds / 60) min").lineLimit(1)
             }
             .fixedSize()
+            Stepper(value: Binding(get: { model.clockFixMinutes }, set: { model.setClockFixMinutes($0) }), in: 15...10_080, step: 15) {
+                Text("Correct the dates when a clock is out by \(PhotoText.gap(model.clockFixMinutes * 60)) or more").lineLimit(1)
+            }
+            .fixedSize()
         }
     }
 }
@@ -623,6 +636,7 @@ struct CardsCard: View {
 /// The Photos page's wording, for the self-test.
 public enum PhotoTextProbe {
     public static func gap(_ seconds: Int) -> String { PhotoText.gap(seconds) }
+    public static func clockNote(_ wrong: [(camera: Camera, offset: Int)]) -> String { PhotoText.clockNote(wrong) }
 }
 
 /// The Photos screen on its own, for pictures made off-screen.

@@ -39,7 +39,7 @@ public enum Placement: Equatable, Sendable {
 }
 
 public enum Moments {
-    static let reading: DateFormatter = {
+    public static let reading: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.timeZone = TimeZone(secondsFromGMT: 0)
@@ -82,6 +82,16 @@ public enum Moments {
         }
         guard let offset = camera.offsetSeconds else { return .failure(.offsetNotSet) }
         return .success(clock.addingTimeInterval(-Double(zone) - Double(offset + extraOffset)))
+    }
+
+    /// The clock offset that puts this photo at that moment: how a camera
+    /// whose clock is far out is set from the start of the track its photos
+    /// belong to (David, 18 October 2026). Nil when its time cannot be read.
+    public static func offset(placing photo: ScannedPhoto, camera: Camera, at moment: Date) -> Int? {
+        var onTime = camera
+        onTime.offsetSeconds = 0
+        guard case .success(let read) = Moments.moment(photo, camera: onTime) else { return nil }
+        return Int(read.timeIntervalSince(moment).rounded())
     }
 }
 

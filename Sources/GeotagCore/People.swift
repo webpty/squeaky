@@ -35,6 +35,10 @@ public struct Camera: Codable, Identifiable, Equatable, Sendable {
     /// Seconds the camera's clock is ahead of the real time; negative when
     /// behind. Nil until set: its photos then go to the review list.
     public var offsetSeconds: Int?
+    /// The newest software version its photos have shown, and when the photo
+    /// that showed it was taken, by the camera's clock.
+    public var firmware: String?
+    public var firmwareSeen: Date?
 
     public init(id: UUID = UUID(), personId: UUID, model: String, zone: CameraZone, offsetSeconds: Int? = nil) {
         self.id = id
@@ -47,7 +51,7 @@ public struct Camera: Codable, Identifiable, Equatable, Sendable {
     /// Ready for matching: both the zone and the offset are known.
     public var isReady: Bool { zone != .notSet && offsetSeconds != nil }
 
-    private enum CodingKeys: String, CodingKey { case id, personId, model, zone, zoneId, offsetSeconds }
+    private enum CodingKeys: String, CodingKey { case id, personId, model, zone, zoneId, offsetSeconds, firmware, firmwareSeen }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -55,6 +59,8 @@ public struct Camera: Codable, Identifiable, Equatable, Sendable {
         personId = try c.decode(UUID.self, forKey: .personId)
         model = try c.decode(String.self, forKey: .model)
         offsetSeconds = try c.decodeIfPresent(Int.self, forKey: .offsetSeconds)
+        firmware = try c.decodeIfPresent(String.self, forKey: .firmware)
+        firmwareSeen = try c.decodeIfPresent(Date.self, forKey: .firmwareSeen)
         switch try c.decode(String.self, forKey: .zone) {
         case "photo": zone = .fromPhoto
         case "fixed": zone = .fixed(try c.decode(String.self, forKey: .zoneId))
@@ -68,6 +74,8 @@ public struct Camera: Codable, Identifiable, Equatable, Sendable {
         try c.encode(personId, forKey: .personId)
         try c.encode(model, forKey: .model)
         try c.encodeIfPresent(offsetSeconds, forKey: .offsetSeconds)
+        try c.encodeIfPresent(firmware, forKey: .firmware)
+        try c.encodeIfPresent(firmwareSeen, forKey: .firmwareSeen)
         switch zone {
         case .fromPhoto: try c.encode("photo", forKey: .zone)
         case .fixed(let id): try c.encode("fixed", forKey: .zone); try c.encode(id, forKey: .zoneId)

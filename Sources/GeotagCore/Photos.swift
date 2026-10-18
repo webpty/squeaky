@@ -26,9 +26,12 @@ public struct ScannedPhoto: Identifiable, Equatable, Sendable {
     /// That location, signed (south and west negative), when there is one.
     public var ownLat: Double?
     public var ownLon: Double?
+    /// The camera's software version when the photo was taken: "1.1.1".
+    /// Read only for the newest photo of each model on a card.
+    public var firmware: String?
 
     public init(url: URL, fileName: String, size: Int64, taken: String?, subSeconds: String?, zone: String?, model: String?,
-                hasLocation: Bool = false, ownLat: Double? = nil, ownLon: Double? = nil) {
+                hasLocation: Bool = false, ownLat: Double? = nil, ownLon: Double? = nil, firmware: String? = nil) {
         self.url = url
         self.fileName = fileName
         self.size = size
@@ -39,6 +42,7 @@ public struct ScannedPhoto: Identifiable, Equatable, Sendable {
         self.hasLocation = hasLocation
         self.ownLat = ownLat
         self.ownLon = ownLon
+        self.firmware = firmware
     }
 
     /// Name, size and time taken: what says two photos are the same one.
@@ -106,7 +110,32 @@ public struct PhotoScanner: Sendable {
             done += batch.count
             progress(done)
         }
+        readFirmware(&out)
         return out
+    }
+
+    /// The software version of each camera, from its newest photo only: Canon
+    /// keeps it in the maker notes, which the fast read skips, and reading
+    /// them for every photo doubles the time a card takes. Without it the
+    /// photos are read all the same.
+    func readFirmware(_ photos: inout [ScannedPhoto]) {
+        var newest: [String: Int] = [:]
+        for (i, photo) in photos.enumerated() {
+            guard let model = photo.model else { continue }
+            if let j = newest[model], (photos[j].taken ?? "") > (photo.taken ?? "") { continue }
+            newest[model] = i
+        }
+        let picked = newest.values.sorted()
+        guard !picked.isEmpty,
+              let data = try? exifTool.run(["-j", "-q", "-q", "-fast", "-charset", "filename=utf8",
+                                            "-CanonFirmwareVersion", "-FirmwareVersion", "-Software"] + picked.map { photos[$0].url.path }),
+              let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
+        var byPath: [String: [String: Any]] = [:]
+        for row in rows { if let path = row["SourceFile"] as? String { byPath[path] = row } }
+        for i in picked {
+            let row = byPath[photos[i].url.path] ?? [:]
+            photos[i].firmware = Firmware.version(["CanonFirmwareVersion", "FirmwareVersion", "Software"].map { row[$0].map { "\($0)" } })
+        }
     }
 }
 

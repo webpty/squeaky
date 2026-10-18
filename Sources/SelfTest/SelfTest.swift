@@ -44,6 +44,10 @@ struct SelfTest {
             await nasQueue(scratch, samples: URL(fileURLWithPath: samples))
             await nasBatch(scratch, samples: URL(fileURLWithPath: samples))
             heif(scratch, samples: URL(fileURLWithPath: samples))
+            await firmware(scratch, samples: URL(fileURLWithPath: samples),
+                           raws: ProcessInfo.processInfo.environment["GEOTAG_RAWS"].map { URL(fileURLWithPath: $0) })
+            await clocks(scratch, samples: URL(fileURLWithPath: samples),
+                         raws: ProcessInfo.processInfo.environment["GEOTAG_RAWS"].map { URL(fileURLWithPath: $0) })
         }
         await settingsFeedback(scratch)
         await naming(scratch)
@@ -1669,6 +1673,14 @@ extension SelfTest {
         if let first = model.tracks.first?.id {
             await draw("12-viewer", TrackViewer(trackId: first), 1100, 820, wait: key == nil ? 40 : 150)
         }
+
+        // Set time and date in camera: each camera's page, drawn tall enough to show it whole.
+        CameraGuide.pictures = URL(fileURLWithPath: "Resources/CameraClock")
+        for guide in CameraGuide.all {
+            model.cameraGuide = guide.id
+            await draw("13-clock-\(guide.id)", CameraClockProbe(), 720, 3400)
+        }
+        await draw("13-clock-window", CameraClockProbe(), 720, 620)
         NSApp.appearance = NSAppearance(named: .aqua)
         print("gallery: \(out.path)")
     }
@@ -1879,5 +1891,193 @@ extension SelfTest {
         model.setBreakMinutes(90)
         check("naming: a longer setting, no break marked", model.breaks.isEmpty, "\(model.breaks)")
         model.setBreakMinutes(20)
+    }
+}
+
+extension SelfTest {
+    /// A camera whose clock is far out (David, 18 October 2026): the offset
+    /// set from the start of the track its photos belong to, the copies'
+    /// dates corrected on every kind of file, and a photo placed later not
+    /// corrected twice.
+    @MainActor
+    static func clocks(_ scratch: URL, samples: URL, raws: URL?) async {
+        let fm = FileManager.default
+        let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+        let iso = ISO8601DateFormatter()
+
+        // The offset that puts the first photo at a track's start.
+        let r7 = Camera(personId: UUID(), model: "Canon EOS R7", zone: .fromPhoto)
+        let shot = ScannedPhoto(url: URL(fileURLWithPath: "/x.JPG"), fileName: "x.JPG", size: 1, taken: "2024:05:12 13:44:00",
+                                subSeconds: nil, zone: "-03:00", model: "Canon EOS R7")
+        let trackStart = iso.date(from: "2026-10-17T11:56:00Z")! // 08:56 in Ushuaia
+        let offset = Moments.offset(placing: shot, camera: r7, at: trackStart)
+        var set = r7
+        set.offsetSeconds = offset
+        let lands = try? Moments.moment(shot, camera: set).get()
+        let expected = Int(iso.date(from: "2024-05-12T16:44:00Z")!.timeIntervalSince(trackStart))
+        check("clocks: a track's start gives the camera's offset, its first photo lands there", offset == expected && lands == trackStart,
+              "\(String(describing: offset)) \(String(describing: lands))")
+
+        // Saving with the dates corrected, on every kind of file.
+        let shift = 78_000_000 // about two and a half years later
+        var files = ["390A5795.JPG", "DAVL0311.CR3"].map { samples.appendingPathComponent($0) }
+        if let raws { files += ["DSCN0014.NRW", "IMG_0126.CR2"].map { raws.appendingPathComponent($0) } }
+        files = files.filter { fm.fileExists(atPath: $0.path) }
+        let saveTo = scratch.appendingPathComponent("CLOCK-SAVED")
+        let saver = Saver(exifTool: tool, folder: saveTo)
+        let photos = (try? PhotoScanner(exifTool: tool).scan(files) { _ in }) ?? []
+        for (i, photo) in photos.enumerated() {
+            guard let clock = Moments.clockReading(photo) else { continue }
+            let spot = Position(lat: -54.8, lon: -68.3, alt: nil, moment: clock.addingTimeInterval(Double(shift)), fromPoint: 0)
+            // Every other one saved without a location: its dates are corrected all the same.
+            let item = SaveItem(photo: photo, placement: i % 2 == 0 ? .matched(spot) : .review(.noTrack), withoutLocation: i % 2 == 1,
+                                shift: shift)
+            let result = saver.save(item)
+            guard case .saved(let url) = result else {
+                check("clocks: \(photo.fileName) saved with its dates corrected", false, "\(result)")
+                continue
+            }
+            let read = (try? tool.read(["DateTimeOriginal"], from: url))?["DateTimeOriginal"]
+            let wanted = Saver.shiftedProbe(photo.taken ?? "", by: shift)
+            let cardDate = (try? fm.attributesOfItem(atPath: photo.url.path))?[.modificationDate] as? Date
+            let copyDate = (try? fm.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+            check("clocks: \(photo.fileName) saved with its dates corrected, in the corrected day's folder",
+                  read == wanted && url.deletingLastPathComponent().lastPathComponent == Saver.dayFolder(photo, shift: shift)
+                  && abs((cardDate?.addingTimeInterval(Double(shift)).timeIntervalSince1970 ?? 0) - (copyDate?.timeIntervalSince1970 ?? 1)) < 0.001,
+                  "\(read ?? "-") wanted \(wanted ?? "-") in \(url.deletingLastPathComponent().lastPathComponent)")
+        }
+
+        // Through the app model: the offset set as "Use this offset" sets it,
+        // the Photos page says so, and a photo placed later is not moved twice.
+        let lib = TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("clock-lib")))
+        let walk = 1_792_162_800 // 2026-10-16 15:00 UTC, 12:00 in Ushuaia
+        writeGPX(scratch.appendingPathComponent("clock-walk.gpx"), start: walk, count: 1800, name: "Ushuaia walk", lat: -54.812, lon: -68.33)
+        _ = try? await lib.importFile(scratch.appendingPathComponent("clock-walk.gpx"), role: .reader)
+        let cardRoot = scratch.appendingPathComponent("CLOCK-CARD")
+        let card = cardRoot.appendingPathComponent("DCIM/100CANON")
+        try? fm.createDirectory(at: card, withIntermediateDirectories: true)
+        // The camera's clock says 12 May 2024; the walk was on 16 October 2026.
+        for (i, time) in ["13:44:00", "13:50:00", "13:56:00", "16:30:00"].enumerated() {
+            writePhoto(card.appendingPathComponent(String(format: "IMG_%04d.JPG", i + 1)), model: "Canon EOS R5m2", zone: "-03:00",
+                       taken: "2024:05:12 \(time)")
+        }
+        var book = PeopleBook.family()
+        book.people[0].saveFolder = scratch.appendingPathComponent("CLOCK-MODEL-SAVED").path
+        try? fm.createDirectory(at: scratch.appendingPathComponent("CLOCK-MODEL-SAVED"), withIntermediateDirectories: true)
+        let peopleFile = PeopleStoreFile(url: scratch.appendingPathComponent("clock-people.json"))
+        try? peopleFile.save(book)
+        let unplacedFile = UnplacedStoreFile(url: scratch.appendingPathComponent("clock-unplaced.json"))
+        let model = AppModel(library: lib, peopleStore: peopleFile,
+                             history: HistoryStoreFolder(folder: scratch.appendingPathComponent("clock-history")),
+                             queue: QueueStoreFile(url: scratch.appendingPathComponent("clock-queue.json")), unplaced: unplacedFile,
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("clock-maps")),
+                             exifTool: tool, nas: FakeNAS(root: scratch.appendingPathComponent("CLOCK-NAS")), notifier: RecordingNotifier(),
+                             places: FakePlaces())
+        await model.showLibrary()
+        let source = CardWatcher.card(at: cardRoot)!
+        model.choose(source)
+        model.askingWhose = nil
+        await model.read(source, for: model.book.people[0].id)
+        model.aligning = false
+        check("clocks: no photo falls on a track by the camera's own clock", model.rows.allSatisfy { $0.placement == .review(.offsetNotSet) },
+              "\(model.rows.map { String(describing: $0.placement) })")
+        // "Use this offset" with the walk chosen: its first photo at the walk's start.
+        guard var camera = model.book.camera(personId: model.book.people[0].id, model: "Canon EOS R5m2"),
+              let first = model.rows.first?.photo,
+              let fromWalk = Moments.offset(placing: first, camera: camera, at: Date(timeIntervalSince1970: TimeInterval(walk))) else {
+            check("clocks: the camera found", false)
+            return
+        }
+        camera.offsetSeconds = fromWalk
+        model.save(camera)
+        let placed = model.rows.prefix(3).allSatisfy { if case .matched = $0.placement { return true } else { return false } }
+        check("clocks: the photos now fall on the walk, the last one after it", placed && model.rows[3].placement == .review(.noTrack),
+              "\(model.rows.map { String(describing: $0.placement) })")
+        check("clocks: the Photos page says the clock is out, and where to set it",
+              PhotoTextProbe.clockNote(model.wrongClocks).hasPrefix("The Canon EOS R5m2's clock is 886 d 22 h 16 min behind.")
+              && PhotoTextProbe.clockNote(model.wrongClocks).hasSuffix("Set time and date in camera, in the menu bar."),
+              PhotoTextProbe.clockNote(model.wrongClocks))
+        await model.savePhotos()
+        let saved = model.queueEntries.map(\.relativePath).sorted()
+        check("clocks: the copies in the corrected day's folders", saved == [
+            "2026.10.16 Ushuaia/IMG_0001.jpg", "2026.10.16 Ushuaia/IMG_0002.jpg", "2026.10.16 Ushuaia/IMG_0003.jpg", "2026.10.16/IMG_0004.jpg",
+        ], "\(saved)")
+        let lateCopy = scratch.appendingPathComponent("CLOCK-MODEL-SAVED/2026.10.16/IMG_0004.jpg")
+        let corrected = (try? tool.read(["DateTimeOriginal"], from: lateCopy))?["DateTimeOriginal"]
+        check("clocks: a photo saved without a location has its date corrected too", corrected == "2026:10:16 14:46:00",
+              corrected ?? "-")
+        // A second walk turns up covering it: placed later, its date stays corrected once.
+        writeGPX(scratch.appendingPathComponent("clock-walk2.gpx"), start: walk + 9_000, count: 1800, name: "Afternoon walk", lat: -54.80, lon: -68.30)
+        _ = try? await lib.importFile(scratch.appendingPathComponent("clock-walk2.gpx"), role: .reader)
+        await model.showLibrary()
+        await model.placeLater()
+        let after = (try? tool.read(["DateTimeOriginal", "GPSLatitude"], from: lateCopy)) ?? [:]
+        check("clocks: placed later, its date corrected once, not twice", after["DateTimeOriginal"] == "2026:10:16 14:46:00"
+              && after["GPSLatitude"] != nil && ((try? unplacedFile.load()) ?? []).isEmpty, "\(after)")
+    }
+}
+
+extension SelfTest {
+    /// The cameras' software: read from every kind of photo, the newest kept
+    /// per camera with its day, and a page for each model's latest.
+    @MainActor
+    static func firmware(_ scratch: URL, samples: URL, raws: URL?) async {
+        let fm = FileManager.default
+        check("firmware: the version out of what the cameras write",
+              Firmware.version(["Firmware Version 1.7.1"]) == "1.7.1" && Firmware.version([nil, "1.0.2"]) == "1.0.2"
+              && Firmware.version(["COOLPIX P950   V1.0"]) == "1.0" && Firmware.version([nil, "Canon"]) == nil)
+        check("firmware: newer by number, part by part", Firmware.isNewer("1.10.0", than: "1.9.9") && Firmware.isNewer("1.1.1", than: "1.0.3")
+              && !Firmware.isNewer("1.0", than: "1.0.0") && !Firmware.isNewer("1.0.3", than: "1.1.1"))
+        check("firmware: a download page for each of the family's models", ["Canon EOS R5m2", "Canon EOS R7", "COOLPIX P950",
+              "Canon EOS REBEL T3i", "Canon EOS 600D"].allSatisfy { Firmware.page(forModel: $0) != nil } && Firmware.page(forModel: "Leica Q3") == nil)
+
+        let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+        var files = ["390A5795.JPG", "DAVL3660.JPG", "DAVL0311.CR3"].map { samples.appendingPathComponent($0) }
+        if let raws { files += ["DSCN0014.NRW", "IMG_0126.CR2", "_MG_2587.CR2"].map { raws.appendingPathComponent($0) } }
+        files = files.filter { fm.fileExists(atPath: $0.path) }
+        let scanner = PhotoScanner(exifTool: tool)
+        let read = ((try? scanner.scan(files) { _ in }) ?? []).map { "\($0.fileName) \($0.firmware ?? "-")" }
+        // Only the newest photo of each model is asked: the older R5 Mark II JPEG is not.
+        let wanted = ["390A5795.JPG 1.7.1", "DAVL3660.JPG -", "DAVL0311.CR3 1.1.1", "DSCN0014.NRW 1.0", "IMG_0126.CR2 1.0.2", "_MG_2587.CR2 1.0.1"]
+        check("firmware: read from JPEG, CR3, NRW and CR2 alike, newest photo of each camera only",
+              read == Array(wanted.prefix(read.count)) && read.count == files.count, "\(read)")
+        let alone = (try? scanner.scan([samples.appendingPathComponent("DAVL3660.JPG")]) { _ in })?.first?.firmware
+        check("firmware: an R5 Mark II JPEG read on its own", alone == "1.0.1", alone ?? "-")
+
+        // A card with photos from before and after an update: the newer version kept.
+        let cardRoot = scratch.appendingPathComponent("FIRMWARE-CARD")
+        let card = cardRoot.appendingPathComponent("DCIM/100CANON")
+        try? fm.createDirectory(at: card, withIntermediateDirectories: true)
+        for name in ["DAVL3660.JPG", "DAVL0311.CR3"] { try? fm.copyItem(at: samples.appendingPathComponent(name), to: card.appendingPathComponent(name)) }
+        let peopleFile = PeopleStoreFile(url: scratch.appendingPathComponent("firmware-people.json"))
+        let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("firmware-lib"))),
+                             peopleStore: peopleFile, history: HistoryStoreFolder(folder: scratch.appendingPathComponent("firmware-history")),
+                             queue: QueueStoreFile(url: scratch.appendingPathComponent("firmware-queue.json")),
+                             unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("firmware-unplaced.json")),
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("firmware-maps")),
+                             exifTool: tool, nas: FakeNAS(root: scratch.appendingPathComponent("FIRMWARE-NAS")), notifier: RecordingNotifier(),
+                             places: FakePlaces())
+        let source = CardWatcher.card(at: cardRoot)!
+        model.choose(source)
+        model.askingWhose = nil
+        await model.read(source, for: model.book.people[0].id)
+        let camera = model.book.camera(personId: model.book.people[0].id, model: "Canon EOS R5m2")
+        let seen = camera?.firmwareSeen.map { Moments.reading.string(from: $0) }
+        let kept = (try? peopleFile.load())?.flatMap { $0.camera(personId: model.book.people[0].id, model: "Canon EOS R5m2") }
+        check("firmware: the newest version on the card kept, with its photo's day", camera?.firmware == "1.1.1"
+              && seen?.hasPrefix("2026:01:01") == true && kept?.firmware == "1.1.1",
+              "\(camera?.firmware ?? "-") \(seen ?? "-")")
+
+        let olderRoot = scratch.appendingPathComponent("FIRMWARE-OLD")
+        let older = olderRoot.appendingPathComponent("DCIM/100CANON")
+        try? fm.createDirectory(at: older, withIntermediateDirectories: true)
+        try? fm.copyItem(at: samples.appendingPathComponent("DAVL3660.JPG"), to: older.appendingPathComponent("DAVL3660.JPG"))
+        let oldCard = CardWatcher.card(at: olderRoot)!
+        model.choose(oldCard)
+        model.askingWhose = nil
+        await model.read(oldCard, for: model.book.people[0].id)
+        let after = model.book.camera(personId: model.book.people[0].id, model: "Canon EOS R5m2")
+        check("firmware: a card of older photos does not take the version back", after?.firmware == "1.1.1"
+              && after?.firmwareSeen == camera?.firmwareSeen, after?.firmware ?? "-")
     }
 }

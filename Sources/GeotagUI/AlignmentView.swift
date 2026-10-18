@@ -17,6 +17,9 @@ struct AlignmentView: View {
     @State private var selected: String?
     @State private var lines: [[CGPoint]] = []
     @State private var place = ""
+    /// The track the photos belong to, chosen by hand: their camera's clock
+    /// may be too far out for them to fall on any track by its own times.
+    @State private var trackId: String?
 
     private var personId: UUID? { model.importPerson }
 
@@ -38,11 +41,35 @@ struct AlignmentView: View {
         cameras.first { $0.id == cameraId } ?? cameras.first
     }
 
+    private var chosenTrack: Track? {
+        trackId.flatMap { id in model.tracks.first { $0.id == id } }
+    }
+
+    /// Where the slider starts: the camera's own offset, or with a track
+    /// chosen, the offset that puts its first photo at the track's start
+    /// (David, 18 October 2026: the photos go on the map from there).
+    private var base: Int {
+        guard let camera else { return 0 }
+        guard let track = chosenTrack,
+              let first = photos.min(by: { (Moments.clockReading($0.photo) ?? .distantFuture) < (Moments.clockReading($1.photo) ?? .distantFuture) }),
+              let offset = Moments.offset(placing: first.photo, camera: camera, at: track.start) else { return camera.offsetSeconds ?? 0 }
+        return offset
+    }
+
+    /// How far the photos can slide each way: a quarter of an hour, and with
+    /// a track chosen, as far as its end.
+    private var range: ClosedRange<Double> {
+        guard let track = chosenTrack else { return -900...900 }
+        let times = photos.compactMap { Moments.clockReading($0.photo) }
+        let span = (times.max() ?? .distantPast).timeIntervalSince(times.min() ?? .distantPast)
+        return -max(900, (track.duration - max(span, 0)).rounded())...900
+    }
+
     /// The camera as it would be with the slider where it is; a camera with no
     /// offset yet starts from on time.
     private var trial: Camera? {
         guard var c = camera else { return nil }
-        c.offsetSeconds = (c.offsetSeconds ?? 0) + Int(extra)
+        c.offsetSeconds = base + Int(extra)
         return c
     }
 
@@ -74,6 +101,15 @@ struct AlignmentView: View {
                     .labelsHidden()
                     .fixedSize()
                 }
+                Picker("", selection: Binding(get: { trackId }, set: { trackId = $0; extra = 0; fitted = false })) {
+                    Text("By the photos' own times").tag(String?.none)
+                    Divider()
+                    ForEach(model.tracks.sorted { $0.start > $1.start }) { track in
+                        Text("\(track.name), \(When.current.dayAndTime(track.start))").tag(Optional(track.id))
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
                 Spacer()
                 RoundIconButton(symbol: "xmark", label: "Close") { dismiss() }
                     .keyboardShortcut(.cancelAction)
@@ -87,6 +123,10 @@ struct AlignmentView: View {
                             if selected == nil { selected = dots.first?.id ?? placed.first?.row.id }
                         }
                         .onChange(of: camera?.id) { _, _ in fit(dots, size: geo.size, again: true) }
+                        .onChange(of: trackId) { _, _ in
+                            buildLines()
+                            fit(self.dotsNow, size: geo.size, again: true)
+                        }
                 }
                 PhotoPanel(row: placed.first { $0.row.id == selected }?.row,
                            position: placed.first { $0.row.id == selected }?.position)
@@ -100,14 +140,14 @@ struct AlignmentView: View {
 
             VStack(spacing: 6) {
                 HStack {
-                    Text("15 min earlier").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text("\(PhotoText.gap(Int(-range.lowerBound))) earlier").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     Spacer()
                     Text(readout).font(.headline).monospacedDigit().lineLimit(1)
                     Spacer()
-                    Text("15 min later").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text("\(PhotoText.gap(Int(range.upperBound))) later").font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 // Whole seconds, without the tick marks a step would draw.
-                Slider(value: Binding(get: { extra }, set: { extra = $0.rounded() }), in: -900...900)
+                Slider(value: Binding(get: { extra }, set: { extra = $0.rounded() }), in: range)
                     .labelsHidden()
             }
 
@@ -116,8 +156,8 @@ struct AlignmentView: View {
                 StatusLine(text: away == 0 ? "\(placed.count) photos on the track" : "\(placed.count - away) on the track, \(away) away from any track")
                 Spacer()
                 // The arrow keys move the slider a second at a time.
-                Button("") { extra = max(extra - 1, -900) }.keyboardShortcut(.leftArrow, modifiers: []).hidden().frame(width: 0)
-                Button("") { extra = min(extra + 1, 900) }.keyboardShortcut(.rightArrow, modifiers: []).hidden().frame(width: 0)
+                Button("") { extra = max(extra - 1, range.lowerBound) }.keyboardShortcut(.leftArrow, modifiers: []).hidden().frame(width: 0)
+                Button("") { extra = min(extra + 1, range.upperBound) }.keyboardShortcut(.rightArrow, modifiers: []).hidden().frame(width: 0)
                 Button {
                     dismiss()
                 } label: {
@@ -126,6 +166,8 @@ struct AlignmentView: View {
                 Button {
                     if let trial { model.save(trial) }
                     extra = 0
+                    // Saved: the photos now fall on the track by the camera's offset.
+                    trackId = nil
                     if cameras.count <= 1 { dismiss() }
                 } label: {
                     Text("Use this offset").buttonLabel()
@@ -166,12 +208,11 @@ struct AlignmentView: View {
         return "Clock " + OffsetText.describe(trial.offsetSeconds).lowercased()
     }
 
-    /// The tracks near the photos' days, as lines at zoom 0.
+    /// The tracks near the photos' days, as lines at zoom 0; the chosen
+    /// track's day when there is one.
     private func buildLines() {
         let moments = photos.compactMap { row -> Date? in
-            guard var c = camera else { return nil }
-            let offset = c.offsetSeconds ?? 0
-            c.offsetSeconds = offset
+            guard let c = trial else { return nil }
             if case .success(let m) = Moments.moment(row.photo, camera: c) { return m }
             return nil
         }
@@ -179,6 +220,11 @@ struct AlignmentView: View {
             let p = piece.points
             return p.t.indices.map { World.point(p.lat[$0], p.lon[$0]) }
         }
+    }
+
+    /// The photos' dots as they stand.
+    private var dotsNow: [MapDot] {
+        placed.compactMap { p in p.position.map { MapDot(id: p.row.id, world: World.point($0.lat, $0.lon)) } }
     }
 
     private func fit(_ dots: [MapDot], size: CGSize, again: Bool = false) {

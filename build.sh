@@ -24,6 +24,8 @@ cp "$binary" "$app/Contents/MacOS/$name"
 
 echo "Adding ExifTool"
 cp -R Vendor/ExifTool "$app/Contents/Resources/ExifTool"
+# The pictures for "Set time and date in camera", from the cameras' manuals.
+cp -R Resources/CameraClock "$app/Contents/Resources/CameraClock"
 
 echo "Drawing the icon"
 mkdir -p build

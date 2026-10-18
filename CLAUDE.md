@@ -257,6 +257,50 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   (`PlaceLookup.unreachable`), and the rest go by their day alone instead of
   each waiting ten seconds. Tests never go online (`FakePlaces`).
 
+## Wrong camera clocks (0.14.0, 18 October 2026)
+
+- "See photos on the map" has a Track choice: the photos' own times, or a
+  track (newest first). With a track chosen, the camera's photos are laid
+  along it from its start, whatever the clock says
+  (`Moments.offset(placing:camera:at:)`), and the slider fine-tunes from
+  there: 15 minutes later, and earlier by as much as the track outlasts the
+  photos. "Use this offset" saves it, days included. David's example: a
+  photo dated 2024.05.12 13:44 on a track starting 2026.10.17 08:56.
+- A camera whose offset is an hour or more (the Matching card's "Correct the
+  dates when a clock is out by", `clockFixMinutes`) gets corrected dates in
+  its copies: the EXIF, XMP and QuickTime dates (`Saver.shiftArguments`) and
+  the file dates move by the offset, and the day folder follows. The time
+  zone fields stay as the camera wrote them. The copy check wants
+  DateTimeOriginal moved by exactly that much and every other tag but the
+  dates unchanged. A copy placed later is moved by what was not moved yet
+  (`UnplacedEntry.shifted`). Canon's CTMD TimeStamp cannot be written and
+  stays. The card is never changed.
+- The Photos page names each camera whose clock is out, by how much, and
+  points to the menu below (`PhotoText.clockNote`).
+- "Set time and date in camera", in the menu bar, has a page per family
+  camera (`CameraGuide.all`): steps in the camera's own menu words from the
+  maker's manual, with pictures of the camera's screens in
+  `Resources/CameraClock/<camera>` (Canon's manual pictures for the R5
+  Mark II and R7, Nikon's drawings for the P950 drawn to PNG and trimmed,
+  crops of page 34 of the T3i manual). The T3i has no time zone setting:
+  its page says to give it a fixed zone in Geotag.
+
+## Firmware (0.14.0, 18 October 2026)
+
+- Each camera keeps the newest firmware version its photos have shown, with
+  the day of that photo (`Camera.firmware`, `firmwareSeen`); a card of older
+  photos never takes it back. Settings, Cameras shows "Firmware 1.7.1,
+  2025.09.08" and a "Latest firmware" button to the maker's page for the
+  model (`Firmware.page`). No maker publishes the latest version in a form
+  Geotag can read; the page shows it.
+- Canon writes the version in its maker notes, which the fast read
+  (`-fast2`) skips, and reading them for every photo doubled the time a card
+  takes. So only the newest photo of each model is asked
+  (`PhotoScanner.readFirmware`). Nikon writes it as Software ("COOLPIX
+  P950   V1.0").
+- Photos name the lens and its serial number but never its firmware; the
+  camera shows that only in its own Firmware menu.
+
 ## Dump, tag and save (17 October 2026)
 
 - Geotag is not a sorting app (David: "it's dump, tag and save; triage can

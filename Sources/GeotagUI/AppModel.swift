@@ -115,6 +115,8 @@ public final class AppModel: ObservableObject {
 
     /// The Download menu's disk image being made.
     @Published public private(set) var makingDownload = false
+    /// The camera the "Set time and date in camera" window shows.
+    @Published public var cameraGuide = "r5m2"
 
     // Places and breaks in the card's list.
     /// What OpenStreetMap named each photo's spot, by row.
@@ -131,6 +133,9 @@ public final class AppModel: ObservableObject {
     private var placesUnanswered = false
     /// A break this long between two photos is marked in the list (a setting).
     @Published public private(set) var breakMinutes = 20
+    /// A camera clock out by this many minutes or more gets its photos' dates
+    /// corrected in the copies (a setting).
+    @Published public private(set) var clockFixMinutes = 60
     /// The break before a photo, in seconds, where it is at least that long.
     @Published public private(set) var breaks: [String: Int] = [:]
 
@@ -245,6 +250,7 @@ public final class AppModel: ObservableObject {
         openOnCard = defaults.object(forKey: "openOnCard") as? Bool ?? true
         if defaults.object(forKey: "maxGapSeconds") != nil { maxGapSeconds = defaults.integer(forKey: "maxGapSeconds") }
         if defaults.object(forKey: "breakMinutes") != nil { breakMinutes = defaults.integer(forKey: "breakMinutes") }
+        if defaults.object(forKey: "clockFixMinutes") != nil { clockFixMinutes = defaults.integer(forKey: "clockFixMinutes") }
         dateOrder = defaults.string(forKey: "dateOrder").flatMap(DateOrder.init(rawValue:)) ?? .system
         clock24 = defaults.object(forKey: "clock24") as? Bool
         When.current = When(order: dateOrder, clock24: clock24)
@@ -564,6 +570,8 @@ public final class AppModel: ObservableObject {
                       case .found(let name)? = foundPlaces[row.id] {
                 item.place = name
             }
+            // A camera whose clock was far out: the copy gets the right dates.
+            item.shift = dateShift(row.photo, personId: personId)
             let named = item
             let result = await Task.detached { saver.save(named) }.value
             results[row.id] = result
@@ -576,7 +584,7 @@ public final class AppModel: ObservableObject {
                 // unless it has no time at all and never can be.
                 if case .review(let reason)? = row.placement, reason != .noTime,
                    !later.contains(where: { $0.localPath == url.path }) {
-                    later.append(UnplacedEntry(personId: personId, localPath: url.path, photo: row.photo))
+                    later.append(UnplacedEntry(personId: personId, localPath: url.path, photo: row.photo, shifted: named.shift))
                 }
                 changeQueue { $0.append(QueueEntry(personId: personId, localPath: url.path, relativePath: Self.relative(url))) }
             case .alreadyThere(let url):
@@ -704,6 +712,7 @@ public final class AppModel: ObservableObject {
             guard readingRound == round, self.source?.id == source.id else { return }
             rows = ImportList.rows(photos, history: past, book: book, personId: personId)
             refreshBreaks()
+            noteFirmware(photos, personId: personId)
             await loadTimeline()
             rematch()
             photosLine = rows.isEmpty ? "No photos on \(source.name)." : ""
@@ -740,6 +749,35 @@ public final class AppModel: ObservableObject {
 
     // MARK: Matching
 
+    /// A clock out by this much or more is wrong, not drifting: the copies'
+    /// dates are corrected (a setting; David, 18 October 2026).
+    public func setClockFixMinutes(_ minutes: Int) {
+        clockFixMinutes = min(max(minutes, 1), 10_080)
+        defaults.set(clockFixMinutes, forKey: "clockFixMinutes")
+    }
+
+    /// Seconds to move a photo's dates by: the camera's error, when its clock
+    /// is out by at least the setting; else 0, and the photo's dates stay.
+    public func dateShift(_ photo: ScannedPhoto, personId: UUID) -> Int {
+        guard let offset = photo.model.flatMap({ book.camera(personId: personId, model: $0) })?.offsetSeconds,
+              abs(offset) >= clockFixMinutes * 60 else { return 0 }
+        return -offset
+    }
+
+    /// The cameras on this card whose clocks are far out, and by how much.
+    public var wrongClocks: [(camera: Camera, offset: Int)] {
+        guard let personId = importPerson else { return [] }
+        var seen = Set<UUID>()
+        var out: [(Camera, Int)] = []
+        for row in rows {
+            guard let camera = row.photo.model.flatMap({ book.camera(personId: personId, model: $0) }), !seen.contains(camera.id),
+                  let offset = camera.offsetSeconds, abs(offset) >= clockFixMinutes * 60 else { continue }
+            seen.insert(camera.id)
+            out.append((camera, offset))
+        }
+        return out
+    }
+
     public func setMaxGap(_ seconds: Int) {
         maxGapSeconds = min(max(seconds, 60), 3600)
         defaults.set(maxGapSeconds, forKey: "maxGapSeconds")
@@ -770,6 +808,39 @@ public final class AppModel: ObservableObject {
         }
         // Placed photos may have moved: their places are asked again.
         Task { await lookUpRowPlaces() }
+    }
+
+    // MARK: Firmware
+
+    /// Each camera's newest software version on this card, kept with the day
+    /// of the latest photo that showed it (David, 18 October 2026).
+    func noteFirmware(_ photos: [ScannedPhoto], personId: UUID) {
+        var newest: [UUID: (version: String, seen: Date?)] = [:]
+        for photo in photos {
+            guard let version = photo.firmware, let model = photo.model,
+                  let camera = book.camera(personId: personId, model: model) else { continue }
+            let seen = Moments.clockReading(photo)
+            if let known = newest[camera.id] {
+                let later = (seen ?? .distantPast) > (known.seen ?? .distantPast)
+                if Firmware.isNewer(version, than: known.version) || (version == known.version && later) {
+                    newest[camera.id] = (version, seen)
+                }
+            } else {
+                newest[camera.id] = (version, seen)
+            }
+        }
+        var changed: [Camera] = []
+        for (id, found) in newest {
+            guard var camera = book.cameras.first(where: { $0.id == id }) else { continue }
+            let kept = camera.firmware
+            let newer = kept.map { Firmware.isNewer(found.version, than: $0) } ?? true
+            let sameLater = kept == found.version && (found.seen ?? .distantPast) > (camera.firmwareSeen ?? .distantPast)
+            guard newer || sameLater else { continue }
+            camera.firmware = found.version
+            camera.firmwareSeen = found.seen
+            changed.append(camera)
+        }
+        if !changed.isEmpty { store { book in changed.forEach { book.save($0) } } }
     }
 
     // MARK: Places and breaks
@@ -890,7 +961,9 @@ public final class AppModel: ObservableObject {
             }
             let url = URL(fileURLWithPath: entry.localPath)
             let saver = Saver(exifTool: tool, folder: url.deletingLastPathComponent().deletingLastPathComponent())
-            if let problem = await Task.detached(operation: { saver.addLocation(to: url, position) }).value {
+            // Dates still to correct: what the camera's error now calls for, less what was done at saving.
+            let shift = dateShift(entry.photo, personId: entry.personId) - entry.shifted
+            if let problem = await Task.detached(operation: { saver.addLocation(to: url, position, shift: shift) }).value {
                 problems.append("\(entry.fileName): \(problem)")
                 keep.append(entry)
                 continue

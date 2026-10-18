@@ -9,12 +9,16 @@ public struct SaveItem: Sendable {
     public var withoutLocation: Bool
     /// The town or area the photo was taken in, which names its folder.
     public var place: String?
+    /// Seconds to move the photo's own dates by, when its camera's clock was
+    /// far out (David, 18 October 2026); 0 leaves them as the camera wrote them.
+    public var shift: Int
 
-    public init(photo: ScannedPhoto, placement: Placement, withoutLocation: Bool, place: String? = nil) {
+    public init(photo: ScannedPhoto, placement: Placement, withoutLocation: Bool, place: String? = nil, shift: Int = 0) {
         self.photo = photo
         self.placement = placement
         self.withoutLocation = withoutLocation
         self.place = place
+        self.shift = shift
     }
 
     /// The position to write, or nil when the copy keeps the card's bytes.
@@ -55,20 +59,55 @@ public struct Saver: Sendable {
         self.folder = folder
     }
 
-    /// "2027.01.12": the day the camera's clock said, like David's library.
-    public static func dayFolder(_ photo: ScannedPhoto) -> String {
+    /// "2027.01.12": the day the camera's clock said, like David's library,
+    /// moved by `shift` seconds when its clock was far out.
+    public static func dayFolder(_ photo: ScannedPhoto, shift: Int = 0) -> String {
         guard let taken = photo.taken, taken.count >= 10 else { return "Undated" }
+        if shift != 0 {
+            guard let clock = Moments.clockReading(photo) else { return "Undated" }
+            return dayFormat.string(from: clock.addingTimeInterval(Double(shift)))
+        }
         let day = taken.prefix(10).replacingOccurrences(of: ":", with: ".")
         return day.range(of: #"^\d{4}\.\d{2}\.\d{2}$"#, options: .regularExpression) != nil ? day : "Undated"
     }
 
+    static let dayFormat: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.dateFormat = "yyyy.MM.dd"
+        return f
+    }()
+
     /// "2027.01.12 Ushuaia": the day and the place a photo was taken, each
     /// pair a folder of its own; the day alone for a photo with no location,
     /// or whose place could not be named (David, 18 October 2026).
-    public static func folderName(_ photo: ScannedPhoto, place: String?) -> String {
-        let day = dayFolder(photo)
+    public static func folderName(_ photo: ScannedPhoto, place: String?, shift: Int = 0) -> String {
+        let day = dayFolder(photo, shift: shift)
         guard let place = cleanPlace(place) else { return day }
         return "\(day) \(place)"
+    }
+
+    /// Every date the camera wrote into a photo, moved by `seconds`: the EXIF
+    /// dates, any XMP ones, and a raw file's container dates. The time zone
+    /// fields are left as they are. Empty for no move.
+    public static func shiftArguments(_ seconds: Int) -> [String] {
+        guard seconds != 0 else { return [] }
+        let sign = seconds < 0 ? "-" : "+"
+        let a = abs(seconds)
+        let value = "0:0:\(a / 86_400) \(a % 86_400 / 3600):\(a % 3600 / 60):\(a % 60)"
+        return ["AllDates", "XMP-xmp:CreateDate", "XMP-xmp:ModifyDate", "XMP-exif:DateTimeOriginal", "XMP-photoshop:DateCreated",
+                "QuickTime:CreateDate", "QuickTime:ModifyDate", "QuickTime:TrackCreateDate", "QuickTime:TrackModifyDate",
+                "QuickTime:MediaCreateDate", "QuickTime:MediaModifyDate"].map { "-\($0)\(sign)=\(value)" }
+    }
+
+    /// For the self-test.
+    public static func shiftedProbe(_ reading: String, by seconds: Int) -> String? { shifted(reading, by: seconds) }
+
+    /// "2026:01:01 10:30:47" moved by `seconds`, as ExifTool writes it.
+    static func shifted(_ reading: String, by seconds: Int) -> String? {
+        guard let date = Moments.reading.date(from: String(reading.prefix(19))) else { return nil }
+        return Moments.reading.string(from: date.addingTimeInterval(Double(seconds)))
     }
 
     /// A place name fit for a folder on the Mac and the NAS.
@@ -83,17 +122,18 @@ public struct Saver: Sendable {
     public func save(_ item: SaveItem) -> SaveResult {
         let fm = FileManager.default
         let source = item.photo.url
-        let day = folder.appendingPathComponent(Self.folderName(item.photo, place: item.place), isDirectory: true)
+        let day = folder.appendingPathComponent(Self.folderName(item.photo, place: item.place, shift: item.shift), isDirectory: true)
         do {
             try fm.createDirectory(at: day, withIntermediateDirectories: true)
         } catch {
             return .failed("The folder \(day.lastPathComponent) could not be made: \(error.localizedDescription)")
         }
 
-        // The card's own dates, given to the copy at the end.
+        // The card's own dates, given to the copy at the end, moved with the
+        // photo's when its camera's clock was far out.
         let attributes = (try? fm.attributesOfItem(atPath: source.path)) ?? [:]
-        let created = attributes[.creationDate] as? Date
-        let modified = attributes[.modificationDate] as? Date
+        let created = (attributes[.creationDate] as? Date)?.addingTimeInterval(Double(item.shift))
+        let modified = (attributes[.modificationDate] as? Date)?.addingTimeInterval(Double(item.shift))
 
         let wanted = CopyName.forCopy(item.photo.fileName)
         // Hidden, unique, and still ending in the photo's own extension: the Mac
@@ -113,11 +153,14 @@ public struct Saver: Sendable {
             return fail("It could not be copied from the card: \(error.localizedDescription)")
         }
 
-        if let p = item.position {
+        // The location, and the dates moved, in one go.
+        if item.position != nil || item.shift != 0 {
+            let arguments = item.position.map(Self.gpsArguments) ?? ["-q", "-q", "-m", "-overwrite_original", "-P"]
             do {
-                _ = try exifTool.run(Self.gpsArguments(p) + [work.path])
+                _ = try exifTool.run(arguments + Self.shiftArguments(item.shift) + [work.path])
             } catch {
-                return fail("The location could not be written: \(error.localizedDescription)")
+                return fail(item.position == nil ? "The dates could not be corrected: \(error.localizedDescription)"
+                                                 : "The location could not be written: \(error.localizedDescription)")
             }
         }
         do {
@@ -129,7 +172,7 @@ public struct Saver: Sendable {
             return fail("The card's dates could not be kept: \(error.localizedDescription)")
         }
 
-        if let problem = check(copy: work, original: source, position: item.position) {
+        if let problem = check(copy: work, original: source, position: item.position, shift: item.shift) {
             return fail(problem)
         }
 
@@ -227,8 +270,9 @@ public struct Saver: Sendable {
     }
 
     /// The copy opens, its picture is the card's, the location reads back,
-    /// and no other detail moved. Nil when all is well; else what failed.
-    func check(copy: URL, original: URL, position: Position?) -> String? {
+    /// its dates moved by exactly `shift` when they were to be corrected, and
+    /// no other detail moved. Nil when all is well; else what failed.
+    func check(copy: URL, original: URL, position: Position?, shift: Int = 0) -> String? {
         // It opens, the way Finder and Photos open it.
         guard let src = CGImageSourceCreateWithURL(copy as CFURL, nil), CGImageSourceGetCount(src) > 0,
               CGImageSourceCopyPropertiesAtIndex(src, 0, nil) != nil,
@@ -237,7 +281,7 @@ public struct Saver: Sendable {
             return "The copy does not open."
         }
 
-        guard let position else {
+        if position == nil, shift == 0 {
             // Copied unchanged: it must be the card's file, byte for byte.
             guard let a = Self.sha256(copy), a == Self.sha256(original) else { return "The copy differs from the card's file." }
             return nil
@@ -264,39 +308,54 @@ public struct Saver: Sendable {
         default: break // a kind of file ExifTool cannot hash; the other checks stand
         }
 
-        // The location reads back as written.
-        func number(_ key: String) -> Double? { (after[key] as? NSNumber)?.doubleValue }
-        guard let lat = number("GPS:GPSLatitude"), let lon = number("GPS:GPSLongitude"),
-              let latRef = after["GPS:GPSLatitudeRef"] as? String, let lonRef = after["GPS:GPSLongitudeRef"] as? String else {
-            return "The location is not in the copy."
+        if let position {
+            // The location reads back as written.
+            func number(_ key: String) -> Double? { (after[key] as? NSNumber)?.doubleValue }
+            guard let lat = number("GPS:GPSLatitude"), let lon = number("GPS:GPSLongitude"),
+                  let latRef = after["GPS:GPSLatitudeRef"] as? String, let lonRef = after["GPS:GPSLongitudeRef"] as? String else {
+                return "The location is not in the copy."
+            }
+            let readLat = latRef.uppercased().hasPrefix("S") ? -lat : lat
+            let readLon = lonRef.uppercased().hasPrefix("W") ? -lon : lon
+            if abs(readLat - position.lat) > 1e-6 || abs(readLon - position.lon) > 1e-6 {
+                return "The location in the copy is not the one written."
+            }
+            if let alt = position.alt {
+                guard let a = number("GPS:GPSAltitude") else { return "The altitude is not in the copy." }
+                let ref = (after["GPS:GPSAltitudeRef"] as? NSNumber)?.intValue ?? 0
+                if abs((ref == 1 ? -a : a) - alt) > 0.01 { return "The altitude in the copy is not the one written." }
+            }
+            guard after["GPS:GPSDateStamp"] != nil, after["GPS:GPSTimeStamp"] != nil else { return "The GPS time is not in the copy." }
+            guard (after["GPS:GPSProcessingMethod"] as? String) == Self.processingMethod else {
+                return "The note that Geotag added the location is not in the copy."
+            }
         }
-        let readLat = latRef.uppercased().hasPrefix("S") ? -lat : lat
-        let readLon = lonRef.uppercased().hasPrefix("W") ? -lon : lon
-        if abs(readLat - position.lat) > 1e-6 || abs(readLon - position.lon) > 1e-6 {
-            return "The location in the copy is not the one written."
-        }
-        if let alt = position.alt {
-            guard let a = number("GPS:GPSAltitude") else { return "The altitude is not in the copy." }
-            let ref = (after["GPS:GPSAltitudeRef"] as? NSNumber)?.intValue ?? 0
-            if abs((ref == 1 ? -a : a) - alt) > 0.01 { return "The altitude in the copy is not the one written." }
-        }
-        guard after["GPS:GPSDateStamp"] != nil, after["GPS:GPSTimeStamp"] != nil else { return "The GPS time is not in the copy." }
-        guard (after["GPS:GPSProcessingMethod"] as? String) == Self.processingMethod else {
-            return "The note that Geotag added the location is not in the copy."
+
+        if shift != 0 {
+            // The date taken moved by exactly the camera's error.
+            let key = before.keys.first { $0.hasSuffix(":DateTimeOriginal") && $0.hasPrefix("ExifIFD") }
+                ?? before.keys.first { $0.hasSuffix(":DateTimeOriginal") }
+            if let key, let was = before[key].map({ "\($0)" }) {
+                guard let expected = Self.shifted(was, by: shift), after[key].map({ "\($0)" }) == expected else {
+                    return "The date in the copy was not corrected."
+                }
+            }
         }
 
         // No other detail moved.
-        let changed = Self.otherDetailsChanged(before, after)
+        let changed = Self.otherDetailsChanged(before, after, datesMoved: shift != 0)
         if !changed.isEmpty { return "Other details changed in the copy: \(changed.prefix(3).joined(separator: ", "))." }
         return nil
     }
 
     /// Tags that differ, leaving out the location itself, the file system's
-    /// own entries, ExifTool's notes, and offsets that move as metadata grows.
-    static func otherDetailsChanged(_ a: [String: Any], _ b: [String: Any]) -> [String] {
+    /// own entries, ExifTool's notes, offsets that move as metadata grows,
+    /// and the dates when they were corrected.
+    static func otherDetailsChanged(_ a: [String: Any], _ b: [String: Any], datesMoved: Bool = false) -> [String] {
         func ignored(_ key: String) -> Bool {
             let group = key.split(separator: ":").first.map(String.init) ?? ""
             let tag = key.split(separator: ":").last.map(String.init) ?? key
+            if datesMoved, tag.contains("Date") { return true }
             if ["GPS", "System", "File", "ExifTool", "SourceFile"].contains(group) || key == "SourceFile" { return true }
             if group == "Composite", tag.hasPrefix("GPS") || tag == "ImageSize" || tag == "ImageDataHash" { return true }
             if group.hasPrefix("XMP"), tag.hasPrefix("GPS") || tag == "XMPToolkit" { return true }
@@ -450,8 +509,11 @@ public struct UnplacedEntry: Codable, Equatable, Identifiable, Sendable {
     public var subSeconds: String?
     public var zone: String?
     public var model: String?
+    /// Seconds the copy's dates were already moved by when it was saved, so
+    /// placing it later moves them only by what is left.
+    public var shifted: Int
 
-    public init(personId: UUID, localPath: String, photo: ScannedPhoto) {
+    public init(personId: UUID, localPath: String, photo: ScannedPhoto, shifted: Int = 0) {
         self.id = UUID()
         self.personId = personId
         self.localPath = localPath
@@ -460,6 +522,25 @@ public struct UnplacedEntry: Codable, Equatable, Identifiable, Sendable {
         self.subSeconds = photo.subSeconds
         self.zone = photo.zone
         self.model = photo.model
+        self.shifted = shifted
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, personId, localPath, fileName, taken, subSeconds, zone, model, shifted
+    }
+
+    /// Reads lists written before 0.14.0 too, which had no dates moved.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        personId = try c.decode(UUID.self, forKey: .personId)
+        localPath = try c.decode(String.self, forKey: .localPath)
+        fileName = try c.decode(String.self, forKey: .fileName)
+        taken = try c.decodeIfPresent(String.self, forKey: .taken)
+        subSeconds = try c.decodeIfPresent(String.self, forKey: .subSeconds)
+        zone = try c.decodeIfPresent(String.self, forKey: .zone)
+        model = try c.decodeIfPresent(String.self, forKey: .model)
+        shifted = try c.decodeIfPresent(Int.self, forKey: .shifted) ?? 0
     }
 
     /// The copy as a photo to match: its time, zone and camera as the card had them.
@@ -505,10 +586,13 @@ extension Saver {
     /// is made beside it under a working name, checked against the copy (same
     /// picture, same details, the location reads back, the same dates), and
     /// only then swapped in. Nil when done; else why not, the copy untouched.
-    public func addLocation(to copy: URL, _ position: Position) -> String? {
+    public func addLocation(to copy: URL, _ position: Position, shift: Int = 0) -> String? {
         let fm = FileManager.default
         guard fm.fileExists(atPath: copy.path) else { return "The copy is no longer there." }
         let attributes = (try? fm.attributesOfItem(atPath: copy.path)) ?? [:]
+        // Its dates moved too, when its camera's clock turned out far out.
+        let created = (attributes[.creationDate] as? Date)?.addingTimeInterval(Double(shift))
+        let modified = (attributes[.modificationDate] as? Date)?.addingTimeInterval(Double(shift))
         let name = copy.lastPathComponent
         let ext = (name as NSString).pathExtension
         let stem = (name as NSString).deletingPathExtension
@@ -520,15 +604,15 @@ extension Saver {
         }
         do {
             try fm.copyItem(at: copy, to: work)
-            _ = try exifTool.run(Self.gpsArguments(position) + [work.path])
+            _ = try exifTool.run(Self.gpsArguments(position) + Self.shiftArguments(shift) + [work.path])
             var dates: [FileAttributeKey: Any] = [:]
-            if let c = attributes[.creationDate] { dates[.creationDate] = c }
-            if let m = attributes[.modificationDate] { dates[.modificationDate] = m }
+            if let created { dates[.creationDate] = created }
+            if let modified { dates[.modificationDate] = modified }
             if !dates.isEmpty { try fm.setAttributes(dates, ofItemAtPath: work.path) }
         } catch {
             return fail("The location could not be written: \(error.localizedDescription)")
         }
-        if let problem = check(copy: work, original: copy, position: position) { return fail(problem) }
+        if let problem = check(copy: work, original: copy, position: position, shift: shift) { return fail(problem) }
         do {
             _ = try fm.replaceItemAt(copy, withItemAt: work)
         } catch {

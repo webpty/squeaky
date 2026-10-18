@@ -72,6 +72,14 @@ struct GeotagApp: App {
             CommandMenu("Download") {
                 DownloadMenu(model: model)
             }
+            CommandMenu("Set time and date in camera") {
+                CameraClockMenu(model: model)
+            }
+        }
+
+        Window("Set time and date in camera", id: "camera-clock") {
+            CameraClockWindow()
+                .environmentObject(model)
         }
 
         Window("Tracks", id: "tracks") {
