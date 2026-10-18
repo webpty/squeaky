@@ -1,11 +1,15 @@
 import SwiftUI
 import GeotagCore
 
-/// Whether the NAS answered when last tried, and at which address.
+/// Whether the NAS answers, and at which address: asked as Geotag opens,
+/// whenever the Queue page is shown, and with every photo sent.
 public enum NASReach: Equatable {
-    case notTried
+    /// The first answer is not in yet.
+    case checking
     case through(String)
     case unreachable
+    /// No NAS address in Settings, or nobody with a NAS folder.
+    case notSetUp
 }
 
 /// The photo going up to the NAS now and how far it has got, kept apart from
@@ -52,9 +56,10 @@ enum QueueText {
 
     static func reach(_ reach: NASReach) -> String {
         switch reach {
-        case .notTried: return "Not tried yet"
+        case .checking: return "Checking"
         case .through(let address): return NASOverSMB.host(address) ?? address
         case .unreachable: return "Not reachable"
+        case .notSetUp: return "Not set up"
         }
     }
 }
@@ -154,6 +159,8 @@ struct QueueScreen: View {
             .clipShape(RoundedRectangle(cornerRadius: Style.radius))
         }
         .padding(Style.pad * 1.5)
+        // The NAS box says whether the NAS answers now, not when last needed.
+        .task { await model.checkNAS() }
     }
 }
 

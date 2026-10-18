@@ -169,7 +169,8 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var sendingId: UUID?
     @Published public private(set) var sendPaused = false
     @Published public private(set) var queueLine = ""
-    @Published public private(set) var nasReach = NASReach.notTried
+    @Published public private(set) var nasReach = NASReach.checking
+    private var checkingNAS = false
     /// The photo going up now; apart, so its progress redraws only the bar.
     public let meter = SendMeter()
     private let nasPort: NASPort?
@@ -281,6 +282,7 @@ public final class AppModel: ObservableObject {
         applyAppearance()
         startCards()
         startSending()
+        Task { await checkNAS() }
         // A click on a notification opens the Queue page.
         MacNotifier.onOpen = { [weak self] in
             self?.screen = .queue
@@ -876,6 +878,33 @@ public final class AppModel: ObservableObject {
             }
         }
         return parts.joined(separator: " ")
+    }
+
+    /// Whether the NAS answers now, for the NAS box on the Queue page: asked
+    /// as Geotag opens and whenever the Queue page is shown, with the saved
+    /// settings. Every shared folder in People must answer.
+    public func checkNAS() async {
+        guard !checkingNAS else { return }
+        let shares = Set(book.people.compactMap { NASFolder($0.nasFolder)?.share }).sorted()
+        guard !shares.isEmpty, nasPort != nil || !savedNAS.port.addresses.isEmpty else {
+            nasReach = .notSetUp
+            return
+        }
+        checkingNAS = true
+        defer { checkingNAS = false }
+        var answered: NASReach = .unreachable
+        for share in shares {
+            do {
+                let connection = try await nas.connect(share: share)
+                // Opened only to ask: closed again with Geotag's other openings once nothing is waiting.
+                if connection.ours { ourMounts[connection.folder.path] = connection }
+                answered = .through(connection.address)
+            } catch {
+                answered = .unreachable
+                break
+            }
+        }
+        if nasReach != answered { nasReach = answered }
     }
 
     private func startSending() {

@@ -1468,6 +1468,23 @@ extension SelfTest {
         check("save: the service's Save says saved first", model.settingsLine.hasPrefix("Saved. ") && !model.serviceUnsaved, model.settingsLine)
         model.serviceKey = key
         await model.saveService()
+
+        // The Queue page's NAS box: asked, not left at its last need.
+        fake.online = true
+        await model.checkNAS()
+        check("nas box: where the NAS answers", model.nasReach == .through("smb://test"), "\(model.nasReach)")
+        fake.online = false
+        await model.checkNAS()
+        check("nas box: or that it can't be reached", model.nasReach == .unreachable, "\(model.nasReach)")
+        let bare = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("bare-lib"))),
+                            peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("bare-people.json")),
+                            history: HistoryStoreFolder(folder: scratch.appendingPathComponent("bare-history")),
+                            queue: QueueStoreFile(url: scratch.appendingPathComponent("bare-queue.json")),
+                            unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("bare-unplaced.json")),
+                            secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("bare-maps")),
+                            nas: fake, notifier: RecordingNotifier())
+        await bare.checkNAS()
+        check("nas box: nobody with a NAS folder, not set up", bare.nasReach == .notSetUp, "\(bare.nasReach)")
     }
 }
 

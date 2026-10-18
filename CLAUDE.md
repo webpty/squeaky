@@ -284,6 +284,12 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   2026: "no indication of the state"). Test connection tries the fields on
   screen; sending uses the saved settings. Messages name the NAS by its
   number, without "smb://".
+- The Queue page's NAS box says whether the NAS answers now (`checkNAS`):
+  asked as Geotag opens and whenever the Queue page is shown, and with every
+  photo sent. "Checking", the address that answered, "Not reachable", or
+  "Not set up" (no address, or nobody with a NAS folder). It used to wait for
+  something to send, and read "Not tried yet" while everything was on the
+  NAS (David, 18 October 2026).
 - A Mac notification per finished batch (`MacNotifier`, one at a time under
   the identifier `geotag-nas`): "19 photos are on the NAS." or "17 photos are
   on the NAS. 2 were not sent." Never per photo: not while a card is being
