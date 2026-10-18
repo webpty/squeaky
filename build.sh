@@ -1,7 +1,8 @@
 #!/bin/zsh
 # Builds Geotag into build/ and, with "install", copies it to /Applications.
-# With "dmg", builds it for Intel and Apple chips alike and puts it in a disk
-# image for the family's Macs: build/Geotag <version>.dmg.
+# With "dmg", also puts it in a disk image for the family's Macs:
+# build/Geotag <version>.dmg. Apple chips only: no Intel Mac needs it
+# (David, 17 October 2026).
 # Needs only the command line developer tools, no Xcode.
 #
 #   ./build.sh [install | dmg]
@@ -12,17 +13,9 @@ name="Geotag"; display="Geotag"; bundle="com.webpty.geotag"
 version=$(grep 'let appVersion' Sources/GeotagCore/Version.swift | sed 's/.*"\(.*\)".*/\1/')
 mkdir -p build
 
-if [[ "$1" == "dmg" ]]; then
-  echo "Building $display $version for Intel and Apple chips"
-  swift build -c release --product "$name" --triple x86_64-apple-macosx14.0
-  swift build -c release --product "$name" --triple arm64-apple-macosx14.0
-  binary="build/$name-universal"
-  lipo -create -output "$binary" ".build/x86_64-apple-macosx/release/$name" ".build/arm64-apple-macosx/release/$name"
-else
-  echo "Building $display $version"
-  swift build -c release --product "$name" --triple arm64-apple-macosx14.0
-  binary=".build/arm64-apple-macosx/release/$name"
-fi
+echo "Building $display $version"
+swift build -c release --product "$name" --triple arm64-apple-macosx14.0
+binary=".build/arm64-apple-macosx/release/$name"
 
 app="build/$display.app"
 rm -rf "$app"

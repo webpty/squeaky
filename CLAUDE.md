@@ -302,13 +302,12 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   set"); the Without location count and filter keep counting those photos.
 - History shows dates in the format chosen in Settings, under "Date and
   time".
-- `./build.sh dmg` builds `build/Geotag <version>.dmg`: one app for Intel and
-  Apple chips (built per chip with `--triple`, joined with `lipo`), ad hoc
+- `./build.sh dmg` builds `build/Geotag <version>.dmg`: the app, ad hoc
   signed, beside a shortcut to Applications. Each Mac approves the first
-  launch once under Privacy & Security. The whole self-test passes on the
-  Intel build under Rosetta (`arch -x86_64`); no real Intel Mac has run it.
-- Builds name their chip, so `.build/release` points at whichever was built
-  last: run the self-test from `.build/arm64-apple-macosx/release/SelfTest`.
+  launch once under Privacy & Security. Apple chips only: David removed the
+  Intel version on 17 October 2026 ("don't need it"); do not bring it back.
+- Builds name their chip (`--triple arm64-apple-macosx14.0`); run the
+  self-test from `.build/arm64-apple-macosx/release/SelfTest`.
 
 ## Tests never touch David's own records
 
