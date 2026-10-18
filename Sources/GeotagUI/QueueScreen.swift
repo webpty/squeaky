@@ -184,22 +184,22 @@ struct NASCard: View {
         Card(title: "NAS") {
             Grid(alignment: .leading, horizontalSpacing: Style.gap, verticalSpacing: Style.gap) {
                 GridRow {
-                    Text("Address").lineLimit(1)
+                    Text("Address").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
                     TextField("", text: $model.nasAddress)
                         .textFieldStyle(.roundedBorder)
                 }
                 GridRow {
-                    Text("Backup address").lineLimit(1)
+                    Text("Backup address").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
                     TextField("", text: $model.nasBackupAddress)
                         .textFieldStyle(.roundedBorder)
                 }
                 GridRow {
-                    Text("User name").lineLimit(1)
+                    Text("User name").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
                     TextField("", text: $model.nasUser)
                         .textFieldStyle(.roundedBorder)
                 }
                 GridRow {
-                    Text("Password").lineLimit(1)
+                    Text("Password").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
                     SecureField("", text: $model.nasPassword)
                         .textFieldStyle(.roundedBorder)
                 }

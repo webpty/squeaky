@@ -1,21 +1,33 @@
 #!/bin/zsh
 # Builds Geotag into build/ and, with "install", copies it to /Applications.
+# With "dmg", builds it for Intel and Apple chips alike and puts it in a disk
+# image for the family's Macs: build/Geotag <version>.dmg.
 # Needs only the command line developer tools, no Xcode.
 #
-#   ./build.sh [install]
+#   ./build.sh [install | dmg]
 set -e
 cd "$(dirname "$0")"
 
 name="Geotag"; display="Geotag"; bundle="com.webpty.geotag"
 version=$(grep 'let appVersion' Sources/GeotagCore/Version.swift | sed 's/.*"\(.*\)".*/\1/')
+mkdir -p build
 
-echo "Building $display $version"
-swift build -c release --product "$name"
+if [[ "$1" == "dmg" ]]; then
+  echo "Building $display $version for Intel and Apple chips"
+  swift build -c release --product "$name" --triple x86_64-apple-macosx14.0
+  swift build -c release --product "$name" --triple arm64-apple-macosx14.0
+  binary="build/$name-universal"
+  lipo -create -output "$binary" ".build/x86_64-apple-macosx/release/$name" ".build/arm64-apple-macosx/release/$name"
+else
+  echo "Building $display $version"
+  swift build -c release --product "$name" --triple arm64-apple-macosx14.0
+  binary=".build/arm64-apple-macosx/release/$name"
+fi
 
 app="build/$display.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-cp ".build/release/$name" "$app/Contents/MacOS/$name"
+cp "$binary" "$app/Contents/MacOS/$name"
 
 echo "Adding ExifTool"
 cp -R Vendor/ExifTool "$app/Contents/Resources/ExifTool"
@@ -59,6 +71,16 @@ if [[ "$1" == "install" ]]; then
   rm -rf "/Applications/$display.app"
   cp -R "$app" "/Applications/$display.app"
   echo "Installed /Applications/$display.app"
+elif [[ "$1" == "dmg" ]]; then
+  # The app beside a shortcut to Applications, to drag it onto.
+  stage="build/dmg"
+  rm -rf "$stage"
+  mkdir -p "$stage"
+  cp -R "$app" "$stage/"
+  ln -s /Applications "$stage/Applications"
+  image="build/$display $version.dmg"
+  hdiutil create -quiet -volname "$display" -srcfolder "$stage" -ov -format UDZO "$image"
+  echo "Built $image"
 else
   echo "Built $app"
 fi

@@ -6,6 +6,8 @@ public enum Style {
     public static let radius: CGFloat = 10
     public static let pad: CGFloat = 16
     public static let gap: CGFloat = 12
+    /// The width of every label beside a field, so fields line up from card to card.
+    public static let labelWidth: CGFloat = 110
 }
 
 public struct Card<Content: View>: View {

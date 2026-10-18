@@ -286,6 +286,30 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   it opens the Queue page. It posts only from the app itself; the self-test
   records the words instead (`RecordingNotifier`).
 
+## Visual polish and the disk image (stage 9, 17 October 2026)
+
+- `GEOTAG_GALLERY=1` (with `GEOTAG_MAP_KEY` for maps) draws every screen,
+  window and sheet off-screen in light and dark into the run's scratch
+  folder under `gallery/`. Off-screen, the window's sidebar draws blank, so
+  the sidebar is drawn on its own (`SheetProbe(.sidebar)`); switches draw
+  grey because the window is not active.
+- Labels beside fields share `Style.labelWidth`, so fields line up from card
+  to card; the person and camera editors are one row per field with one
+  right edge. Tile figures and labels shrink before they are cut short.
+- Photos: Status sits right after Name, so it shows even in the smallest
+  window. Once saved, it says where the copy stands with the NAS and, for a
+  photo saved without a location, why ("On the NAS · Camera time offset not
+  set"); the Without location count and filter keep counting those photos.
+- History shows dates in the format chosen in Settings, under "Date and
+  time".
+- `./build.sh dmg` builds `build/Geotag <version>.dmg`: one app for Intel and
+  Apple chips (built per chip with `--triple`, joined with `lipo`), ad hoc
+  signed, beside a shortcut to Applications. Each Mac approves the first
+  launch once under Privacy & Security. The whole self-test passes on the
+  Intel build under Rosetta (`arch -x86_64`); no real Intel Mac has run it.
+- Builds name their chip, so `.build/release` points at whichever was built
+  last: run the self-test from `.build/arm64-apple-macosx/release/SelfTest`.
+
 ## Tests never touch David's own records
 
 - Every `AppModel` in the self-test gets scratch stores for history, queue,

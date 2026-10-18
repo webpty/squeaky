@@ -43,12 +43,12 @@ struct TrackServiceCard: View {
         Card(title: "Track service") {
             Grid(alignment: .leading, horizontalSpacing: Style.gap, verticalSpacing: Style.gap) {
                 GridRow {
-                    Text("Address").lineLimit(1)
+                    Text("Address").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
                     TextField("", text: $model.serviceAddress)
                         .textFieldStyle(.roundedBorder)
                 }
                 GridRow {
-                    Text("Key").lineLimit(1)
+                    Text("Key").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
                     SecureField("", text: $model.serviceKey)
                         .textFieldStyle(.roundedBorder)
                 }

@@ -119,33 +119,31 @@ struct PersonEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Style.gap) {
             Text(person.name.isEmpty ? "Add person" : person.name).font(.headline).lineLimit(1)
-            Grid(alignment: .leading, horizontalSpacing: Style.gap, verticalSpacing: Style.gap) {
-                GridRow {
-                    Text("Name").lineLimit(1)
-                    TextField("", text: $person.name).textFieldStyle(.roundedBorder)
-                        .gridCellColumns(2)
+            // One row each, every field and button reaching the same right edge.
+            HStack(spacing: Style.gap) {
+                Text("Name").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
+                TextField("", text: $person.name).textFieldStyle(.roundedBorder)
+            }
+            HStack(spacing: Style.gap) {
+                Text("Save folder").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
+                Text(Folders.shown(person.saveFolder))
+                    .lineLimit(1).truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button {
+                    if let url = Folders.choose(startingAt: person.saveFolder) { person.saveFolder = url.path }
+                } label: {
+                    Text("Choose").buttonLabel()
                 }
-                GridRow {
-                    Text("Save folder").lineLimit(1)
-                    Text(Folders.shown(person.saveFolder))
-                        .lineLimit(1).truncationMode(.middle)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Button {
-                        if let url = Folders.choose(startingAt: person.saveFolder) { person.saveFolder = url.path }
-                    } label: {
-                        Text("Choose").buttonLabel()
-                    }
-                }
-                GridRow {
-                    Text("NAS folder").lineLimit(1)
-                    TextField("", text: Binding(get: { person.nasFolder ?? "" },
-                                                set: { person.nasFolder = $0.isEmpty ? nil : $0 }))
-                        .textFieldStyle(.roundedBorder)
-                    Button {
-                        if let url = Folders.choose(startingAt: "/Volumes") { person.nasFolder = Folders.nasPath(url) }
-                    } label: {
-                        Text("Choose").buttonLabel()
-                    }
+            }
+            HStack(spacing: Style.gap) {
+                Text("NAS folder").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
+                TextField("", text: Binding(get: { person.nasFolder ?? "" },
+                                            set: { person.nasFolder = $0.isEmpty ? nil : $0 }))
+                    .textFieldStyle(.roundedBorder)
+                Button {
+                    if let url = Folders.choose(startingAt: "/Volumes") { person.nasFolder = Folders.nasPath(url) }
+                } label: {
+                    Text("Choose").buttonLabel()
                 }
             }
             HStack {
@@ -291,55 +289,56 @@ struct CameraEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Style.gap) {
             Text(camera.model.isEmpty ? "Add camera" : camera.model).font(.headline).lineLimit(1)
-            Grid(alignment: .leading, horizontalSpacing: Style.gap, verticalSpacing: Style.gap) {
-                GridRow {
-                    Text("Person").lineLimit(1)
-                    Picker("", selection: $camera.personId) {
-                        ForEach(people) { Text($0.name).tag($0.id) }
-                    }
-                    .labelsHidden()
-                    .gridCellColumns(2)
+            // One row each, the wide fields reaching the same right edge.
+            HStack(spacing: Style.gap) {
+                Text("Person").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
+                Picker("", selection: $camera.personId) {
+                    ForEach(people) { Text($0.name).tag($0.id) }
                 }
-                GridRow {
-                    Text("Model").lineLimit(1)
-                    TextField("", text: $camera.model).textFieldStyle(.roundedBorder)
-                    Button {
-                        readFromPhoto()
-                    } label: {
-                        Text("Read from a photo").buttonLabel()
-                    }
+                .labelsHidden()
+                .fixedSize()
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: Style.gap) {
+                Text("Model").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
+                TextField("", text: $camera.model).textFieldStyle(.roundedBorder)
+                Button {
+                    readFromPhoto()
+                } label: {
+                    Text("Read from a photo").buttonLabel()
                 }
-                GridRow {
-                    Text("Time zone").lineLimit(1)
-                    Picker("", selection: $zone) {
-                        Text("From the photo").tag(ZoneChoice.fromPhoto)
-                        Text("Not set").tag(ZoneChoice.notSet)
-                        Divider()
-                        ForEach(ZoneList.all, id: \.self) { Text(ZoneList.label($0)).tag(ZoneChoice.named($0)) }
-                    }
-                    .labelsHidden()
-                    .gridCellColumns(2)
+            }
+            HStack(spacing: Style.gap) {
+                Text("Time zone").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
+                Picker("", selection: $zone) {
+                    Text("From the photo").tag(ZoneChoice.fromPhoto)
+                    Text("Not set").tag(ZoneChoice.notSet)
+                    Divider()
+                    ForEach(ZoneList.all, id: \.self) { Text(ZoneList.label($0)).tag(ZoneChoice.named($0)) }
                 }
-                GridRow {
-                    Text("Clock").lineLimit(1)
-                    Picker("", selection: $clock) {
-                        ForEach(Clock.allCases) { Text($0.title).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                    .gridCellColumns(2)
+                .labelsHidden()
+                .fixedSize()
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: Style.gap) {
+                Text("Clock").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
+                Picker("", selection: $clock) {
+                    ForEach(Clock.allCases) { Text($0.title).tag($0) }
                 }
-                if clock == .ahead || clock == .behind {
-                    GridRow {
-                        Text("By").lineLimit(1)
-                        HStack(spacing: 8) {
-                            number($hours, "h", 0...23)
-                            number($minutes, "min", 0...59)
-                            number($seconds, "s", 0...59)
-                        }
-                        .gridCellColumns(2)
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                Spacer(minLength: 0)
+            }
+            if clock == .ahead || clock == .behind {
+                HStack(spacing: Style.gap) {
+                    Text("By").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
+                    HStack(spacing: 8) {
+                        number($hours, "h", 0...23)
+                        number($minutes, "min", 0...59)
+                        number($seconds, "s", 0...59)
                     }
+                    Spacer(minLength: 0)
                 }
             }
             HStack {

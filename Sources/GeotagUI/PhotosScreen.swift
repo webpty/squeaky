@@ -6,13 +6,18 @@ import GeotagCore
 enum PhotoText {
     /// The camera's own clock reading, shown as it was, with its zone.
     static func taken(_ photo: ScannedPhoto) -> String {
-        guard let raw = photo.taken else { return "No time" }
+        taken(raw: photo.taken, zone: photo.zone)
+    }
+
+    /// "2026:10:16 12:00:00" as the camera writes it, in the format chosen in Settings.
+    static func taken(raw: String?, zone: String?) -> String {
+        guard let raw else { return "No time" }
         let parser = DateFormatter()
         parser.locale = Locale(identifier: "en_US_POSIX")
         parser.timeZone = TimeZone(secondsFromGMT: 0)
         parser.dateFormat = "yyyy:MM:dd HH:mm:ss"
         guard let date = parser.date(from: raw) else { return raw }
-        return When.current.dayAndTime(date, zone: TimeZone(secondsFromGMT: 0)!, seconds: true) + (photo.zone.map { " (\($0))" } ?? "")
+        return When.current.dayAndTime(date, zone: TimeZone(secondsFromGMT: 0)!, seconds: true) + (zone.map { " (\($0))" } ?? "")
     }
 
     static func size(_ bytes: Int64) -> String {
@@ -53,8 +58,8 @@ struct PhotosScreen: View {
 
     /// The columns the Columns button can show or hide, in table order.
     static let toggleable: [(id: String, title: String)] = [
-        ("preview", "Preview"), ("name", "Name"), ("taken", "Date and time"), ("camera", "Camera model"),
-        ("size", "Size"), ("status", "Status"),
+        ("preview", "Preview"), ("name", "Name"), ("status", "Status"), ("taken", "Date and time"),
+        ("camera", "Camera model"), ("size", "Size"),
     ]
 
     private func shows(_ id: String) -> Binding<Bool> {
@@ -64,14 +69,19 @@ struct PhotosScreen: View {
         )
     }
 
+    /// To be saved without a location, or saved now without one.
+    private func withoutLocation(_ row: ImportRow) -> Bool {
+        row.needsReview && (row.ticked || model.results[row.id]?.url != nil)
+    }
+
     private var shown: [ImportRow] {
-        reviewOnly ? model.rows.filter { $0.ticked && $0.needsReview } : model.rows
+        reviewOnly ? model.rows.filter(withoutLocation) : model.rows
     }
 
     private var counts: (photos: Int, fresh: Int, before: Int, review: Int) {
         let rows = model.rows
         let fresh = rows.filter { $0.status != .alreadyImported }.count
-        let review = rows.filter { $0.ticked && $0.needsReview }.count
+        let review = rows.filter(withoutLocation).count
         return (rows.count, fresh, rows.count - fresh, review)
     }
 
@@ -190,6 +200,12 @@ struct PhotosScreen: View {
                 }
                 .width(min: 100, ideal: 120)
                 .customizationID("name")
+                // Next to the name, so it shows even in the smallest window.
+                TableColumn("Status") { row in
+                    PhotoStatus(row: row)
+                }
+                .width(min: 150, ideal: 240)
+                .customizationID("status")
                 TableColumn("Date and time") { row in
                     Text(PhotoText.taken(row.photo)).monospacedDigit().lineLimit(1)
                 }
@@ -205,29 +221,6 @@ struct PhotosScreen: View {
                 }
                 .width(min: 60, ideal: 70)
                 .customizationID("size")
-                TableColumn("Status") { row in
-                    if let result = model.results[row.id] {
-                        // Once saved on this Mac, where it stands with the NAS.
-                        if let url = result.url, let entry = model.queueEntry(for: url.path) {
-                            Text(QueueText.photo(entry))
-                                .foregroundStyle(entry.state == .sent ? .primary : .secondary)
-                                .lineLimit(1)
-                        } else {
-                            switch result {
-                            case .saved: Text("Saved").lineLimit(1)
-                            case .alreadyThere: Text("Already saved").foregroundStyle(.secondary).lineLimit(1)
-                            case .failed(let why): Text("Not saved: \(why)").foregroundStyle(.secondary).lineLimit(1)
-                            }
-                        }
-                    } else {
-                        let before = row.status == .alreadyImported
-                        Text(before ? PhotoText.status(row.status) : PhotoText.location(row, gap: model.maxGapSeconds))
-                            .foregroundStyle(before || row.needsReview ? .secondary : .primary)
-                            .lineLimit(1)
-                    }
-                }
-                .width(min: 150, ideal: 190)
-                .customizationID("status")
             }
             .clipShape(RoundedRectangle(cornerRadius: Style.radius))
         }
@@ -245,6 +238,36 @@ struct PhotosScreen: View {
         .sheet(isPresented: $model.aligning) {
             AlignmentView()
                 .textSelection(.enabled)
+        }
+    }
+}
+
+/// What happened to a photo: before saving, its location or why it has none;
+/// once saved, where it stands with the NAS, and why it has no location when
+/// it has none.
+struct PhotoStatus: View {
+    @EnvironmentObject var model: AppModel
+    let row: ImportRow
+
+    var body: some View {
+        if let result = model.results[row.id] {
+            if let url = result.url, let entry = model.queueEntry(for: url.path) {
+                let why = row.needsReview ? " · " + PhotoText.location(row, gap: model.maxGapSeconds) : ""
+                Text(QueueText.photo(entry) + why)
+                    .foregroundStyle(entry.state == .sent && why.isEmpty ? .primary : .secondary)
+                    .lineLimit(1)
+            } else {
+                switch result {
+                case .saved: Text("Saved").lineLimit(1)
+                case .alreadyThere: Text("Already saved").foregroundStyle(.secondary).lineLimit(1)
+                case .failed(let why): Text("Not saved: \(why)").foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+        } else {
+            let before = row.status == .alreadyImported
+            Text(before ? PhotoText.status(row.status) : PhotoText.location(row, gap: model.maxGapSeconds))
+                .foregroundStyle(before || row.needsReview ? .secondary : .primary)
+                .lineLimit(1)
         }
     }
 }
@@ -268,9 +291,12 @@ struct Tile<Accessory: View>: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                 Text(value)
                     .font(.title2.monospacedDigit())
                     .lineLimit(1)
+                    // A long card name gets smaller before it is cut short.
+                    .minimumScaleFactor(0.6)
                     .truncationMode(.middle)
             }
             Spacer(minLength: 0)
@@ -396,10 +422,13 @@ struct HistoryScreen: View {
             }
             Table(model.historyEntries.indices.map { HistoryRow(index: $0, entry: model.historyEntries[$0]) }) {
                 TableColumn("Name") { Text($0.entry.fileName).lineLimit(1) }
-                TableColumn("Taken") { row in
-                    Text(row.entry.taken ?? "No time").monospacedDigit().lineLimit(1)
+                    .width(min: 120, ideal: 170)
+                TableColumn("Date and time") { row in
+                    Text(PhotoText.taken(raw: row.entry.taken, zone: nil)).monospacedDigit().lineLimit(1)
                 }
+                .width(min: 160, ideal: 210)
                 TableColumn("Size") { Text(PhotoText.size($0.entry.size)).monospacedDigit().lineLimit(1) }
+                    .width(min: 60, ideal: 80)
                 TableColumn("Imported") { Text(When.current.dayAndTime($0.entry.imported)).lineLimit(1) }
             }
             .clipShape(RoundedRectangle(cornerRadius: Style.radius))
@@ -463,7 +492,9 @@ struct CardsCard: View {
         Card(title: "Cards") {
             Toggle("Open Geotag when a card is inserted", isOn: Binding(get: { model.openOnCard }, set: { model.setOpenOnCard($0) }))
                 .toggleStyle(.switch)
-            StatusLine(text: model.cardsLine)
+            if !model.cardsLine.isEmpty {
+                StatusLine(text: model.cardsLine)
+            }
         }
     }
 }
@@ -472,4 +503,37 @@ struct CardsCard: View {
 public struct PhotosScreenProbe: View {
     public init() {}
     public var body: some View { PhotosScreen() }
+}
+
+/// The sheets and the long Settings page on their own, for pictures made off-screen.
+public struct SheetProbe: View {
+    public enum Kind: String, CaseIterable, Sendable {
+        case whose, person, camera, settings, sidebar
+    }
+
+    @EnvironmentObject var model: AppModel
+    let kind: Kind
+
+    public init(_ kind: Kind) {
+        self.kind = kind
+    }
+
+    public var body: some View {
+        Group {
+            switch kind {
+            case .whose:
+                WhoseCard(source: model.source ?? PhotoSource(id: "probe", name: "EOS_DIGITAL", url: URL(fileURLWithPath: "/"), isCard: true))
+            case .person:
+                PersonEditor(person: model.book.people[0]) { _ in }
+            case .camera:
+                CameraEditor(camera: model.book.cameras[0], people: model.book.people) { _ in }
+            case .settings:
+                SettingsScreen()
+            case .sidebar:
+                // Drawn on its own: off-screen, the window's sidebar shows blank.
+                Sidebar().frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
 }

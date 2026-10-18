@@ -65,6 +65,10 @@ struct SelfTest {
         if let key = ProcessInfo.processInfo.environment["GEOTAG_MAP_KEY"], ProcessInfo.processInfo.environment["GEOTAG_VIEWER"] != nil {
             await viewerPicture(scratch, key: key)
         }
+        if ProcessInfo.processInfo.environment["GEOTAG_GALLERY"] != nil {
+            await gallery(scratch, samples: ProcessInfo.processInfo.environment["GEOTAG_SAMPLES"].map { URL(fileURLWithPath: $0) },
+                          key: ProcessInfo.processInfo.environment["GEOTAG_MAP_KEY"])
+        }
 
         let realAfter = realData()
         let touched = Set(realBefore.keys).union(realAfter.keys).filter { realBefore[$0] != realAfter[$0] }.sorted()
@@ -1462,5 +1466,149 @@ extension SelfTest {
         check("save: the service's Save says saved first", model.settingsLine.hasPrefix("Saved. ") && !model.serviceUnsaved, model.settingsLine)
         model.serviceKey = key
         await model.saveService()
+    }
+}
+
+extension SelfTest {
+    /// Every screen, window and sheet drawn off-screen in light and in dark,
+    /// with test tracks, a test card and a stand-in NAS (GEOTAG_GALLERY=1).
+    /// The pictures land in the run's scratch folder, under "gallery".
+    @MainActor
+    static func gallery(_ scratch: URL, samples: URL?, key: String?) async {
+        let fm = FileManager.default
+        let out = scratch.appendingPathComponent("gallery")
+        try? fm.createDirectory(at: out, withIntermediateDirectories: true)
+        let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+
+        // Tracks: a walk the card's photos were taken along, and three others.
+        let lib = TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("gal-lib")))
+        let start = 1_792_162_800 // 2026-10-16 15:00 UTC, 12:00 in Ushuaia
+        writeGPX(scratch.appendingPathComponent("gal-walk.gpx"), start: start, count: 1800, name: "Ushuaia walk", lat: -54.812, lon: -68.33)
+        _ = try? await lib.importFile(scratch.appendingPathComponent("gal-walk.gpx"), role: .reader)
+        let spots: [(String, Double, Double)] = [("Panama old town", 8.952, -79.535), ("El Chaltén", -49.33, -72.89), ("Puerto Natales", -51.73, -72.50)]
+        for (i, spot) in spots.enumerated() {
+            let url = scratch.appendingPathComponent("gal-\(i).gpx")
+            writeGPX(url, start: start - (i + 1) * 86_400 * 3, count: 1800, name: spot.0, lat: spot.1, lon: spot.2)
+            _ = try? await lib.importFile(url, role: .reader)
+        }
+
+        // A card: photos along the walk, one from a camera not on the list, and David's samples.
+        let cardRoot = scratch.appendingPathComponent("GAL-CARD")
+        let card = cardRoot.appendingPathComponent("DCIM/100CANON")
+        try? fm.createDirectory(at: card, withIntermediateDirectories: true)
+        for i in 0..<8 {
+            let s = 120 + i * 190
+            writePhoto(card.appendingPathComponent(String(format: "IMG_%04d.JPG", i + 1)), model: "Canon EOS R5m2", zone: "-03:00",
+                       taken: String(format: "2026:10:16 12:%02d:%02d", s / 60, s % 60))
+        }
+        writePhoto(card.appendingPathComponent("IMG_0009.JPG"), model: "Canon EOS 5D Mark IV", zone: "-03:00", taken: "2026:10:16 12:40:00")
+        if let samples {
+            for f in ((try? fm.contentsOfDirectory(at: samples, includingPropertiesForKeys: nil)) ?? []) where f.pathExtension.uppercased() == "JPG" {
+                try? fm.copyItem(at: f, to: card.appendingPathComponent(f.lastPathComponent))
+            }
+        }
+
+        // People, and the queue as a few days of use leave it: Amanda's photos
+        // wait for her NAS folder, one of David's could not go.
+        var book = PeopleBook.family()
+        book.people[0].saveFolder = scratch.appendingPathComponent("GAL-SAVED").path
+        book.people[0].nasFolder = "homes/david"
+        book.people[1].saveFolder = scratch.appendingPathComponent("GAL-SAVED-AMANDA").path
+        try? fm.createDirectory(at: scratch.appendingPathComponent("GAL-SAVED"), withIntermediateDirectories: true)
+        for i in 0..<book.cameras.count where book.cameras[i].model == "Canon EOS R5m2" { book.cameras[i].offsetSeconds = 0 }
+        let peopleFile = PeopleStoreFile(url: scratch.appendingPathComponent("gal-people.json"))
+        try? peopleFile.save(book)
+        let queueFile = QueueStoreFile(url: scratch.appendingPathComponent("gal-queue.json"))
+        let earlier = Date().addingTimeInterval(-86_400)
+        var gone = QueueEntry(personId: book.people[0].id, localPath: "/nowhere/DAVL0001.CR3", relativePath: "2026.10.15/DAVL0001.CR3", added: earlier)
+        gone.state = .failed
+        gone.reason = "The copy on this Mac is no longer there."
+        try? queueFile.save([
+            QueueEntry(personId: book.people[1].id, localPath: "/nowhere/AMA_0001.JPG", relativePath: "2026.10.15/AMA_0001.JPG", added: earlier),
+            QueueEntry(personId: book.people[1].id, localPath: "/nowhere/AMA_0002.JPG", relativePath: "2026.10.15/AMA_0002.JPG", added: earlier),
+            gone,
+        ])
+        let model = AppModel(library: lib, peopleStore: peopleFile,
+                             history: HistoryStoreFolder(folder: scratch.appendingPathComponent("gal-history")),
+                             queue: queueFile, unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("gal-unplaced.json")),
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("gal-maps")),
+                             exifTool: tool, nas: FakeNAS(root: scratch.appendingPathComponent("GAL-NAS")), notifier: RecordingNotifier())
+        if let key {
+            model.useMaps(MapSource(light: "https://basemaps.cartocdn.com/rastertiles/light_nolabels/{z}/{x}/{y}@2x.png",
+                                    dark: "https://basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}@2x.png",
+                                    credit: "© OpenStreetMap contributors, © CARTO", key: key))
+        }
+        await model.showLibrary()
+        let david = model.book.people[0].id
+        let source = CardWatcher.card(at: cardRoot)!
+        model.choose(source)
+        model.askingWhose = nil
+        await model.read(source, for: david)
+        model.aligning = false
+
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        func draw<V: View>(_ name: String, _ view: V, _ width: CGFloat, _ height: CGFloat, wait: Int = 40) async {
+            for dark in [false, true] {
+                let look = NSAppearance(named: dark ? .darkAqua : .aqua)
+                NSApp.appearance = look
+                let window = NSWindow(contentRect: NSRect(x: -9000, y: -9000, width: width, height: height), styleMask: [.titled],
+                                      backing: .buffered, defer: false)
+                window.appearance = look
+                let host = NSHostingView(rootView: view.environmentObject(model))
+                window.contentView = host
+                window.orderBack(nil)
+                for _ in 0..<wait {
+                    spin(0.04)
+                    try? await Task.sleep(for: .milliseconds(40))
+                }
+                host.layoutSubtreeIfNeeded()
+                if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                    host.cacheDisplay(in: host.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: out.appendingPathComponent("\(name)-\(dark ? "dark" : "light").png"))
+                }
+                window.orderOut(nil)
+            }
+        }
+
+        // Before saving: the card as read, and the map to line its photos up on.
+        model.screen = .photos
+        await draw("01-photos-read", RootView(), 1100, 720)
+        await draw("02-alignment", AlignmentProbe(), 1100, 760, wait: key == nil ? 40 : 120)
+        await draw("03-whose-card", SheetProbe(.whose), 520, 170)
+
+        // Saved and sent.
+        await model.savePhotos()
+        await model.sendWaiting()
+        await draw("04-photos-saved", RootView(), 1100, 720)
+        await draw("04b-photos-smallest", RootView(), 940, 620)
+        await draw("04c-photos-wide", RootView(), 1440, 860)
+        await draw("04d-sidebar", SheetProbe(.sidebar), 210, 620)
+        model.screen = .queue
+        await draw("05-queue", RootView(), 1100, 720)
+        model.screen = .history
+        model.showHistory(david)
+        await draw("06-history", RootView(), 1100, 720)
+
+        // Settings, as filled in on David's Mac.
+        model.nasAddress = "smb://10.0.10.10"
+        model.nasBackupAddress = "smb://100.99.144.35"
+        model.nasUser = "david"
+        model.nasPassword = "not-a-real-one"
+        model.nasLine = "Saved. Connected through 10.0.10.10."
+        model.screen = .settings
+        await draw("07-settings-top", RootView(), 1100, 720)
+        await draw("08-settings-all", SheetProbe(.settings), 760, 1900)
+        await draw("09-person", SheetProbe(.person), 560, 230)
+        await draw("10-camera", SheetProbe(.camera), 600, 320)
+
+        // The Tracks window and the track viewer.
+        await draw("11-tracks", TracksScreenProbe(), 900, 620, wait: key == nil ? 40 : 100)
+        model.viewing = model.tracks.first?.id
+        if let first = model.tracks.first?.id {
+            await draw("12-viewer", TrackViewer(trackId: first), 1100, 820, wait: key == nil ? 40 : 150)
+        }
+        NSApp.appearance = NSAppearance(named: .aqua)
+        print("gallery: \(out.path)")
     }
 }
