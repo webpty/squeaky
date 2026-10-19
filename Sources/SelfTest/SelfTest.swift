@@ -20,6 +20,14 @@ import DiskArbitration
 struct SelfTest {
     static var failures = 0
 
+    /// A scratch folder as a card of its own. Folders on one disk share the
+    /// disk's id, so as cards they would all be the same card: choosing a
+    /// second one would start reading it as one seen before, alongside the
+    /// test's own reading (found 18 October 2026).
+    static func scratchCard(_ root: URL) -> PhotoSource {
+        PhotoSource(id: root.path, name: root.lastPathComponent, url: root, isCard: true)
+    }
+
     static func check(_ name: String, _ ok: Bool, _ detail: String = "") {
         print("\(ok ? "pass" : "FAIL")  \(name)\(detail.isEmpty ? "" : "  \(detail)")")
         if !ok { failures += 1 }
@@ -52,6 +60,7 @@ struct SelfTest {
             nasSending(scratch, samples: URL(fileURLWithPath: samples))
             await nasQueue(scratch, samples: URL(fileURLWithPath: samples))
             await nasBatch(scratch, samples: URL(fileURLWithPath: samples))
+            await menuBar(scratch, samples: URL(fileURLWithPath: samples))
             heif(scratch, samples: URL(fileURLWithPath: samples))
             await firmware(scratch, samples: URL(fileURLWithPath: samples),
                            raws: ProcessInfo.processInfo.environment["GEOTAG_RAWS"].map { URL(fileURLWithPath: $0) })
@@ -556,7 +565,7 @@ extension SelfTest {
                              secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("pp-maps")),
                              exifTool: ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool")),
                              nas: FakeNAS(root: scratch.appendingPathComponent("pp-nas")))
-        let source = CardWatcher.card(at: card)!
+        let source = scratchCard(card)
         model.choose(source)
         // A card seen before is read for last time's person without asking.
         if model.askingWhose == nil {
@@ -693,7 +702,7 @@ extension SelfTest {
                                 dark: "https://basemaps.cartocdn.com/rastertiles/dark_nolabels/{z}/{x}/{y}@2x.png",
                                 credit: "© OpenStreetMap contributors, © CARTO", key: key))
         await model.showLibrary()
-        let source = CardWatcher.card(at: scratch.appendingPathComponent("AL-CARD"))!
+        let source = scratchCard(scratch.appendingPathComponent("AL-CARD"))
         model.choose(source)
         await model.read(source, for: model.book.people[0].id)
         print("alignment: \(model.photosLine) | aligning \(model.aligning) | alignable \(model.alignable.count)")
@@ -1023,7 +1032,7 @@ extension SelfTest {
         var david = model.book.people[0]
         david.saveFolder = scratch.appendingPathComponent("NOT-THERE").path
         model.save(david)
-        let source = CardWatcher.card(at: card)!
+        let source = scratchCard(card)
         model.choose(source)
         model.askingWhose = nil
         await model.read(source, for: david.id)
@@ -1088,7 +1097,7 @@ extension SelfTest {
         david.saveFolder = saveTo.path
         if sendFirst { david.nasFolder = "homes/david/Photos" }
         model.save(david)
-        let source = CardWatcher.card(at: cardRoot)!
+        let source = scratchCard(cardRoot)
         model.choose(source)
         model.askingWhose = nil
         await model.read(source, for: david.id)
@@ -1462,7 +1471,7 @@ extension SelfTest {
         david.saveFolder = saveTo.path
         david.nasFolder = "homes/david"
         model.save(david)
-        let source = CardWatcher.card(at: card)!
+        let source = scratchCard(card)
         model.choose(source)
         model.askingWhose = nil
         await model.read(source, for: david.id)
@@ -1638,7 +1647,7 @@ extension SelfTest {
         }
         await model.showLibrary()
         let david = model.book.people[0].id
-        let source = CardWatcher.card(at: cardRoot)!
+        let source = scratchCard(cardRoot)
         model.choose(source)
         model.askingWhose = nil
         await model.read(source, for: david)
@@ -1718,6 +1727,7 @@ extension SelfTest {
         }
         await draw("13-clock-window", CameraClockProbe(), 720, 620)
         await draw("14-status-busy", StatusProbe(), 560, 300)
+        await draw("15-menu-bar-icon", WorkIconProbe(), 560, 300)
         NSApp.appearance = NSAppearance(named: .aqua)
         print("gallery: \(out.path)")
     }
@@ -1900,7 +1910,7 @@ extension SelfTest {
                              exifTool: ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool")),
                              nas: FakeNAS(root: scratch.appendingPathComponent("NAME-NAS")), notifier: RecordingNotifier(), places: osm)
         await model.showLibrary()
-        let source = CardWatcher.card(at: cardRoot)!
+        let source = scratchCard(cardRoot)
         model.choose(source)
         model.askingWhose = nil
         await model.read(source, for: model.book.people[0].id)
@@ -2011,7 +2021,7 @@ extension SelfTest {
                              exifTool: tool, nas: FakeNAS(root: scratch.appendingPathComponent("CLOCK-NAS")), notifier: RecordingNotifier(),
                              places: FakePlaces())
         await model.showLibrary()
-        let source = CardWatcher.card(at: cardRoot)!
+        let source = scratchCard(cardRoot)
         model.choose(source)
         model.askingWhose = nil
         await model.read(source, for: model.book.people[0].id)
@@ -2094,7 +2104,7 @@ extension SelfTest {
                              secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("firmware-maps")),
                              exifTool: tool, nas: FakeNAS(root: scratch.appendingPathComponent("FIRMWARE-NAS")), notifier: RecordingNotifier(),
                              places: FakePlaces())
-        let source = CardWatcher.card(at: cardRoot)!
+        let source = scratchCard(cardRoot)
         model.choose(source)
         model.askingWhose = nil
         await model.read(source, for: model.book.people[0].id)
@@ -2109,7 +2119,7 @@ extension SelfTest {
         let older = olderRoot.appendingPathComponent("DCIM/100CANON")
         try? fm.createDirectory(at: older, withIntermediateDirectories: true)
         try? fm.copyItem(at: samples.appendingPathComponent("DAVL3660.JPG"), to: older.appendingPathComponent("DAVL3660.JPG"))
-        let oldCard = CardWatcher.card(at: olderRoot)!
+        let oldCard = scratchCard(olderRoot)
         model.choose(oldCard)
         model.askingWhose = nil
         await model.read(oldCard, for: model.book.people[0].id)
@@ -2212,7 +2222,7 @@ extension SelfTest {
                              secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("lens-maps")),
                              exifTool: tool, nas: FakeNAS(root: scratch.appendingPathComponent("LENS-NAS")), notifier: RecordingNotifier(),
                              places: FakePlaces())
-        let source = CardWatcher.card(at: cardRoot)!
+        let source = scratchCard(cardRoot)
         model.choose(source)
         model.askingWhose = nil
         let davidId = model.book.people[0].id
@@ -2283,7 +2293,7 @@ extension SelfTest {
                              secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("big-maps")),
                              exifTool: ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool")),
                              nas: FakeNAS(root: scratch.appendingPathComponent("BIG-NAS")), notifier: RecordingNotifier(), places: FakePlaces())
-        let source = CardWatcher.card(at: cardRoot)!
+        let source = scratchCard(cardRoot)
         model.choose(source)
         model.askingWhose = nil
 
@@ -2379,7 +2389,7 @@ extension SelfTest {
                 writePhoto(folder.appendingPathComponent(String(format: "IMG_%04d.JPG", i + 1)), model: "Canon EOS R5m2", zone: "-03:00",
                            taken: String(format: "\(day) 18:%02d:00", i * 5))
             }
-            return CardWatcher.card(at: root)!
+            return scratchCard(root)
         }
         let model = AppModel(library: lib, peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("mo-people.json")),
                              history: HistoryStoreFolder(folder: scratch.appendingPathComponent("mo-history")),
@@ -2473,5 +2483,127 @@ extension SelfTest {
         print("still running")
         fflush(stdout)
         exit(3)
+    }
+}
+
+extension SelfTest {
+    /// The icon in the menu bar while Geotag works (David, 18 October 2026):
+    /// a pin in a ring that fills, its menu, and the lines it shows through a
+    /// card read, saved and sent; nothing while photos only wait for the NAS.
+    @MainActor
+    static func menuBar(_ scratch: URL, samples: URL) async {
+        // The icon: a template, the ring filled from the top, clockwise.
+        let icon = WorkIcon.image(0.25)
+        var rect = NSRect(origin: .zero, size: NSSize(width: 36, height: 36))
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 36, pixelsHigh: 36, bitsPerSample: 8, samplesPerPixel: 4,
+                                   hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        icon.draw(in: rect)
+        NSGraphicsContext.restoreGraphicsState()
+        _ = rect
+        // On the ring, 7.3 pt from the middle, at 2 pixels a point; y counts from the top.
+        func alpha(degrees: Double) -> CGFloat {
+            let a = degrees * .pi / 180
+            let x = Int((18 + cos(a) * 14.6).rounded()), y = Int((18 - sin(a) * 14.6).rounded())
+            return rep.colorAt(x: x, y: y)?.alphaComponent ?? 0
+        }
+        let filled = alpha(degrees: 45), empty = alpha(degrees: 180), pin = rep.colorAt(x: 18, y: 17)?.alphaComponent ?? 0
+        check("menu bar: the icon takes the menu bar's colour and fills from the top, clockwise", icon.isTemplate
+              && icon.size == WorkIcon.size && filled > 0.8 && empty > 0.1 && empty < 0.5 && pin > 0.5,
+              String(format: "filled %.2f, empty %.2f, pin %.2f", filled, empty, pin))
+        let menu = MenuBarIcon.menu(lines: ["Saving 340 of 3,630", "Sending to the NAS: 12 of 200"], target: nil)
+        check("menu bar: its menu, what is going on and Open Geotag", menu.items.map(\.title)
+              == ["Saving 340 of 3,630", "Sending to the NAS: 12 of 200", "", "Open Geotag"]
+              && menu.items.prefix(2).allSatisfy { !$0.isEnabled } && menu.items[2].isSeparatorItem && menu.items[3].isEnabled)
+
+        // A card read, saved and sent, the lines watched all the way.
+        let fm = FileManager.default
+        let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+        let card = scratch.appendingPathComponent("MENU-CARD")
+        let dcim = card.appendingPathComponent("DCIM/100CANON")
+        try? fm.createDirectory(at: dcim, withIntermediateDirectories: true)
+        for f in ((try? fm.contentsOfDirectory(at: samples, includingPropertiesForKeys: nil)) ?? []).filter({ PhotoKinds.isPhoto($0) }) {
+            try? fm.copyItem(at: f, to: dcim.appendingPathComponent(f.lastPathComponent))
+        }
+        let saveTo = scratch.appendingPathComponent("MENU-SAVED")
+        try? fm.createDirectory(at: saveTo, withIntermediateDirectories: true)
+        let nas = FakeNAS(root: scratch.appendingPathComponent("MENU-NAS"))
+        let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("menu-lib"))),
+                             peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("menu-people.json")),
+                             history: HistoryStoreFolder(folder: scratch.appendingPathComponent("menu-history")),
+                             queue: QueueStoreFile(url: scratch.appendingPathComponent("menu-queue.json")),
+                             unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("menu-unplaced.json")),
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("menu-maps")),
+                             exifTool: tool, nas: nas, notifier: RecordingNotifier(), places: FakePlaces())
+        var david = model.book.people[0]
+        david.saveFolder = saveTo.path
+        david.nasFolder = "homes/david"
+        model.save(david)
+        var seen: [[String]] = [], fractions: [Double] = []
+        let watch = model.work.$lines.sink { seen.append($0) }
+        let watchRing = model.work.$fraction.sink { if let f = $0 { fractions.append(f) } }
+        let source = scratchCard(card)
+        model.choose(source)
+        model.askingWhose = nil
+        await model.read(source, for: david.id)
+        let photos = model.readyToSave.count
+        let afterReading = model.work.lines
+        await model.savePhotos()
+        let afterSaving = model.work.lines
+        await model.sendWaiting()
+        let all = seen.flatMap { $0 }
+        check("menu bar: reading, saving and sending each shown, then nothing",
+              all.contains { $0.hasPrefix("Reading ") } && all.contains("Saving 1 of \(photos)")
+              && all.contains("Sending to the NAS: 1 of \(photos)") && afterReading.isEmpty && afterSaving.isEmpty
+              && model.work.lines.isEmpty && !model.work.shown && photos > 0,
+              "\(Array(Set(all)).sorted().prefix(12))")
+        check("menu bar: only what is going on, never the line said when it is done",
+              !all.contains { $0.contains("saved.") }, "\(all.filter { $0.contains("saved.") })")
+        check("menu bar: the ring fills as the work goes", fractions.contains(0) && (fractions.max() ?? 0) >= 0.75,
+              "\(Array(Set(fractions)).sorted())")
+
+        // The NAS away: saved photos only wait, and the icon goes.
+        nas.online = false
+        let card2 = scratch.appendingPathComponent("MENU-CARD2")
+        try? fm.createDirectory(at: card2.appendingPathComponent("DCIM/100CANON"), withIntermediateDirectories: true)
+        writePhoto(card2.appendingPathComponent("DCIM/100CANON/IMG_0001.JPG"), model: "Canon EOS R5m2", zone: "-03:00",
+                   taken: "2026:10:18 09:00:00")
+        let source2 = scratchCard(card2)
+        model.choose(source2)
+        model.askingWhose = nil
+        await model.read(source2, for: david.id)
+        await model.savePhotos()
+        await model.sendWaiting()
+        check("menu bar: photos only waiting for the NAS show nothing", model.work.lines.isEmpty
+              && model.queueEntries.contains { $0.state == .waiting }, "\(model.work.lines)")
+        watch.cancel()
+        watchRing.cancel()
+    }
+}
+
+/// The menu bar icon at actual size and four times over, on a light and a
+/// dark strip like the menu bar, empty, part filled and full.
+struct WorkIconProbe: View {
+    let steps: [Double?] = [nil, 0, 0.25, 0.6, 1]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach([false, true], id: \.self) { dark in
+                HStack(spacing: 18) {
+                    ForEach(steps.indices, id: \.self) { i in
+                        VStack(spacing: 6) {
+                            Image(nsImage: WorkIcon.image(steps[i])).renderingMode(.template)
+                            Image(nsImage: WorkIcon.image(steps[i])).renderingMode(.template).resizable().interpolation(.high)
+                                .frame(width: 72, height: 72)
+                        }
+                    }
+                }
+                .foregroundStyle(dark ? Color.white : Color.black)
+                .padding(10)
+                .background(dark ? Color(white: 0.17) : Color(white: 0.93))
+            }
+        }
+        .padding(12)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 }

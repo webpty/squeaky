@@ -47,7 +47,11 @@ struct GeotagApp: App {
             RootView()
                 .environmentObject(model)
                 .frame(minWidth: 940, minHeight: 620)
-                .task { await model.start() }
+                .task {
+                    // The icon in the menu bar while Geotag works.
+                    MenuBarIcon.watch(model.work)
+                    await model.start()
+                }
         }
         .windowToolbarStyle(.unified)
         .commands {

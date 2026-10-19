@@ -89,8 +89,10 @@ public final class AppModel: ObservableObject {
     @Published public var askingWhose: PhotoSource?
     @Published public private(set) var importPerson: UUID?
     @Published public private(set) var rows: [ImportRow] = []
-    @Published public private(set) var photosBusy = false
-    @Published public private(set) var photosLine = ""
+    @Published public private(set) var photosBusy = false { didSet { refreshWork() } }
+    @Published public private(set) var photosLine = "" { didSet { refreshWork() } }
+    /// How far reading the card has got.
+    private var readProgress: (done: Int, total: Int)?
     @Published public private(set) var openOnCard = true
     @Published public var cardsLine = ""
 
@@ -106,8 +108,8 @@ public final class AppModel: ObservableObject {
     private var timelineIds: [String] = []
 
     // Saving.
-    @Published public private(set) var saving = false
-    @Published public private(set) var saveDone = 0
+    @Published public private(set) var saving = false { didSet { refreshWork() } }
+    @Published public private(set) var saveDone = 0 { didSet { refreshWork() } }
     @Published public private(set) var saveTotal = 0
     /// Each row's outcome, by row id, once saving has reached it.
     @Published public private(set) var results: [String: SaveResult] = [:]
@@ -192,6 +194,10 @@ public final class AppModel: ObservableObject {
     /// The latest entry for each copy on this Mac.
     private var queueIndex: [String: QueueEntry] = [:]
     @Published public private(set) var sendingId: UUID?
+    /// Photos are going up in this round of sending.
+    private var sendingBatch = false { didSet { if sendingBatch != oldValue { refreshWork() } } }
+    /// What the menu bar icon shows.
+    public let work = WorkStatus()
     @Published public private(set) var sendPaused = false
     @Published public private(set) var queueLine = ""
     @Published public private(set) var nasReach = NASReach.checking
@@ -623,6 +629,8 @@ public final class AppModel: ObservableObject {
         if unplaced > 0 { line += " \(unplaced) of them without a location: see the Status column." }
         if failedCount > 0 { line += " \(failedCount) not saved: see the Status column." }
         if results.values.contains(.failed(Saver.diskFull)) { line = "Stopped: \(Saver.diskFull.lowercased()). \(savedCount) saved before that." }
+        // Done before the last line is said, so the menu bar never shows it.
+        saving = false
         photosLine = line
     }
 
@@ -703,12 +711,16 @@ public final class AppModel: ObservableObject {
         let url = source.url
         let files = await Task.detached { PhotoScanner.files(in: url) }.value
         let total = files.count
+        readProgress = (0, total)
+        defer { readProgress = nil }
         photosLine = "Reading 0 of \(total)"
         do {
             let photos = try await Task.detached {
                 try PhotoScanner(exifTool: tool).scan(files) { done in
                     Task { @MainActor [weak self] in
-                        if self?.readingRound == round { self?.photosLine = "Reading \(done) of \(total)" }
+                        guard let self, self.readingRound == round else { return }
+                        self.readProgress = (done, total)
+                        self.photosLine = "Reading \(done) of \(total)"
                     }
                 }
             }.value
@@ -1225,7 +1237,10 @@ public final class AppModel: ObservableObject {
         guard !sendingNow, !sendPaused else { return }
         if let next = nextTry, Date() < next { return }
         sendingNow = true
-        defer { sendingNow = false }
+        defer {
+            sendingNow = false
+            sendingBatch = false
+        }
         nextTry = nil
         // Someone taken off the list: their photos can't go anywhere.
         if queueEntries.contains(where: { $0.state == .waiting && book.person($0.personId) == nil }) {
@@ -1260,6 +1275,8 @@ public final class AppModel: ObservableObject {
             changeEntry(entry.id) { $0.state = .sending }
             sendingId = entry.id
             meter.begin(name)
+            sendingBatch = true
+            refreshWork()
             let more = queueEntries.filter { $0.state == .waiting }.count
             let host = NASOverSMB.host(connection.address) ?? connection.address
             say("Sending \(name) to \(host)." + (more == 0 ? "" : " \(more) more waiting."))
@@ -1272,7 +1289,10 @@ public final class AppModel: ObservableObject {
                     do {
                         done.resume(returning: .success(try NASSender.send(local, as: name, into: folder, update: update,
                                                                            clean: clean, exifTool: tool) { fraction in
-                            Task { @MainActor in meter.show(fraction, for: name) }
+                            Task { @MainActor [weak self] in
+                                meter.show(fraction, for: name)
+                                self?.refreshWork()
+                            }
                         }))
                     } catch {
                         done.resume(returning: .failure(error as? NASError ?? .failed(error.localizedDescription)))
@@ -1313,6 +1333,7 @@ public final class AppModel: ObservableObject {
                     e.reason = why
                 }
             }
+            refreshWork()
         }
         say(sendPaused ? "Paused." : restingLine())
         let waiting = queueEntries.contains { $0.state == .waiting && NASFolder(book.person($0.personId)?.nasFolder) != nil }
@@ -1324,6 +1345,34 @@ public final class AppModel: ObservableObject {
             batchFailed = 0
         }
         if !sendPaused, !waiting { await closeOurMounts() }
+    }
+
+    /// What the menu bar icon shows while Geotag works: the Photos page's own
+    /// line while a card is read or saved, the NAS's while photos go up, and
+    /// how far the first of them has got (David, 18 October 2026). Photos
+    /// only waiting for the NAS show nothing.
+    func refreshWork() {
+        var lines: [String] = []
+        var fraction: Double?
+        if photosBusy || saving, !photosLine.isEmpty {
+            lines.append(photosLine)
+            if saving {
+                fraction = saveTotal > 0 ? Double(saveDone) / Double(saveTotal) : nil
+            } else if let read = readProgress, read.total > 0 {
+                fraction = Double(read.done) / Double(read.total)
+            }
+        }
+        if sendingBatch {
+            let done = batchSent + batchFailed
+            let now = sendingId == nil ? 0 : 1
+            let ahead = queueEntries.filter { $0.state == .waiting && NASFolder(book.person($0.personId)?.nasFolder) != nil }.count
+            let total = done + now + ahead
+            lines.append("Sending to the NAS: \((done + now).formatted()) of \(total.formatted())")
+            if fraction == nil, total > 0 {
+                fraction = (Double(done) + (now == 1 ? meter.fraction : 0)) / Double(total)
+            }
+        }
+        work.set(lines: lines, fraction: fraction)
     }
 
     /// What the queue is waiting on, when nothing is going up.

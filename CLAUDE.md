@@ -447,6 +447,23 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - The list of a card is changed in one step (`rematch`, after saving), not
   row by row: row by row copies the whole list for every photo.
 
+## The menu bar icon (0.14.8, 18 October 2026)
+
+- While Geotag reads a card, saves photos or sends them to the NAS, a pin in
+  a ring shows on the right of the menu bar (`MenuBarIcon`, an
+  `NSStatusItem`, started from the window's task in the app only, never in
+  the self-test, which must not put icons on David's menu bar). The ring
+  fills with the first job's progress, in fortieths; the icon is a template,
+  so it takes the menu bar's own colour.
+- Its menu: one line per job, the Photos page's own line while reading or
+  saving ("Saving 340 of 3,630"), "Sending to the NAS: 12 of 200" while
+  photos go up, then Open Geotag. Nothing going on, no icon; photos only
+  waiting for the NAS show nothing (David's plan).
+- `AppModel.refreshWork()` builds it from the reading, saving and sending
+  state into `WorkStatus`; saving ends before its closing line is said, so
+  the menu never shows "5 saved."
+- Closing the window leaves Geotag working, as before.
+
 ## Quitting (0.14.7, 18 October 2026)
 
 - Command-Q always quits, whatever is open (David). `Quitting.now()` is the
@@ -464,6 +481,12 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   the Mac's own way (`GEOTAG_QUIT_CHILD`).
 
 ## Tests never touch David's own records
+
+- A scratch folder is made a card with `scratchCard`, never
+  `CardWatcher.card(at:)`: folders on one disk share its id, so every test
+  card was the same card, and choosing a second one started a read of its
+  own beside the test's (found 18 October 2026; some tests had passed
+  without reading at all).
 
 - Every `AppModel` in the self-test gets scratch stores for history, queue,
   unplaced and people, and a `FakeNAS`. The defaults are his real files: on
