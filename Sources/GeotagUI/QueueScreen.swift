@@ -121,8 +121,8 @@ struct QueueScreen: View {
                 Tile(label: "Not sent", value: failed.formatted())
             }
 
-            HStack(spacing: 8) {
-                SendBar(meter: model.meter)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                SendBar(meter: model.meter).levelWithText()
                 StatusLine(text: model.queueLine, lines: 2)
                 Spacer()
             }
@@ -224,10 +224,7 @@ struct NASCard: View {
                 } label: {
                     Text("Test connection").buttonLabel()
                 }
-                if model.nasBusy {
-                    ProgressView().controlSize(.small)
-                }
-                StatusLine(text: model.nasLine, lines: 2)
+                StatusLine(text: model.nasLine, lines: 2, busy: model.nasBusy)
             }
             .disabled(model.nasBusy)
         }

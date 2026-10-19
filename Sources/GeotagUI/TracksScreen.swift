@@ -28,12 +28,7 @@ struct TracksScreen: View {
                 }
                 .disabled(model.tracksBusy)
             }
-            HStack(spacing: 8) {
-                if model.tracksBusy {
-                    ProgressView().controlSize(.small)
-                }
-                StatusLine(text: model.tracksLine)
-            }
+            StatusLine(text: model.tracksLine, busy: model.tracksBusy)
             .frame(height: 18)
 
             ScrollView {

@@ -1712,6 +1712,7 @@ extension SelfTest {
             await draw("13-clock-\(guide.id)", CameraClockProbe(), 720, 3400)
         }
         await draw("13-clock-window", CameraClockProbe(), 720, 620)
+        await draw("14-status-busy", StatusProbe(), 560, 300)
         NSApp.appearance = NSAppearance(named: .aqua)
         print("gallery: \(out.path)")
     }
@@ -2319,5 +2320,34 @@ extension SelfTest {
         check("big card: \(count) photos read, drawn and scrolled end to end", model.rows.count == count && rows == count,
               "\(model.rows.count) rows, table \(rows)")
         window.orderOut(nil)
+    }
+}
+
+/// Each place a spinner or a bar sits beside a status line, for pictures:
+/// the Photos page's row, saving, a Settings card's row, the Tracks window.
+struct StatusProbe: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 8) {
+                StatusLine(text: "Reading 3630 of 3630", lines: 2, busy: true)
+                Spacer()
+                Button {} label: { Text("Columns").buttonLabel() }
+            }
+            .frame(minHeight: 40)
+            HStack(spacing: 8) {
+                StatusLine(text: "Saving 1200 of 3630", lines: 2, progress: 0.33)
+                Spacer()
+            }
+            .frame(minHeight: 40)
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Button {} label: { Text("Save").buttonLabel() }
+                Button {} label: { Text("Test connection").buttonLabel() }
+                StatusLine(text: "Saved. Checking the NAS", lines: 2, busy: true)
+            }
+            StatusLine(text: "Refreshing tracks", busy: true)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 }

@@ -398,6 +398,10 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   folder under `gallery/`. Off-screen, the window's sidebar draws blank, so
   the sidebar is drawn on its own (`SheetProbe(.sidebar)`); switches draw
   grey because the window is not active.
+- A spinner or bar beside a status line is part of it (`StatusLine(busy:
+  progress:)`), level with the words' first line; elsewhere `levelWithText()`
+  in a row lined up on the baseline. Placed beside a two-line status line
+  from outside, it sat half a line low (David, 18 October 2026).
 - Labels beside fields share `Style.labelWidth`, so fields line up from card
   to card; the person and camera editors are one row per field with one
   right edge. Tile figures and labels shrink before they are cut short.

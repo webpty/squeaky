@@ -175,14 +175,10 @@ struct PhotosScreen: View {
             }
 
             HStack(spacing: 8) {
-                if model.saving {
-                    ProgressView(value: Double(model.saveDone), total: Double(max(model.saveTotal, 1)))
-                        .frame(width: 200)
-                } else if model.photosBusy {
-                    ProgressView().controlSize(.small)
-                }
                 // Nothing else to say: a camera whose clock is far out, and where to set it.
-                StatusLine(text: model.photosLine.isEmpty ? PhotoText.clockNote(model.wrongClocks) : model.photosLine, lines: 2)
+                StatusLine(text: model.photosLine.isEmpty ? PhotoText.clockNote(model.wrongClocks) : model.photosLine, lines: 2,
+                           busy: model.photosBusy,
+                           progress: model.saving ? Double(model.saveDone) / Double(max(model.saveTotal, 1)) : nil)
                 Spacer()
                 Menu {
                     ForEach(Self.toggleable, id: \.id) { column in

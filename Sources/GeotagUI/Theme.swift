@@ -55,28 +55,57 @@ public struct ScreenTitle: View {
 }
 
 /// A line that is always there, so nothing shifts when a message appears.
+/// While something is going on, a spinner leads it, or a bar when the share
+/// done is known, level with the words' first line: beside it from outside,
+/// a spinner sat on the middle of the two lines kept for the words (David,
+/// 18 October 2026).
 public struct StatusLine: View {
     let text: String
     let lines: Int
+    let busy: Bool
+    let progress: Double?
 
-    public init(text: String, lines: Int = 1) {
+    public init(text: String, lines: Int = 1, busy: Bool = false, progress: Double? = nil) {
         self.text = text
         self.lines = lines
+        self.busy = busy
+        self.progress = progress
     }
+
+    /// Half the height of a capital in the line's type: a spinner's middle
+    /// that far above the words' baseline sits level with them.
+    static let halfCap = NSFont.preferredFont(forTextStyle: .callout).capHeight / 2
 
     /// Its height is kept whether there is anything to say or not.
     public var body: some View {
-        Text(text)
-            .font(.callout)
-            .foregroundStyle(text.isEmpty ? .clear : .secondary)
-            .lineLimit(lines, reservesSpace: true)
-            .truncationMode(.tail)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(alignment: .topLeading)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            if let progress {
+                ProgressView(value: progress)
+                    .frame(width: 200)
+                    .levelWithText()
+            } else if busy {
+                ProgressView()
+                    .controlSize(.small)
+                    .levelWithText()
+            }
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(text.isEmpty ? .clear : .secondary)
+                .lineLimit(lines, reservesSpace: true)
+                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(alignment: .topLeading)
+        }
     }
 }
 
 public extension View {
+    /// Level with the first line of a status line beside it, in a row lined
+    /// up on the words' baseline: a spinner or a bar.
+    func levelWithText() -> some View {
+        alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + StatusLine.halfCap }
+    }
+
     /// One line, with room on all four sides, for every button label.
     func buttonLabel() -> some View {
         self.lineLimit(1).padding(.vertical, 3).padding(.horizontal, 6).handCursor()

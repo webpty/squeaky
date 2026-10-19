@@ -69,10 +69,7 @@ struct TrackServiceCard: View {
                 } label: {
                     Text("Test").buttonLabel()
                 }
-                if model.settingsBusy {
-                    ProgressView().controlSize(.small)
-                }
-                StatusLine(text: model.settingsLine, lines: 2)
+                StatusLine(text: model.settingsLine, lines: 2, busy: model.settingsBusy)
             }
             .disabled(model.settingsBusy)
 
