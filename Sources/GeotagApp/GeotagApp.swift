@@ -17,9 +17,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         quitWatch = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let keys = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function])
             guard keys == .command, event.charactersIgnoringModifiers?.lowercased() == "q" else { return event }
-            AppDelegate.quitNow()
+            Quitting.now()
             return nil
         }
+        Quitting.takeQuitEvents()
         guard LoginItem.launchedAtLogin() else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             NSApp.windows.filter(\.canBecomeMain).forEach { $0.close() }
@@ -34,13 +35,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         .terminateNow
     }
 
-    static func quitNow() {
-        if NSApp.modalWindow != nil { NSApp.abortModal() }
-        for window in NSApp.windows {
-            if let sheet = window.attachedSheet { window.endSheet(sheet) }
-        }
-        DispatchQueue.main.async { NSApp.terminate(nil) }
-    }
 }
 
 @main
@@ -58,6 +52,11 @@ struct GeotagApp: App {
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .newItem) {}
+            // The menu's Quit goes the way Command-Q does.
+            CommandGroup(replacing: .appTermination) {
+                Button("Quit Geotag") { Quitting.now() }
+                    .keyboardShortcut("q", modifiers: .command)
+            }
             // Command-comma opens Settings, in Geotag's own window.
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") {

@@ -447,6 +447,22 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - The list of a card is changed in one step (`rematch`, after saving), not
   row by row: row by row copies the whole list for every photo.
 
+## Quitting (0.14.7, 18 October 2026)
+
+- Command-Q always quits, whatever is open (David). `Quitting.now()` is the
+  one way out: the key watch in `AppDelegate`, the menu's Quit and quit
+  events (the Dock, a log-out) all go through it.
+- The Mac refuses to quit while a sheet is open ("App termination blocked
+  by modal sheet" in its log), and SwiftUI shows a sheet again within a
+  twentieth of a second of it being closed from outside, because its
+  binding still says shown. So the sheets are closed and `NSApp.terminate`
+  is called in the same moment; quitting on the next turn, as before 0.14.7,
+  was refused every time. A running file chooser is stopped first. If
+  anything still refuses, Geotag exits a second later: every record is
+  written as it changes.
+- The self-test runs a copy of itself with a sheet open and checks it quits
+  the Mac's own way (`GEOTAG_QUIT_CHILD`).
+
 ## Tests never touch David's own records
 
 - Every `AppModel` in the self-test gets scratch stores for history, queue,

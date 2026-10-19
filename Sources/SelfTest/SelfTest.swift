@@ -31,6 +31,9 @@ struct SelfTest {
             ?? FileManager.default.temporaryDirectory
         let scratch = root.appendingPathComponent("geotag-selftest-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        if ProcessInfo.processInfo.environment["GEOTAG_QUIT_CHILD"] != nil {
+            await quitChild()
+        }
         let realBefore = realData()
         if ProcessInfo.processInfo.environment["GEOTAG_TABLE_STRESS"] != nil {
             await tableStress(scratch, count: Int(ProcessInfo.processInfo.environment["GEOTAG_TABLE_STRESS"] ?? "") ?? 3600)
@@ -60,6 +63,7 @@ struct SelfTest {
         await settingsFeedback(scratch)
         await naming(scratch)
         await mapOpens(scratch)
+        quitting()
         download(scratch)
         cardKinds()
         cards(scratch)
@@ -2404,5 +2408,70 @@ extension SelfTest {
         check("map window: stays shut for photos with no track within a day", !model.aligning && !model.alignable.isEmpty,
               "aligning \(model.aligning), \(model.alignable.count) to line up")
         check("map window: the button still has photos to show", !model.alignable.isEmpty)
+    }
+}
+
+final class SheetFlag: ObservableObject {
+    @Published var shown = false
+}
+
+/// A window with a SwiftUI sheet, as the map window and the editors are.
+struct SheetHost: View {
+    @ObservedObject var flag: SheetFlag
+    var body: some View {
+        Color.gray.frame(width: 400, height: 300)
+            .sheet(isPresented: $flag.shown) {
+                Text("A sheet").frame(width: 200, height: 100)
+            }
+    }
+}
+
+extension SelfTest {
+    /// Quitting with a sheet open, in a program of its own: SwiftUI shows a
+    /// sheet again straight after it is closed from outside, and the Mac
+    /// would not quit while it was there (18 October 2026). The program says
+    /// whether it quit the Mac's own way.
+    static func quitting() {
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+        child.environment = ProcessInfo.processInfo.environment.merging(["GEOTAG_QUIT_CHILD": "1"]) { $1 }
+        let out = Pipe()
+        child.standardOutput = out
+        child.standardError = FileHandle.nullDevice
+        let started = Date()
+        try? child.run()
+        while child.isRunning, Date().timeIntervalSince(started) < 20 { usleep(50_000) }
+        let stuck = child.isRunning
+        if stuck { child.terminate() }
+        let said = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        check("quit: with a sheet open, Geotag quits at once and the Mac's own way",
+              !stuck && said.contains("sheet open") && said.contains("quitting properly") && !said.contains("still running"),
+              said.split(separator: "\n").joined(separator: " / "))
+    }
+
+    /// The program the test above runs: a sheet open, then Quitting.now().
+    @MainActor
+    static func quitChild() async {
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: nil) { _ in
+            print("quitting properly")
+            fflush(stdout)
+        }
+        let flag = SheetFlag()
+        let window = NSWindow(contentRect: NSRect(x: -9000, y: -9000, width: 400, height: 300), styleMask: [.titled],
+                              backing: .buffered, defer: false)
+        window.contentView = NSHostingView(rootView: SheetHost(flag: flag))
+        window.orderBack(nil)
+        for _ in 0..<20 { spin(0.025); try? await Task.sleep(for: .milliseconds(25)) }
+        flag.shown = true
+        for _ in 0..<40 { spin(0.025); try? await Task.sleep(for: .milliseconds(25)) }
+        print(window.attachedSheet != nil ? "sheet open" : "no sheet")
+        fflush(stdout)
+        Quitting.now()
+        for _ in 0..<120 { spin(0.025); try? await Task.sleep(for: .milliseconds(25)) }
+        print("still running")
+        fflush(stdout)
+        exit(3)
     }
 }
