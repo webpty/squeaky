@@ -59,6 +59,7 @@ struct SelfTest {
         }
         await settingsFeedback(scratch)
         await naming(scratch)
+        await mapOpens(scratch)
         download(scratch)
         cardKinds()
         cards(scratch)
@@ -2349,5 +2350,59 @@ struct StatusProbe: View {
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+extension SelfTest {
+    /// The map window opens by itself after a card is read only when one of
+    /// the tracks runs within a day of the card's photos (David, 18 October
+    /// 2026: a card of September 2025 opened it on an empty world map). The
+    /// button still opens it.
+    @MainActor
+    static func mapOpens(_ scratch: URL) async {
+        let fm = FileManager.default
+        let lib = TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("mo-lib")))
+        let start = 1_792_162_800 // 2026-10-16 15:00 UTC, 12:00 in Ushuaia
+        let gpx = scratch.appendingPathComponent("mo-walk.gpx")
+        writeGPX(gpx, start: start, count: 1800, name: "Ushuaia walk", lat: -54.812, lon: -68.33)
+        _ = try? await lib.importFile(gpx, role: .reader)
+
+        func card(_ name: String, day: String) -> PhotoSource {
+            let root = scratch.appendingPathComponent(name)
+            let folder = root.appendingPathComponent("DCIM/100CANON")
+            try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            for i in 0..<6 {
+                writePhoto(folder.appendingPathComponent(String(format: "IMG_%04d.JPG", i + 1)), model: "Canon EOS R5m2", zone: "-03:00",
+                           taken: String(format: "\(day) 18:%02d:00", i * 5))
+            }
+            return CardWatcher.card(at: root)!
+        }
+        let model = AppModel(library: lib, peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("mo-people.json")),
+                             history: HistoryStoreFolder(folder: scratch.appendingPathComponent("mo-history")),
+                             queue: QueueStoreFile(url: scratch.appendingPathComponent("mo-queue.json")),
+                             unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("mo-unplaced.json")),
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("mo-maps")),
+                             exifTool: ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool")),
+                             nas: FakeNAS(root: scratch.appendingPathComponent("MO-NAS")), notifier: RecordingNotifier(), places: FakePlaces())
+        await model.showLibrary()
+        let david = model.book.people[0].id
+
+        // The same day as the walk, hours after it: off the track, but near it.
+        let near = card("MO-NEAR", day: "2026:10:16")
+        model.choose(near)
+        model.askingWhose = nil
+        await model.read(near, for: david)
+        check("map window: opens by itself for photos with a track within a day", model.aligning && !model.alignable.isEmpty,
+              "aligning \(model.aligning), \(model.alignable.count) to line up")
+        model.aligning = false
+
+        // A year before any track: nothing to line up with.
+        let far = card("MO-FAR", day: "2025:09:24")
+        model.choose(far)
+        model.askingWhose = nil
+        await model.read(far, for: david)
+        check("map window: stays shut for photos with no track within a day", !model.aligning && !model.alignable.isEmpty,
+              "aligning \(model.aligning), \(model.alignable.count) to line up")
+        check("map window: the button still has photos to show", !model.alignable.isEmpty)
     }
 }

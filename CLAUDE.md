@@ -283,6 +283,12 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   stays. The card is never changed.
 - The Photos page names each camera whose clock is out, by how much, and
   points to the menu below (`PhotoText.clockNote`).
+- After a card is read, the map window opens by itself only when one of the
+  tracks runs within a day of the card's photos, by their cameras' clocks
+  as set (`trackNear`; 0.14.6, David, 18 October 2026: a card from September
+  2025 opened it on an empty world map and he could not tell what it
+  wanted). "See photos on the map" still opens it; that is the way in for a
+  camera whose clock is far out, whose photos fall nowhere near a track.
 - "Set time and date in camera", in the menu bar, has a page per family
   camera (`CameraGuide.all`): steps in the camera's own menu words from the
   maker's manual, with pictures of the camera's screens in

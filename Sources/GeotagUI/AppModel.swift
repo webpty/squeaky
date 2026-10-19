@@ -721,7 +721,7 @@ public final class AppModel: ObservableObject {
             await loadTimeline()
             rematch()
             photosLine = rows.isEmpty ? "No photos on \(source.name)." : ""
-            if !alignable.isEmpty { aligning = true }
+            if trackNear(alignable) { aligning = true }
         } catch {
             if readingRound == round { photosLine = "The photos could not be read: \(error.localizedDescription)" }
         }
@@ -1025,6 +1025,27 @@ public final class AppModel: ObservableObject {
             guard row.ticked, !row.photo.hasLocation, row.photo.taken != nil,
                   let model = row.photo.model, let camera = book.camera(personId: personId, model: model) else { return false }
             return camera.zone != .notSet
+        }
+    }
+
+    /// Whether one of the tracks runs within a day of any of these photos, by
+    /// their cameras' clocks as set. Without one the map has nothing to line
+    /// them up with, so it does not open by itself after a card is read
+    /// (David, 18 October 2026); See photos on the map still opens it.
+    public func trackNear(_ rows: [ImportRow]) -> Bool {
+        guard let personId = importPerson else { return false }
+        var hours = Set<Int>()
+        for row in rows {
+            guard let model = row.photo.model, var camera = book.camera(personId: personId, model: model) else { continue }
+            camera.offsetSeconds = camera.offsetSeconds ?? 0
+            if case .success(let moment) = Moments.moment(row.photo, camera: camera) {
+                hours.insert(Int(moment.timeIntervalSince1970) / 3600)
+            }
+        }
+        let pieces = timeline.pieces
+        return hours.contains { hour in
+            let t = hour * 3600
+            return pieces.contains { $0.start - 86_400 <= t + 3600 && t <= $0.end + 86_400 }
         }
     }
 
