@@ -138,7 +138,7 @@ public struct OffsetCodeView: View {
                 .lineLimit(1)
             // The code changes with every frame: a slower shutter, or one that
             // reads the sensor line by line, catches two codes at once.
-            Text("Shutter 1/250 s or faster, mechanical shutter.")
+            Text("Shutter 1/500 s or faster, mechanical shutter.")
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)

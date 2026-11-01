@@ -581,10 +581,11 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - 0.17.1: the window goes full screen once it is in a window (`FullScreen`
   watches for it; asked earlier it stayed small), the code and time sit side
   by side on a wide window and stacked on a narrow one, and the time shrinks
-  to fit (at 0.17.0 it was cut short). Under the time: "Shutter 1/250 s or
+  to fit (at 0.17.0 it was cut short). Under the time: "Shutter 1/500 s or
   faster, mechanical shutter." (David asked for it to be said): the code
   changes 60 times a second, and a slower or fully electronic shutter
-  catches two codes at once.
+  catches two codes at once. 1/320 s was still too slow on his camera
+  (1 November 2026).
 - When a card is read, the first and last five photos of each camera are
   looked at for a code (Vision, on the Mac's own picture of raw files). A
   code sets the camera's offset to the hundredth: `ClockReading` added to
