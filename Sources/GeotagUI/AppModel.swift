@@ -50,6 +50,8 @@ public enum PhotosFix: Equatable {
     case camera(UUID)
     /// The camera list, in Settings.
     case cameras
+    /// Tailscale, to reach the NAS from away.
+    case openTailscale
 
     public var title: String {
         switch self {
@@ -58,6 +60,7 @@ public enum PhotosFix: Equatable {
         case .trackService: return "Open Settings"
         case .camera: return "Edit camera"
         case .cameras: return "Open Settings"
+        case .openTailscale: return "Open Tailscale"
         }
     }
 }
@@ -212,6 +215,8 @@ public final class AppModel: ObservableObject {
     private var batchSent = 0
     private var batchFailed = 0
     private let notifier: NotifierPort
+    /// The battery, to warn before a save outlasts it.
+    private let power: PowerPort
     /// Names the place each photo was taken, for its folder.
     private let places: PlaceNaming
 
@@ -228,7 +233,17 @@ public final class AppModel: ObservableObject {
     public let work = WorkStatus()
     @Published public private(set) var sendPaused = false
     @Published public private(set) var queueLine = ""
-    @Published public private(set) var nasReach = NASReach.checking
+    @Published public private(set) var nasReach = NASReach.checking {
+        didSet {
+            // It answers again: the warning goes by itself.
+            guard case .through = nasReach, nasAway else { return }
+            nasAway = false
+            if photosFix == .openTailscale { photosLine = "" }
+        }
+    }
+    /// Geotag opened with photos waiting and the NAS did not answer.
+    @Published public private(set) var nasAway = false
+    public static let nasAwayText = "The NAS isn't answering. If you're away from home, turn on Tailscale; otherwise check the connection."
     private var checkingNAS = false
     /// The photo going up now; apart, so its progress redraws only the bar.
     public let meter = SendMeter()
@@ -237,6 +252,9 @@ public final class AppModel: ObservableObject {
     private var cleanedFolders: Set<String> = []
     private var nextTry: Date?
     private var sendingNow = false
+    /// When this run of sending began, and how many photos it has done: the pace for "about 20 min left".
+    private var sendBegan: Date?
+    private var sendDone = 0
     private var sendTimer: Timer?
 
     public let library: TrackLibrary
@@ -269,8 +287,10 @@ public final class AppModel: ObservableObject {
                 exifTool: ExifTool? = nil,
                 nas: NASPort? = nil,
                 notifier: NotifierPort? = nil,
-                places: PlaceNaming? = nil) {
+                places: PlaceNaming? = nil,
+                power: PowerPort? = nil) {
         self.notifier = notifier ?? MacNotifier.shared
+        self.power = power ?? MacPower()
         self.places = places ?? PlaceNames.shared
         self.exifTool = exifTool ?? ExifTool.bundled()
         self.library = library
@@ -338,6 +358,16 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    /// As Geotag opens: photos waiting and no answer from the NAS at either
+    /// address, so say so once, here and as a notification (David, 1 November 2026).
+    public func announceNASAway() {
+        let waiting = queueEntries.contains { $0.state == .waiting && NASFolder(book.person($0.personId)?.nasFolder) != nil }
+        guard nasReach == .unreachable, waiting else { return }
+        nasAway = true
+        notifier.post(Self.nasAwayText, kind: "nas-away")
+        if photosLine.isEmpty { say(Self.nasAwayText, fix: Tailscale.app == nil ? nil : .openTailscale) }
+    }
+
     // MARK: Setting up this Mac
 
     /// The setup is showing: once on a new Mac, and from the Geotag menu.
@@ -370,11 +400,26 @@ public final class AppModel: ObservableObject {
         return people
     }
 
+    /// What quitting now would cut off, for Command-Q to ask about; nil when nothing.
+    public func quitCutOff() -> String? {
+        var parts: [String] = []
+        if saving, let source {
+            let left = saveTotal - saveDone
+            parts.append("\(left.formatted()) \(left == 1 ? "photo" : "photos") on \(source.name) \(left == 1 ? "is" : "are") not saved yet. Reopening Geotag and clicking Save photos carries on from there.")
+        }
+        let going = queueEntries.filter { ($0.state == .waiting || $0.state == .sending) && NASFolder(book.person($0.personId)?.nasFolder) != nil }.count
+        if going > 0 {
+            parts.append("\(going.formatted()) \(going == 1 ? "photo is" : "photos are") uploading to the NAS. Reopening Geotag will resume the upload.")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
     /// At launch: show what this Mac has, then ask the service, and again every ten minutes.
     public func start() async {
         // A window opened again runs this again; the rest is once per launch.
         guard !started else { return }
         started = true
+        Quitting.cutOff = { [weak self] in self?.quitCutOff() }
         if needsSetup {
             settingUp = true
         } else {
@@ -383,7 +428,10 @@ public final class AppModel: ObservableObject {
         applyAppearance()
         startCards()
         startSending()
-        Task { await checkNAS() }
+        Task {
+            await checkNAS()
+            announceNASAway()
+        }
         // A click on a notification opens the Queue page.
         MacNotifier.onOpen = { [weak self] in
             self?.screen = .queue
@@ -641,9 +689,18 @@ public final class AppModel: ObservableObject {
         photosLine = "Looking up places"
         await lookUpRowPlaces()
         while lookingUpPlaces { try? await Task.sleep(for: .milliseconds(100)) }
+        let began = Date()
+        var warnedPower = false
         for row in todo {
             if stopAsked || readingRound != round || self.source?.id != source.id { break }
-            photosLine = "Saving \(saveDone + 1) of \(saveTotal)"
+            // How long is left at the pace so far, and whether the battery lasts that long.
+            let left = Remaining.estimate(done: saveDone, total: saveTotal, since: began)
+            let said = Self.savingLine(done: saveDone, total: saveTotal, left: left, battery: left == nil ? nil : power.batteryLeft())
+            if let warning = said.warning, !warnedPower {
+                warnedPower = true
+                notifier.post(warning, kind: "power")
+            }
+            photosLine = said.line
             // A photo that cannot be placed is saved as it is, without a location.
             var item = SaveItem(photo: row.photo, placement: row.placement ?? .review(.noTrack), withoutLocation: row.needsReview)
             // Its place names its folder: the name typed for it, else
@@ -710,6 +767,23 @@ public final class AppModel: ObservableObject {
         // Done before the last line is said, so the menu bar never shows it.
         saving = false
         photosLine = line
+        // Every photo is on this Mac: the NAS copies go from there, so the
+        // card is not needed any more (David, 1 November 2026).
+        if !stopped, failedCount == 0, savedCount > 0, source.bsd != nil, self.source?.id == source.id {
+            let onMac = "\(savedCount.formatted()) \(savedCount == 1 ? "photo is" : "photos are") on this Mac; the NAS copies go from there."
+            eject(done: onMac)
+        }
+    }
+
+    /// "Saving 341 of 3,630, about 12 min left", and the warning to connect
+    /// to power when the battery would run out first.
+    nonisolated public static func savingLine(done: Int, total: Int, left: TimeInterval?, battery: TimeInterval?) -> (line: String, warning: String?) {
+        var line = "Saving \((done + 1).formatted()) of \(total.formatted())"
+        guard let left else { return (line, nil) }
+        line += ", \(Remaining.text(left)) left"
+        guard let battery, battery < left else { return (line, nil) }
+        let warning = "Connect to power: \(Remaining.text(left)) of saving left, the battery has \(Remaining.text(battery))."
+        return (line + ". " + warning, warning)
     }
 
     public func stopSaving() {
@@ -747,6 +821,8 @@ public final class AppModel: ObservableObject {
         case .camera(let id):
             screen = .settings
             cameraToEdit = id
+        case .openTailscale:
+            Tailscale.open()
         }
     }
 
@@ -817,7 +893,9 @@ public final class AppModel: ObservableObject {
     }
 
     /// Stops reading, forces the card off now and says when it can come out.
-    public func eject() {
+    /// `done` is said after "can come out" once the card is off, in place of
+    /// the usual line, and as a notification.
+    public func eject(done: String? = nil) {
         guard let card = source, let bsd = card.bsd else {
             photosLine = "No card is held to eject."
             return
@@ -837,7 +915,12 @@ public final class AppModel: ObservableObject {
             } else {
                 self.cards.removeAll { $0.bsd == bsd }
                 if self.source?.bsd == bsd { self.source = nil; self.importPerson = nil }
-                self.photosLine = "\(card.name) is ejected. You can take it out."
+                if let done {
+                    self.photosLine = "\(card.name) can come out. \(done)"
+                    self.notifier.post("\(card.name) can come out.", kind: "card")
+                } else {
+                    self.photosLine = "\(card.name) is ejected. You can take it out."
+                }
             }
         }
     }
@@ -1414,6 +1497,8 @@ public final class AppModel: ObservableObject {
                 connection = try await nas.connect(share: place.share)
             } catch {
                 nasReach = .unreachable
+                // A pause is no part of the pace.
+                sendBegan = nil
                 let retry = Date().addingTimeInterval(60)
                 nextTry = retry
                 say("\(error.localizedDescription) Trying again at \(When.current.time(retry)).")
@@ -1434,7 +1519,11 @@ public final class AppModel: ObservableObject {
             refreshWork()
             let more = queueEntries.filter { $0.state == .waiting }.count
             let host = NASOverSMB.host(connection.address) ?? connection.address
-            say("Sending \(name) to \(host)." + (more == 0 ? "" : " \(more) more waiting."))
+            if sendBegan == nil {
+                sendBegan = Date()
+                sendDone = 0
+            }
+            say("Sending \(name) to \(host)." + (more == 0 ? "" : " \(more) more waiting") + (sendingLeft().map { ", \($0) left." } ?? (more == 0 ? "" : ".")))
             let local = URL(fileURLWithPath: entry.localPath)
             let tool = exifTool, update = entry.update, meter = self.meter
             // On a thread of its own: a connection that hangs must not hold up
@@ -1456,6 +1545,7 @@ public final class AppModel: ObservableObject {
             }
             sendingId = nil
             meter.end()
+            sendDone += 1
             switch outcome {
             case .success(let result):
                 batchSent += 1
@@ -1500,6 +1590,15 @@ public final class AppModel: ObservableObject {
             batchFailed = 0
         }
         if !sendPaused, !waiting { await closeOurMounts() }
+        if !waiting { sendBegan = nil }
+    }
+
+    /// "about 20 min" of sending left at this run's pace; nil until it can tell.
+    public func sendingLeft() -> String? {
+        guard let began = sendBegan else { return nil }
+        let ahead = queueEntries.filter { $0.state == .waiting && NASFolder(book.person($0.personId)?.nasFolder) != nil }.count
+        let now = sendingId == nil ? 0 : 1
+        return Remaining.estimate(done: sendDone, total: sendDone + now + ahead, since: began).map(Remaining.text)
     }
 
     /// What the menu bar icon shows while Geotag works: the Photos page's own
@@ -1522,7 +1621,7 @@ public final class AppModel: ObservableObject {
             let now = sendingId == nil ? 0 : 1
             let ahead = queueEntries.filter { $0.state == .waiting && NASFolder(book.person($0.personId)?.nasFolder) != nil }.count
             let total = done + now + ahead
-            lines.append("Sending to the NAS: \((done + now).formatted()) of \(total.formatted())")
+            lines.append("Sending to the NAS: \((done + now).formatted()) of \(total.formatted())" + (sendingLeft().map { ", \($0) left" } ?? ""))
             if fraction == nil, total > 0 {
                 fraction = (Double(done) + (now == 1 ? meter.fraction : 0)) / Double(total)
             }

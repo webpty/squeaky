@@ -2,6 +2,28 @@ import AppKit
 
 /// Command-Q always quits, whatever is open (David, 16 October 2026).
 public enum Quitting {
+    /// What would be cut off by quitting now, said before Command-Q or the
+    /// menu's Quit goes ahead; nil when nothing is going on. Set by the app model.
+    @MainActor public static var cutOff: (() -> String?)?
+
+    /// Command-Q and the menu's Quit: asks first while photos are being saved
+    /// or are on their way to the NAS (David, 1 November 2026: a Command-Q
+    /// meant for another app stopped a save). Nothing going on, it quits.
+    @MainActor
+    public static func asked() {
+        if let text = cutOff?() {
+            let alert = NSAlert()
+            alert.messageText = "Are you sure?"
+            alert.informativeText = text
+            // Return keeps Geotag open.
+            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: "Yes, Quit anyway")
+            NSApp.activate(ignoringOtherApps: true)
+            guard alert.runModal() == .alertSecondButtonReturn else { return }
+        }
+        now()
+    }
+
     /// The Mac will not quit while a sheet is open, and SwiftUI shows a sheet
     /// again straight after it is closed from outside, so every sheet is
     /// closed and Geotag quits in the same moment, before one can come back

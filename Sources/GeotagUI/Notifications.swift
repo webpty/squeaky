@@ -4,6 +4,12 @@ import UserNotifications
 /// How Geotag tells you something while you are elsewhere.
 public protocol NotifierPort: Sendable {
     func post(_ text: String)
+    /// A notification of its own kind: one of each kind shows at a time.
+    func post(_ text: String, kind: String)
+}
+
+public extension NotifierPort {
+    func post(_ text: String, kind: String) { post(text) }
 }
 
 /// Mac notifications. The Mac asks, the first time, whether Geotag may send
@@ -31,6 +37,12 @@ public final class MacNotifier: NSObject, NotifierPort, UNUserNotificationCenter
     }
 
     public func post(_ text: String) {
+        post(text, kind: "nas")
+    }
+
+    /// Kinds: "nas" for a finished batch, "card" when a card can come out,
+    /// "power" to connect to power, "nas-away" when the NAS does not answer.
+    public func post(_ text: String, kind: String) {
         // Only from the app itself: a test program has no app to notify from.
         guard Bundle.main.bundleIdentifier != nil else { return }
         let center = UNUserNotificationCenter.current()
@@ -39,7 +51,7 @@ public final class MacNotifier: NSObject, NotifierPort, UNUserNotificationCenter
             let content = UNMutableNotificationContent()
             content.body = text
             // One at a time: a newer one takes the place of the last.
-            center.add(UNNotificationRequest(identifier: "geotag-nas", content: content, trigger: nil))
+            center.add(UNNotificationRequest(identifier: "geotag-\(kind)", content: content, trigger: nil))
         }
     }
 

@@ -121,6 +121,21 @@ struct QueueScreen: View {
                 Tile(label: "Not sent", value: failed.formatted())
             }
 
+            if model.nasAway {
+                HStack(alignment: .firstTextBaseline, spacing: Style.gap) {
+                    StatusLine(text: AppModel.nasAwayText, lines: 2)
+                    if Tailscale.app != nil {
+                        Button {
+                            Tailscale.open()
+                        } label: {
+                            Text("Open Tailscale").buttonLabel()
+                        }
+                        .fixedSize()
+                    }
+                    Spacer()
+                }
+            }
+
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 SendBar(meter: model.meter).levelWithText()
                 StatusLine(text: model.queueLine, lines: 2)

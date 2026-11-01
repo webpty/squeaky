@@ -75,6 +75,8 @@ struct SelfTest {
         await buttonsSay(scratch)
         setupNeeded(scratch)
         await tracksLoading(scratch)
+        timeLeft()
+        await quitAndAway(scratch)
         quitting()
         download(scratch)
         cardKinds()
@@ -2562,6 +2564,70 @@ extension SelfTest {
     actor Seen {
         var all: [String] = []
         func add(_ s: String) { all.append(s) }
+    }
+
+    /// Time left while saving or sending, and the warning to connect to power.
+    static func timeLeft() {
+        check("time left: under a minute", Remaining.text(20) == "less than a minute")
+        check("time left: minutes", Remaining.text(12 * 60 + 10) == "about 12 min")
+        check("time left: hours", Remaining.text(80 * 60) == "about 1 h 20 min" && Remaining.text(120 * 60) == "about 2 h")
+        let start = Date(timeIntervalSince1970: 1_000_000)
+        check("time left: not before three photos", Remaining.estimate(done: 2, total: 100, since: start, now: start.addingTimeInterval(60)) == nil)
+        check("time left: at the pace so far",
+              Remaining.estimate(done: 10, total: 100, since: start, now: start.addingTimeInterval(60)) == 540)
+
+        let plain = AppModel.savingLine(done: 339, total: 3630, left: nil, battery: nil)
+        check("saving line: before the pace is known", plain.line == "Saving 340 of 3,630" && plain.warning == nil, plain.line)
+        let timed = AppModel.savingLine(done: 339, total: 3630, left: 12 * 60, battery: 3 * 3600)
+        check("saving line: with the time left, battery enough", timed.line == "Saving 340 of 3,630, about 12 min left" && timed.warning == nil, timed.line)
+        let short = AppModel.savingLine(done: 339, total: 3630, left: 25 * 60, battery: 15 * 60)
+        check("saving line: battery too short, connect to power",
+              short.warning == "Connect to power: about 25 min of saving left, the battery has about 15 min."
+              && short.line == "Saving 340 of 3,630, about 25 min left. " + (short.warning ?? ""), short.line)
+    }
+
+    /// Command-Q asks while photos are uploading; Geotag opening with the NAS
+    /// away says to turn on Tailscale, and the warning goes once it answers.
+    @MainActor
+    static func quitAndAway(_ scratch: URL) async {
+        var book = PeopleBook.family()
+        book.people[0].nasFolder = "homes/david"
+        let peopleFile = PeopleStoreFile(url: scratch.appendingPathComponent("qa-people.json"))
+        try? peopleFile.save(book)
+        let queueFile = QueueStoreFile(url: scratch.appendingPathComponent("qa-queue.json"))
+        let entries = (1...3).map { QueueEntry(personId: book.people[0].id, localPath: scratch.appendingPathComponent("qa-\($0).jpg").path,
+                                               relativePath: "2026.10.27/qa-\($0).jpg") }
+        try? queueFile.save(entries)
+        let fake = FakeNAS(root: scratch.appendingPathComponent("QA-NAS"))
+        fake.online = false
+        let notes = RecordingNotifier()
+        let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("qa-lib"))),
+                             peopleStore: peopleFile, history: HistoryStoreFolder(folder: scratch.appendingPathComponent("qa-history")),
+                             queue: queueFile, unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("qa-unplaced.json")),
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("qa-maps")),
+                             nas: fake, notifier: notes)
+        check("quit: asks while photos are uploading",
+              model.quitCutOff() == "3 photos are uploading to the NAS. Reopening Geotag will resume the upload.", model.quitCutOff() ?? "nil")
+
+        await model.checkNAS()
+        model.announceNASAway()
+        check("nas away: said on opening", model.nasAway && model.photosLine == AppModel.nasAwayText, model.photosLine)
+        check("nas away: and as a notification", notes.posted.contains(AppModel.nasAwayText), "\(notes.posted)")
+        fake.online = true
+        await model.checkNAS()
+        check("nas away: goes once the NAS answers", !model.nasAway && model.photosLine.isEmpty, model.photosLine)
+
+        let idle = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("qa2-lib"))),
+                            peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("qa2-people.json")),
+                            history: HistoryStoreFolder(folder: scratch.appendingPathComponent("qa2-history")),
+                            queue: QueueStoreFile(url: scratch.appendingPathComponent("qa2-queue.json")),
+                            unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("qa2-unplaced.json")),
+                            secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("qa2-maps")),
+                            nas: FakeNAS(root: scratch.appendingPathComponent("QA2-NAS")), notifier: RecordingNotifier())
+        check("quit: nothing going on, no question", idle.quitCutOff() == nil)
+        await idle.checkNAS()
+        idle.announceNASAway()
+        check("nas away: nothing waiting, nothing said", !idle.nasAway && idle.photosLine.isEmpty)
     }
 
     /// The map window opens by itself after a card is read only when one of

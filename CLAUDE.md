@@ -186,7 +186,8 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   too (0.14.4, David, 18 October 2026). Such a slot calls itself internal,
   so an internal FAT or exFAT disk counts when it is removable or ejectable
   or its protocol is Secure Digital; the Mac's own disks never are. Not tried
-  on a real slot: David's Mac mini has none. The self-test asks the Mac about
+  on a real slot: David's Mac mini has none. His second Mac is a MacBook Air
+  (1 November 2026), on which he uses a card in an adapter. The self-test asks the Mac about
   each of its own disks and checks none is taken.
 - Eject forces the whole disk closed (`kDADiskUnmountOptionForce |
   kDADiskUnmountOptionWhole`, on the whole disk, never a partition) and
@@ -390,6 +391,8 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   "Not set up" (no address, or nobody with a NAS folder). It used to wait for
   something to send, and read "Not tried yet" while everything was on the
   NAS (David, 18 October 2026).
+- Notifications come in kinds, one of each showing at a time (identifier
+  `geotag-<kind>`): `nas`, `card`, `power`, `nas-away`.
 - A Mac notification per finished batch (`MacNotifier`, one at a time under
   the identifier `geotag-nas`): "19 photos are on the NAS." or "17 photos are
   on the NAS. 2 were not sent." Never per photo: not while a card is being
@@ -464,11 +467,17 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   the menu never shows "5 saved."
 - Closing the window leaves Geotag working, as before.
 
-## Quitting (0.14.7, 18 October 2026)
+## Quitting (0.14.7, 18 October 2026; asks first from 0.16.0)
 
-- Command-Q always quits, whatever is open (David). `Quitting.now()` is the
-  one way out: the key watch in `AppDelegate`, the menu's Quit and quit
-  events (the Dock, a log-out) all go through it.
+- Command-Q and the menu's Quit ask first while photos are being saved or
+  are on their way to the NAS (`Quitting.asked()`, the words from
+  `AppModel.quitCutOff()`): "Are you sure?", what would be cut off and that
+  reopening resumes it, with Cancel (Return) and "Yes, Quit anyway". David,
+  1 November 2026: a Command-Q meant for another app stopped a save of
+  Amanda's card. With nothing going on, Command-Q quits at once, whatever is
+  open. Quit events (the Dock, a log-out) never ask.
+- `Quitting.now()` is the one way out: the key watch in `AppDelegate`, the
+  menu's Quit (after asking) and quit events all go through it.
 - The Mac refuses to quit while a sheet is open ("App termination blocked
   by modal sheet" in its log), and SwiftUI shows a sheet again within a
   twentieth of a second of it being closed from outside, because its
@@ -528,6 +537,36 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   (`TrackLibrary.refresh(loading:)`). Before 0.15.0 the line from before
   the refresh stayed up, and read "not set up in Settings" on a Mac that
   had just saved its key (David, 1 November 2026).
+
+## The card comes out as soon as it can (0.16.0, 1 November 2026)
+
+- Sending to the NAS goes from the Mac's copies, so the card is needed only
+  while photos are copied off it. When a save ends with every photo saved
+  (not stopped, none failed), Geotag ejects the card itself and says
+  "EOS_DIGITAL can come out. 340 photos are on this Mac; the NAS copies go
+  from there.", with a `card` notification. Stopped, or with photos not
+  saved, the card stays and the line says why, as before. Not tried on a
+  real card by the self-test: scratch cards have no disk to eject.
+- Saving says the time left at the pace so far ("Saving 340 of 3,630, about
+  12 min left", `Remaining`, from the third photo and five seconds on), as
+  does sending, on the Queue page and in the menu bar ("Sending to the NAS:
+  12 of 200, about 30 min left"). A NAS break restarts the pace.
+- On battery (`PowerPort`, the Mac's own estimate through IOKit), when the
+  save would outlast the battery the line adds "Connect to power: about 25
+  min of saving left, the battery has about 15 min." and one `power`
+  notification per save. Recomputed every photo, so it goes once plugged in.
+  A Mac on power or with no battery never sees it.
+
+## NAS away on opening (0.16.0, 1 November 2026)
+
+- As Geotag opens, with photos waiting and no answer from the NAS at either
+  address (`announceNASAway`), it says "The NAS isn't answering. If you're
+  away from home, turn on Tailscale; otherwise check the connection." on
+  the Photos page (with Open Tailscale), on the Queue page and as a
+  `nas-away` notification. It goes by itself once the NAS answers.
+- Tailscale is found by its bundle id (`io.tailscale.ipn.macos` from the
+  App Store, `io.tailscale.ipn.macsys` from Tailscale's site); no button
+  without it.
 
 ## Tests never touch David's own records
 

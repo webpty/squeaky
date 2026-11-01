@@ -17,7 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         quitWatch = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let keys = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.capsLock, .numericPad, .function])
             guard keys == .command, event.charactersIgnoringModifiers?.lowercased() == "q" else { return event }
-            Quitting.now()
+            Quitting.asked()
             return nil
         }
         Quitting.takeQuitEvents()
@@ -58,7 +58,7 @@ struct GeotagApp: App {
             CommandGroup(replacing: .newItem) {}
             // The menu's Quit goes the way Command-Q does.
             CommandGroup(replacing: .appTermination) {
-                Button("Quit Geotag") { Quitting.now() }
+                Button("Quit Geotag") { Quitting.asked() }
                     .keyboardShortcut("q", modifiers: .command)
             }
             // Command-comma opens Settings, in Geotag's own window.
