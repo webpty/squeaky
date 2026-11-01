@@ -7,7 +7,13 @@ Not for David. He never needs a command.
 ./build.sh install    # and copies it to /Applications
 ```
 
-Only the command line developer tools are needed. There is no Xcode project:
+Only the command line developer tools are needed (Command Line Tools for
+Xcode 26.6, Swift 6.3, builds it on both Macs). On a Mac updated from old
+tools, `softwareupdate` can leave the 2023
+`PackageDescription.swiftmodule/*.private.swiftinterface` files behind, and
+every manifest then fails to link (`Package.__allocating_init` undefined).
+Move those two files out (done on the second Mac, 1 November 2026; they sit
+in `/Library/Developer/CLT-old-2023`). There is no Xcode project:
 `build.sh` compiles with Swift Package Manager, assembles the bundle by hand,
 writes `Info.plist` and signs the bundle ad hoc.
 
