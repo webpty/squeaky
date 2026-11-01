@@ -617,7 +617,8 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   unplaced and people, and a `FakeNAS`. The defaults are his real files: on
   17 October 2026 a test without its own `unplaced:` added 15 rows to his
   `unplaced.json` (taken out the same day). The run ends by checking his
-  `people.json`, `queue.json`, `unplaced.json` and History are as they were.
+  `people.json`, `queue.json`, `unplaced.json`, `temperatures.json` and History
+  are as they were.
 
 ## Architecture
 
