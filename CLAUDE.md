@@ -479,6 +479,55 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   written as it changes.
 - The self-test runs a copy of itself with a sheet open and checks it quits
   the Mac's own way (`GEOTAG_QUIT_CHILD`).
+- The run's last check, that his records are as they were, also fails when
+  his own Geotag saves or sends while the test runs: look at what changed
+  before blaming a test (1 November 2026).
+
+## Setting up a Mac (0.15.0, 1 November 2026)
+
+- `SetupView`, a sheet over the window, in five steps: whose Mac this is,
+  each person's save folder, the track service, the NAS with each person's
+  NAS folder, and opening when a card is inserted (the switch, with one line
+  on why it means starting at login). "Later" closes it; Done marks it done
+  (`setupDone`). "Set Up This Mac…" in the Geotag menu opens it again.
+- It shows by itself only when `needsSetup`: not done, no track service
+  address and nobody with a save folder. A Mac set up before 0.15.0 is
+  marked done at launch and never sees it unasked.
+- Whose Mac (`macOwner`) only puts that person first: first in "Whose is
+  this card?" (and Return picks them when the card is new) and in History.
+  Every card still asks whose it is, and the Person tile's pencil still
+  changes it (David: it is no substitute for choosing per card).
+- Save folders: several people on one Mac, any left empty.
+- Track service: the address is filled in with https://geotrac.cc when
+  empty and stays editable. Each Mac has its own key, made by hand in the
+  track service (`../tracks`); Geotag cannot make one.
+- One NAS per Mac.
+
+## No button does nothing (0.15.0, 1 November 2026)
+
+- David: every button that cannot do its work says why, with the way to the
+  fix. Buttons are greyed out only while Geotag is busy (a spinner shows),
+  when Save has nothing changed, at the ends of Previous and Next, and for
+  Retry failed with nothing failed.
+- The Photos line carries a fix (`PhotosFix`) shown as a button beside it:
+  choose whose card, Choose folder… (keeps the folder for that person, then
+  saves), Open Settings (track service, camera list) or Edit camera (opens
+  that camera's editor in Settings, `cameraToEdit`). Any new line clears it.
+- Save photos: no card, nobody chosen, no save folder, save folder not
+  found, nothing new. See photos on the map (`mapRefusal`): no card, nobody
+  chosen, no photos, nothing new, all with their own location, no times, a
+  camera not on the list or with no zone, no tracks. Name place… with
+  nothing selected, Eject with no card, Use this offset with nothing to
+  line up, Add camera with nobody, Save on a person with no name or a
+  camera with no model: each says so.
+
+## Tracks loading (0.15.0, 1 November 2026)
+
+- The Tracks line says "Loading tracks" the moment a refresh starts, then
+  "Loading tracks: 12 of 51" as each new track's points come in
+  (`TrackLibrary.refresh(loading:)`). Before 0.15.0 the line from before
+  the refresh stayed up, and read "not set up in Settings" on a Mac that
+  had just saved its key (David, 1 November 2026).
 
 ## Tests never touch David's own records
 

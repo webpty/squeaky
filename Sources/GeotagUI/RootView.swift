@@ -16,6 +16,10 @@ public struct RootView: View {
                 .background(Color(nsColor: .windowBackgroundColor))
         }
         .navigationTitle(appName)
+        .sheet(isPresented: $model.settingUp) {
+            SetupView()
+                .textSelection(.enabled)
+        }
         // Every word in Geotag can be selected and copied.
         .textSelection(.enabled)
     }

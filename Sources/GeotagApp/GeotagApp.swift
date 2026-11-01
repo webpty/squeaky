@@ -68,6 +68,10 @@ struct GeotagApp: App {
                     Windows.bringForward()
                 }
                 .keyboardShortcut(",", modifiers: .command)
+                Button("Set Up This Mac…") {
+                    model.settingUp = true
+                    Windows.bringForward()
+                }
             }
             CommandMenu("Tracks") {
                 TracksMenu(model: model)

@@ -115,6 +115,7 @@ struct PersonEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State var person: Person
     let onSave: (Person) -> Void
+    @State private var line = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: Style.gap) {
@@ -147,6 +148,7 @@ struct PersonEditor: View {
                 }
             }
             HStack {
+                StatusLine(text: line)
                 Spacer()
                 Button {
                     dismiss()
@@ -156,13 +158,16 @@ struct PersonEditor: View {
                 .keyboardShortcut(.cancelAction)
                 Button {
                     person.name = person.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !person.name.isEmpty else {
+                        line = "Type a name."
+                        return
+                    }
                     onSave(person)
                     dismiss()
                 } label: {
                     Text("Save").buttonLabel()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(person.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(Style.pad * 1.5)
@@ -210,6 +215,7 @@ struct CamerasCard: View {
     @EnvironmentObject var model: AppModel
     @State private var editing: Camera?
     @State private var removing: Camera?
+    @State private var line = ""
 
     var body: some View {
         Card(title: "Cameras") {
@@ -242,15 +248,23 @@ struct CamerasCard: View {
                     if camera.id != model.book.cameras.last?.id { Divider() }
                 }
             }
-            Button {
-                if let first = model.book.people.first {
-                    editing = Camera(personId: first.id, model: "", zone: .notSet)
+            HStack(spacing: Style.gap) {
+                Button {
+                    if let first = model.book.people.first {
+                        line = ""
+                        editing = Camera(personId: first.id, model: "", zone: .notSet)
+                    } else {
+                        line = "Add a person first, under People."
+                    }
+                } label: {
+                    Text("Add camera").buttonLabel()
                 }
-            } label: {
-                Text("Add camera").buttonLabel()
+                StatusLine(text: line)
             }
-            .disabled(model.book.people.isEmpty)
         }
+        // Sent here from the Photos page to set a camera's details.
+        .onAppear(perform: editAsked)
+        .onChange(of: model.cameraToEdit) { _, _ in editAsked() }
         .sheet(item: $editing) { camera in
             CameraEditor(camera: camera, people: model.book.people) { saved in
                 model.save(saved)
@@ -264,6 +278,12 @@ struct CamerasCard: View {
             }
             Button("Cancel", role: .cancel) { removing = nil }
         }
+    }
+
+    private func editAsked() {
+        guard let id = model.cameraToEdit else { return }
+        model.cameraToEdit = nil
+        editing = model.book.cameras.first { $0.id == id }
     }
 }
 
@@ -500,7 +520,6 @@ struct CameraEditor: View {
                     Text("Save").buttonLabel()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(camera.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(Style.pad * 1.5)
@@ -555,6 +574,10 @@ struct CameraEditor: View {
 
     private func save() {
         camera.model = camera.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !camera.model.isEmpty else {
+            line = "Type the model as the camera writes it, or read it from a photo."
+            return
+        }
         switch zone {
         case .fromPhoto: camera.zone = .fromPhoto
         case .notSet: camera.zone = .notSet

@@ -37,6 +37,31 @@ public enum Screen: String, CaseIterable, Identifiable {
     }
 }
 
+/// What a button could not do needs, offered beside the line that says so
+/// (David, 1 November 2026: never a button that does nothing).
+public enum PhotosFix: Equatable {
+    /// Whose card this is, for a card read for nobody yet.
+    case chooseWhose
+    /// The person's save folder, then the save goes on.
+    case chooseFolder(UUID)
+    /// The track service, in Settings.
+    case trackService
+    /// A camera's details, opened in Settings.
+    case camera(UUID)
+    /// The camera list, in Settings.
+    case cameras
+
+    public var title: String {
+        switch self {
+        case .chooseWhose: return "Choose whose card"
+        case .chooseFolder: return "Choose folder…"
+        case .trackService: return "Open Settings"
+        case .camera: return "Edit camera"
+        case .cameras: return "Open Settings"
+        }
+    }
+}
+
 @MainActor
 public final class AppModel: ObservableObject {
     @Published public var appearance = Appearance.system
@@ -90,7 +115,10 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var importPerson: UUID?
     @Published public private(set) var rows: [ImportRow] = []
     @Published public private(set) var photosBusy = false { didSet { refreshWork() } }
-    @Published public private(set) var photosLine = "" { didSet { refreshWork() } }
+    /// Any new line clears the fix offered with the last one.
+    @Published public private(set) var photosLine = "" { didSet { photosFix = nil; refreshWork() } }
+    /// The way to what the Photos line says is missing, as a button beside it.
+    @Published public private(set) var photosFix: PhotosFix?
     /// How far reading the card has got.
     private var readProgress: (done: Int, total: Int)?
     @Published public private(set) var openOnCard = true
@@ -273,6 +301,7 @@ public final class AppModel: ObservableObject {
         if let raw = defaults.string(forKey: "appearance"), let mode = Appearance(rawValue: raw) {
             appearance = mode
         }
+        macOwner = defaults.string(forKey: "macOwner").flatMap(UUID.init(uuidString:)).flatMap { id in book.person(id) != nil ? id : nil }
         serviceAddress = defaults.string(forKey: "trackServiceAddress") ?? ""
         role = defaults.string(forKey: "trackServiceRole").flatMap(KeyRole.init(rawValue:))
         readSecrets()
@@ -309,11 +338,48 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: Setting up this Mac
+
+    /// The setup is showing: once on a new Mac, and from the Geotag menu.
+    @Published public var settingUp = false
+    /// Whose Mac this is: first in line when a new card asks whose it is.
+    @Published public private(set) var macOwner: UUID?
+
+    public func setMacOwner(_ id: UUID?) {
+        macOwner = id
+        defaults.set(id?.uuidString, forKey: "macOwner")
+    }
+
+    /// A Mac set up before the setup existed has a track service or a save
+    /// folder already, and never sees it unasked.
+    public var needsSetup: Bool {
+        guard !defaults.bool(forKey: "setupDone") else { return false }
+        return serviceAddress.isEmpty && !book.people.contains { !($0.saveFolder ?? "").isEmpty }
+    }
+
+    public func finishSetup() {
+        defaults.set(true, forKey: "setupDone")
+        settingUp = false
+    }
+
+    /// Everyone, whose Mac this is first.
+    public var peopleOwnerFirst: [Person] {
+        guard let owner = macOwner, let i = book.people.firstIndex(where: { $0.id == owner }) else { return book.people }
+        var people = book.people
+        people.insert(people.remove(at: i), at: 0)
+        return people
+    }
+
     /// At launch: show what this Mac has, then ask the service, and again every ten minutes.
     public func start() async {
         // A window opened again runs this again; the rest is once per launch.
         guard !started else { return }
         started = true
+        if needsSetup {
+            settingUp = true
+        } else {
+            defaults.set(true, forKey: "setupDone")
+        }
         applyAppearance()
         startCards()
         startSending()
@@ -521,22 +587,34 @@ public final class AppModel: ObservableObject {
     /// one at a time, checking each; records them in History and puts them on
     /// the upload queue. Stop, or Eject, ends it after the current photo.
     public func savePhotos() async {
-        guard !saving, let personId = importPerson, let person = book.person(personId), let source else { return }
+        guard !saving else { return }
+        guard let source else {
+            photosLine = "Insert a card."
+            return
+        }
+        guard let personId = importPerson, let person = book.person(personId) else {
+            say("Choose whose card \(source.name) is.", fix: .chooseWhose)
+            return
+        }
         guard let folder = person.saveFolder, !folder.isEmpty else {
-            photosLine = "\(person.name) has no save folder yet. Choose one in Settings."
+            say("\(person.name) has no save folder yet.", fix: .chooseFolder(personId))
             return
         }
         guard let tool = exifTool else {
-            photosLine = "ExifTool is missing from Geotag."
+            photosLine = "ExifTool is missing from Geotag. Install Geotag again."
             return
         }
         var isFolder: ObjCBool = false
         guard FileManager.default.fileExists(atPath: folder, isDirectory: &isFolder), isFolder.boolValue else {
-            photosLine = "\(person.name)'s save folder can't be found: \(folder). If it is on a drive, plug the drive in."
+            say("\(person.name)'s save folder can't be found: \(folder). If it is on a drive, plug the drive in, or choose another folder.",
+                fix: .chooseFolder(personId))
             return
         }
         let todo = readyToSave
-        guard !todo.isEmpty else { return }
+        guard !todo.isEmpty else {
+            photosLine = rows.isEmpty ? "There are no photos on \(source.name)." : "Every photo on \(source.name) is already saved."
+            return
+        }
         // Earlier photos being placed write the same records: wait for them.
         while placingLater { try? await Task.sleep(for: .milliseconds(200)) }
         var later = (try? unplaced.load()) ?? []
@@ -638,6 +716,80 @@ public final class AppModel: ObservableObject {
         stopAsked = true
     }
 
+    /// A line for the Photos page, with the way to what it says is missing.
+    private func say(_ line: String, fix: PhotosFix?) {
+        photosLine = line
+        photosFix = fix
+    }
+
+    /// A line for the Photos page from one of its buttons.
+    public func tell(_ line: String) {
+        photosLine = line
+    }
+
+    /// Settings opens on this camera's details, from the Photos page.
+    @Published public var cameraToEdit: UUID?
+
+    /// The fix offered beside the Photos line, taken.
+    public func take(_ fix: PhotosFix) {
+        switch fix {
+        case .chooseWhose:
+            if let source { askingWhose = source }
+        case .chooseFolder(let id):
+            guard var person = book.person(id),
+                  let url = Folders.choose(startingAt: person.saveFolder) else { return }
+            person.saveFolder = url.path
+            save(person)
+            photosLine = "\(person.name)'s photos are saved in \(Folders.shown(url.path))."
+            Task { await savePhotos() }
+        case .trackService, .cameras:
+            screen = .settings
+        case .camera(let id):
+            screen = .settings
+            cameraToEdit = id
+        }
+    }
+
+    /// "See photos on the map": the map window, or why there is nothing to show on it.
+    public func openMap() {
+        if let why = mapRefusal() {
+            say(why.line, fix: why.fix)
+        } else {
+            // What it said was missing is there now: that line goes.
+            if photosFix != nil { photosLine = "" }
+            aligning = true
+        }
+    }
+
+    /// Why the map window has nothing to show, and the way to it; nil when it has.
+    public func mapRefusal() -> (line: String, fix: PhotosFix?)? {
+        guard let source else { return ("Insert a card.", nil) }
+        guard let personId = importPerson else { return ("Choose whose card \(source.name) is.", .chooseWhose) }
+        guard !rows.isEmpty else { return ("There are no photos on \(source.name).", nil) }
+        guard !alignable.isEmpty else {
+            let fresh = rows.filter(\.ticked)
+            if fresh.isEmpty { return ("Every photo on \(source.name) is already saved.", nil) }
+            let unplaced = fresh.filter { !$0.photo.hasLocation }
+            if unplaced.isEmpty { return ("Every new photo on \(source.name) has its own location.", nil) }
+            let timed = unplaced.filter { $0.photo.taken != nil }
+            if timed.isEmpty { return ("None of the new photos has a time.", nil) }
+            for row in timed {
+                guard let model = row.photo.model else { continue }
+                guard let camera = book.camera(personId: personId, model: model) else {
+                    return ("The \(model) is not on the camera list. Add it in Settings, under Cameras.", .cameras)
+                }
+                if camera.zone == .notSet {
+                    return ("The \(camera.model)'s time zone is not set.", .camera(camera.id))
+                }
+            }
+            return ("None of the new photos names its camera.", nil)
+        }
+        guard !tracks.isEmpty else {
+            return ("There are no tracks on this Mac yet. Set up the track service in Settings.", .trackService)
+        }
+        return nil
+    }
+
     /// Where a photo is, for naming its folder: the track's position written
     /// into it, or its own; nil for one saved without a location.
     static func spot(_ item: SaveItem) -> (lat: Double, lon: Double)? {
@@ -666,7 +818,10 @@ public final class AppModel: ObservableObject {
 
     /// Stops reading, forces the card off now and says when it can come out.
     public func eject() {
-        guard let card = source, let bsd = card.bsd else { return }
+        guard let card = source, let bsd = card.bsd else {
+            photosLine = "No card is held to eject."
+            return
+        }
         readingRound += 1
         ejecting = bsd
         askingWhose = nil
@@ -1450,6 +1605,8 @@ public final class AppModel: ObservableObject {
         }
         tracksBusy = true
         defer { tracksBusy = false }
+        // At once, so no line from before stays up while the tracks come in.
+        tracksLine = "Loading tracks"
         if role == nil { await testService() }
         guard let role else {
             tracks = await library.listed()
@@ -1458,7 +1615,9 @@ public final class AppModel: ObservableObject {
         }
         await loadMaps(service)
         if thumbnails.forgetFailures() { mapsRound += 1 }
-        let report = await library.refresh(service: service, role: role, pullStrava: pullStrava)
+        let report = await library.refresh(service: service, role: role, pullStrava: pullStrava) { @MainActor [weak self] done, total in
+            self?.tracksLine = "Loading tracks: \(done.formatted()) of \(total.formatted())"
+        }
         tracks = await library.listed()
         tracksLine = report.line
         if !rows.isEmpty || report.added > 0 {

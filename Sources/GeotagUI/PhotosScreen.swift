@@ -110,18 +110,23 @@ struct PhotosScreen: View {
         VStack(alignment: .leading, spacing: Style.gap) {
             HStack(spacing: Style.gap) {
                 ScreenTitle(text: "Photos")
+                // Clickable whatever is missing: the line below says what, and how to fix it.
                 Button {
-                    model.aligning = true
+                    model.openMap()
                 } label: {
                     Text("See photos on the map").buttonLabel()
                 }
-                .disabled(model.photosBusy || model.saving || model.alignable.isEmpty)
+                .disabled(model.photosBusy || model.saving)
                 Button {
-                    naming = true
+                    if selection.isEmpty {
+                        model.tell("Select photos in the list first.")
+                    } else {
+                        naming = true
+                    }
                 } label: {
                     Text("Name place…").buttonLabel()
                 }
-                .disabled(model.saving || selection.isEmpty)
+                .disabled(model.saving)
                 if model.saving {
                     Button {
                         model.stopSaving()
@@ -135,7 +140,7 @@ struct PhotosScreen: View {
                         Text("Save photos").buttonLabel()
                     }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(model.photosBusy || model.readyToSave.isEmpty)
+                    .disabled(model.photosBusy)
                 }
             }
 
@@ -179,6 +184,14 @@ struct PhotosScreen: View {
                 StatusLine(text: model.photosLine.isEmpty ? PhotoText.clockNote(model.wrongClocks) : model.photosLine, lines: 2,
                            busy: model.photosBusy,
                            progress: model.saving ? Double(model.saveDone) / Double(max(model.saveTotal, 1)) : nil)
+                if let fix = model.photosFix {
+                    Button {
+                        model.take(fix)
+                    } label: {
+                        Text(fix.title).buttonLabel()
+                    }
+                    .fixedSize()
+                }
                 Spacer()
                 Menu {
                     ForEach(Self.toggleable, id: \.id) { column in
@@ -458,11 +471,12 @@ struct WhoseCard: View {
     let source: PhotoSource
 
     var body: some View {
-        let last = model.lastPerson(for: source)
+        // Last time's owner, else whose Mac this is, is the one Return picks.
+        let last = model.lastPerson(for: source) ?? model.macOwner
         VStack(alignment: .leading, spacing: Style.gap) {
             Text("Whose is \(source.name)?").font(.headline).lineLimit(1)
             HStack(spacing: 8) {
-                ForEach(model.book.people) { person in
+                ForEach(model.peopleOwnerFirst) { person in
                     if person.id == last {
                         Button {
                             pick(person.id)
@@ -548,7 +562,7 @@ struct HistoryScreen: View {
         }
         .padding(Style.pad * 1.5)
         .onAppear {
-            if model.historyPerson == nil { model.showHistory(model.book.people.first?.id) }
+            if model.historyPerson == nil { model.showHistory(model.peopleOwnerFirst.first?.id) }
         }
     }
 }
@@ -647,6 +661,7 @@ public struct PhotosScreenProbe: View {
 public struct SheetProbe: View {
     public enum Kind: String, CaseIterable, Sendable {
         case whose, person, camera, settings, sidebar, namePlace, lens
+        case setupOwner, setupFolders, setupService, setupNAS, setupCards
     }
 
     @EnvironmentObject var model: AppModel
@@ -675,6 +690,11 @@ public struct SheetProbe: View {
             case .lens:
                 LensEditor(lens: model.book.lenses.first
                            ?? Lens(model: "RF600mm F4 L IS USM", serial: nil, personId: UUID(), camera: "Canon EOS R5m2", seen: nil)) { _ in }
+            case .setupOwner: SetupView(at: .owner)
+            case .setupFolders: SetupView(at: .folders)
+            case .setupService: SetupView(at: .service)
+            case .setupNAS: SetupView(at: .nas)
+            case .setupCards: SetupView(at: .cards)
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))

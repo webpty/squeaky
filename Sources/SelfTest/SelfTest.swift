@@ -72,6 +72,9 @@ struct SelfTest {
         await settingsFeedback(scratch)
         await naming(scratch)
         await mapOpens(scratch)
+        await buttonsSay(scratch)
+        setupNeeded(scratch)
+        await tracksLoading(scratch)
         quitting()
         download(scratch)
         cardKinds()
@@ -1711,6 +1714,9 @@ extension SelfTest {
         await draw("09-person", SheetProbe(.person), 560, 230)
         await draw("10-camera", SheetProbe(.camera), 600, 320)
         await draw("10b-lens", SheetProbe(.lens), 460, 150)
+        for (i, kind) in [SheetProbe.Kind.setupOwner, .setupFolders, .setupService, .setupNAS, .setupCards].enumerated() {
+            await draw("11-setup-\(i + 1)", SheetProbe(kind), 680, 460)
+        }
 
         // The Tracks window and the track viewer.
         await draw("11-tracks", TracksScreenProbe(), 900, 620, wait: key == nil ? 40 : 100)
@@ -2368,6 +2374,196 @@ struct StatusProbe: View {
 }
 
 extension SelfTest {
+    /// Every button that cannot do its work says why, with the way to the fix
+    /// beside it (David, 1 November 2026), never nothing at all.
+    @MainActor
+    static func buttonsSay(_ scratch: URL) async {
+        let fm = FileManager.default
+        let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("bs-lib"))),
+                             peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("bs-people.json")),
+                             history: HistoryStoreFolder(folder: scratch.appendingPathComponent("bs-history")),
+                             queue: QueueStoreFile(url: scratch.appendingPathComponent("bs-queue.json")),
+                             unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("bs-unplaced.json")),
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("bs-maps")),
+                             exifTool: ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool")),
+                             nas: FakeNAS(root: scratch.appendingPathComponent("BS-NAS")), notifier: RecordingNotifier(), places: FakePlaces())
+
+        await model.savePhotos()
+        check("buttons: Save photos with no card says so", model.photosLine == "Insert a card." && model.photosFix == nil, model.photosLine)
+        model.openMap()
+        check("buttons: the map with no card says so", model.photosLine == "Insert a card." && !model.aligning, model.photosLine)
+        model.eject()
+        check("buttons: Eject with no card says so", model.photosLine == "No card is held to eject.", model.photosLine)
+
+        let root = scratch.appendingPathComponent("BS-CARD")
+        let folder = root.appendingPathComponent("DCIM/100CANON")
+        try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        for i in 0..<3 {
+            writePhoto(folder.appendingPathComponent(String(format: "IMG_%04d.JPG", i + 1)), model: "Canon EOS R5m2", zone: "-03:00",
+                       taken: String(format: "2026:10:16 18:%02d:00", i * 5))
+        }
+        let card = scratchCard(root)
+        model.choose(card)
+        check("buttons: a new card asks whose it is", model.askingWhose != nil)
+        model.askingWhose = nil
+        await model.savePhotos()
+        check("buttons: Save photos for nobody yet offers to choose whose card",
+              model.photosLine == "Choose whose card \(card.name) is." && model.photosFix == .chooseWhose, model.photosLine)
+        model.openMap()
+        check("buttons: the map for nobody yet offers the same", model.photosFix == .chooseWhose && !model.aligning, model.photosLine)
+        model.take(.chooseWhose)
+        check("buttons: the fix asks whose the card is", model.askingWhose?.id == card.id)
+        model.askingWhose = nil
+
+        let david = model.book.people[0]
+        await model.read(card, for: david.id)
+        await model.savePhotos()
+        check("buttons: no save folder offers to choose one",
+              model.photosLine == "\(david.name) has no save folder yet." && model.photosFix == .chooseFolder(david.id), model.photosLine)
+        model.tell("Something else")
+        check("buttons: a new line clears the fix", model.photosFix == nil)
+
+        var moved = david
+        moved.saveFolder = scratch.appendingPathComponent("BS-GONE").path
+        model.save(moved)
+        await model.savePhotos()
+        check("buttons: a save folder not found offers to choose another",
+              model.photosLine.hasPrefix("\(david.name)'s save folder can't be found") && model.photosFix == .chooseFolder(david.id), model.photosLine)
+
+        // The R5 Mark II's zone comes from the photo; with none set, the map names the camera.
+        guard let camera = model.book.camera(personId: david.id, model: "Canon EOS R5m2") else {
+            check("buttons: David's R5 Mark II is on the list", false)
+            return
+        }
+        var unzoned = camera
+        unzoned.zone = .notSet
+        model.save(unzoned)
+        model.openMap()
+        check("buttons: the map names a camera with no time zone, with the way to it",
+              model.photosLine == "The Canon EOS R5m2's time zone is not set." && model.photosFix == .camera(camera.id) && !model.aligning,
+              model.photosLine)
+        model.take(.camera(camera.id))
+        check("buttons: the fix opens Settings on that camera", model.screen == .settings && model.cameraToEdit == camera.id)
+        model.cameraToEdit = nil
+        model.screen = .photos
+        model.save(camera)
+
+        model.openMap()
+        check("buttons: the map with no tracks offers the track service",
+              model.photosFix == .trackService && model.photosLine.hasPrefix("There are no tracks on this Mac yet") && !model.aligning,
+              model.photosLine)
+        model.take(.trackService)
+        check("buttons: the fix opens Settings", model.screen == .settings)
+        model.screen = .photos
+
+        let start = 1_792_162_800
+        let gpx = scratch.appendingPathComponent("bs-walk.gpx")
+        writeGPX(gpx, start: start, count: 1800, name: "Ushuaia walk", lat: -54.812, lon: -68.33)
+        _ = try? await model.library.importFile(gpx, role: .reader)
+        await model.showLibrary()
+        model.openMap()
+        check("buttons: with a track, the map opens and the old line goes", model.aligning && model.photosFix == nil && model.photosLine.isEmpty,
+              model.photosLine)
+        model.aligning = false
+
+        // Saved for real, then nothing new is left on the card.
+        moved.saveFolder = scratch.appendingPathComponent("BS-SAVED").path
+        try? fm.createDirectory(atPath: moved.saveFolder!, withIntermediateDirectories: true)
+        model.save(moved)
+        await model.savePhotos()
+        await model.savePhotos()
+        check("buttons: Save photos with nothing new says so", model.photosLine == "Every photo on \(card.name) is already saved.", model.photosLine)
+        model.openMap()
+        check("buttons: the map with nothing new says so", model.photosLine == "Every photo on \(card.name) is already saved." && !model.aligning,
+              model.photosLine)
+    }
+
+    /// The setup shows on a new Mac only: one set up before it existed has a
+    /// track service or a save folder, and is left alone.
+    @MainActor
+    static func setupNeeded(_ scratch: URL) {
+        func model(_ name: String, _ book: PeopleBook) -> AppModel {
+            let people = PeopleStoreFile(url: scratch.appendingPathComponent("\(name)-people.json"))
+            try? people.save(book)
+            return AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("\(name)-lib"))),
+                            peopleStore: people, history: HistoryStoreFolder(folder: scratch.appendingPathComponent("\(name)-history")),
+                            queue: QueueStoreFile(url: scratch.appendingPathComponent("\(name)-queue.json")),
+                            unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("\(name)-unplaced.json")),
+                            secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("\(name)-maps")),
+                            nas: FakeNAS(root: scratch.appendingPathComponent("\(name)-NAS")), notifier: RecordingNotifier())
+        }
+        let defaults = UserDefaults.standard
+        let kept = (defaults.object(forKey: "setupDone"), defaults.string(forKey: "trackServiceAddress"), defaults.string(forKey: "macOwner"))
+        defaults.removeObject(forKey: "setupDone")
+        defaults.removeObject(forKey: "trackServiceAddress")
+
+        let fresh = model("su-new", .family())
+        check("setup: a new Mac needs it", fresh.needsSetup)
+        var withFolder = PeopleBook.family()
+        withFolder.people[1].saveFolder = scratch.path
+        check("setup: a Mac with a save folder does not", !model("su-folder", withFolder).needsSetup)
+        defaults.set("https://example.invalid", forKey: "trackServiceAddress")
+        check("setup: a Mac with a track service does not", !model("su-service", .family()).needsSetup)
+        defaults.removeObject(forKey: "trackServiceAddress")
+        fresh.settingUp = true
+        fresh.finishSetup()
+        check("setup: once done, never again unasked", !fresh.settingUp && !model("su-again", .family()).needsSetup)
+
+        let amanda = fresh.book.people[1]
+        fresh.setMacOwner(amanda.id)
+        check("setup: whose Mac it is comes first", fresh.peopleOwnerFirst.first?.id == amanda.id
+              && fresh.peopleOwnerFirst.count == fresh.book.people.count)
+        check("setup: and is kept", model("su-owner", fresh.book).macOwner == amanda.id)
+
+        if let done = kept.0 { defaults.set(done, forKey: "setupDone") } else { defaults.removeObject(forKey: "setupDone") }
+        defaults.set(kept.1, forKey: "trackServiceAddress")
+        defaults.set(kept.2, forKey: "macOwner")
+    }
+
+    /// A service handing out tracks slowly, to see the loading line.
+    final class SlowService: TrackServicePort {
+        let items: [ServiceTrack]
+        init(count: Int) {
+            items = (0..<count).map { i in
+                let json = #"{"id":"slow-\#(i)","source":"strava","name":"Walk \#(i)","start":\#(1_792_000_000 + i * 7200),"end":\#(1_792_000_060 + i * 7200),"pointCount":2,"bounds":{"minLat":-54.8,"maxLat":-54.79,"minLon":-68.33,"maxLon":-68.32}}"#
+                return try! JSONDecoder().decode(ServiceTrack.self, from: Data(json.utf8))
+            }
+        }
+        func status() async throws -> ServiceStatus { throw ServiceError.offline }
+        func maps() async throws -> MapSource { throw ServiceError.offline }
+        func tracks() async throws -> [ServiceTrack] { items }
+        func points(_ id: String) async throws -> TrackPoints {
+            try await Task.sleep(for: .milliseconds(20))
+            guard let item = items.first(where: { $0.id == id }) else { throw ServiceError.offline }
+            return TrackPoints(t: [item.start, item.end], lat: [-54.8, -54.79], lon: [-68.33, -68.32], alt: [nil, nil])
+        }
+        func upload(name: String, fileName: String?, points: TrackPoints) async throws -> UploadAnswer { throw ServiceError.offline }
+        func sync() async throws -> String { "" }
+        func connectLink() async throws -> URL { throw ServiceError.offline }
+        func disconnect() async throws -> String { throw ServiceError.offline }
+    }
+
+    /// While tracks come in, the line says how many of how many.
+    static func tracksLoading(_ scratch: URL) async {
+        let lib = TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("tl-lib")))
+        let seen = Seen()
+        let report = await lib.refresh(service: SlowService(count: 4), role: .reader) { done, total in
+            await seen.add("\(done) of \(total)")
+        }
+        let heard = await seen.all
+        check("tracks: loading says each track as it comes", heard == ["0 of 4", "1 of 4", "2 of 4", "3 of 4", "4 of 4"] && report.added == 4,
+              "\(heard)")
+        let again = Seen()
+        _ = await lib.refresh(service: SlowService(count: 4), role: .reader) { done, total in await again.add("\(done) of \(total)") }
+        let quiet = await again.all
+        check("tracks: nothing new, nothing said", quiet.isEmpty, "\(quiet)")
+    }
+
+    actor Seen {
+        var all: [String] = []
+        func add(_ s: String) { all.append(s) }
+    }
+
     /// The map window opens by itself after a card is read only when one of
     /// the tracks runs within a day of the card's photos (David, 18 October
     /// 2026: a card of September 2025 opened it on an empty world map). The

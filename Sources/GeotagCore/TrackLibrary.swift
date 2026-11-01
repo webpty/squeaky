@@ -79,7 +79,10 @@ public actor TrackLibrary {
     /// this Mac is the owner's, and brings in every track the service has that
     /// this Mac does not. The service pulls by itself all day; asking is for
     /// the Refresh button.
-    public func refresh(service: TrackServicePort, role: KeyRole, pullStrava: Bool = false) async -> RefreshReport {
+    /// `loading` hears how many new tracks have come in of how many, before
+    /// each one and once at the end.
+    public func refresh(service: TrackServicePort, role: KeyRole, pullStrava: Bool = false,
+                        loading: (@Sendable (_ done: Int, _ total: Int) async -> Void)? = nil) async -> RefreshReport {
         var report = RefreshReport()
 
         // A key that only reads cannot upload: what waited stays here.
@@ -96,6 +99,7 @@ public actor TrackLibrary {
             }
             let remote = try await service.tracks()
             let known = Set(all.map(\.id))
+            let total = remote.filter { !known.contains($0.id) }.count
             for item in remote {
                 if known.contains(item.id) {
                     // Names and details can change on the service; keep them in step.
@@ -106,12 +110,14 @@ public actor TrackLibrary {
                     }
                     continue
                 }
+                await loading?(report.added, total)
                 let points = try await service.points(item.id)
                 try store.savePoints(item.id, points)
                 all.append(item.track)
                 try save()
                 report.added += 1
             }
+            if total > 0 { await loading?(report.added, total) }
             try save()
         } catch ServiceError.offline {
             report.offline = true

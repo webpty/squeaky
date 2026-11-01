@@ -20,6 +20,8 @@ struct AlignmentView: View {
     /// The track the photos belong to, chosen by hand: their camera's clock
     /// may be too far out for them to fall on any track by its own times.
     @State private var trackId: String?
+    /// Why "Use this offset" had nothing to keep.
+    @State private var refusal = ""
 
     private var personId: UUID? { model.importPerson }
 
@@ -153,7 +155,8 @@ struct AlignmentView: View {
 
             HStack(spacing: Style.gap) {
                 let away = placed.filter { $0.position == nil }.count
-                StatusLine(text: away == 0 ? "\(placed.count) photos on the track" : "\(placed.count - away) on the track, \(away) away from any track")
+                StatusLine(text: !refusal.isEmpty ? refusal
+                           : away == 0 ? "\(placed.count) photos on the track" : "\(placed.count - away) on the track, \(away) away from any track")
                 Spacer()
                 // The arrow keys move the slider a second at a time.
                 Button("") { extra = max(extra - 1, range.lowerBound) }.keyboardShortcut(.leftArrow, modifiers: []).hidden().frame(width: 0)
@@ -164,7 +167,11 @@ struct AlignmentView: View {
                     Text("Cancel").buttonLabel()
                 }
                 Button {
-                    if let trial { model.save(trial) }
+                    guard let trial else {
+                        refusal = "There are no photos without a location to line up on this card."
+                        return
+                    }
+                    model.save(trial)
                     extra = 0
                     // Saved: the photos now fall on the track by the camera's offset.
                     trackId = nil
@@ -173,7 +180,6 @@ struct AlignmentView: View {
                     Text("Use this offset").buttonLabel()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(trial == nil)
             }
         }
         .padding(Style.pad * 1.5)
