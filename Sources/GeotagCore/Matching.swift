@@ -81,7 +81,20 @@ public enum Moments {
             zone = tz.secondsFromGMT(for: clock.addingTimeInterval(-Double(tz.secondsFromGMT(for: clock))))
         }
         guard let offset = camera.offsetSeconds else { return .failure(.offsetNotSet) }
-        return .success(clock.addingTimeInterval(-Double(zone) - Double(offset + extraOffset)))
+        let utc = clock.addingTimeInterval(-Double(zone))
+        // Set from offset code photos: the clock's drift since is taken off too.
+        let exact = camera.followsReadings ? Drift.offset(at: utc, readings: camera.readings) ?? Double(offset) : Double(offset)
+        return .success(utc.addingTimeInterval(-exact - Double(extraOffset)))
+    }
+
+    /// How far the camera's clock was ahead when this photo was taken at that
+    /// moment, to the hundredth: an offset code photo. Nil without a time or zone.
+    public static func exactOffset(placing photo: ScannedPhoto, camera: Camera, at moment: Date) -> Double? {
+        var onTime = camera
+        onTime.offsetSeconds = 0
+        onTime.readings = []
+        guard case .success(let read) = Moments.moment(photo, camera: onTime) else { return nil }
+        return (read.timeIntervalSince(moment) * 100).rounded() / 100
     }
 
     /// The clock offset that puts this photo at that moment: how a camera
@@ -90,6 +103,7 @@ public enum Moments {
     public static func offset(placing photo: ScannedPhoto, camera: Camera, at moment: Date) -> Int? {
         var onTime = camera
         onTime.offsetSeconds = 0
+        onTime.readings = []
         guard case .success(let read) = Moments.moment(photo, camera: onTime) else { return nil }
         return Int(read.timeIntervalSince(moment).rounded())
     }

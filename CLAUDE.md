@@ -568,6 +568,43 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   App Store, `io.tailscale.ipn.macsys` from Tailscale's site); no button
   without it.
 
+## Offset code and clock drift (0.17.0, 1 November 2026)
+
+- "Show offset code", in Settings, Cameras, next to Add camera, opens a
+  full-screen window (`OffsetCodeView`, Escape closes): the true time to the
+  hundredth, UTC, and a QR code holding it in milliseconds
+  (`OffsetCode.payload`, "geotag-clock:<ms>"), redrawn every frame. The
+  Mac's clock is checked with `sntp` against the server in /etc/ntp.conf
+  (else time.apple.com) and the shown time corrected; offline it says the
+  Mac's clock is shown as it is. The code is drawn 16 pixels to a square:
+  scaled up afterwards it blurred.
+- When a card is read, the first and last five photos of each camera are
+  looked at for a code (Vision, on the Mac's own picture of raw files). A
+  code sets the camera's offset to the hundredth: `ClockReading` added to
+  `Camera.readings`, `offsetSeconds` the rounded value.
+- Drift (`Drift`): fitted through all readings. A photo between two readings
+  gets the offset in proportion; after the last, the last plus the drift
+  since. Only while `followsReadings` (the offset is the last reading's): an
+  offset typed or slid by hand since takes over.
+- Every camera on the card set (zone and offset): the map never opens and
+  the photos are saved at once, then the card ejected (David: "just grab all
+  the photos"). So on such a card Name place… comes too late to name the
+  folders. `saveWhenReady` is off only in the self-test.
+- A week after a camera's last reading, and each week after, one
+  notification ("Time to photograph the offset code with Amanda's Canon EOS
+  R5m2."), kind `clock-<camera id>`, checked at launch and every ten minutes.
+- Camera temperature: Canon's `CameraTemperature`, in the maker notes the
+  fast read skips, so read afterwards for one photo per camera per quarter
+  hour, with its position, into `temperatures.json` beside people.json.
+- "Clock drift" in the menu bar opens a window: per camera, each stretch
+  between two readings with its drift, the camera's temperature (average,
+  lowest, highest), the outside temperature and up to three places, and a
+  chart of drift against temperature. The outside temperature is to come
+  from the track service, which does not keep weather yet (brief in memory,
+  `tracks-weather-wanted`); until then that column is empty.
+- Untried on a real camera: reading the code off a photo of the screen,
+  raw files included, and whether the P950 and T3i record a temperature.
+
 ## Tests never touch David's own records
 
 - A scratch folder is made a card with `scratchCard`, never

@@ -39,6 +39,9 @@ public struct Camera: Codable, Identifiable, Equatable, Sendable {
     /// that showed it was taken, by the camera's clock.
     public var firmware: String?
     public var firmwareSeen: Date?
+    /// Every offset code photo, oldest first: the clock's drift is worked out
+    /// from them, and photos are matched with it (David, 1 November 2026).
+    public var readings: [ClockReading] = []
 
     public init(id: UUID = UUID(), personId: UUID, model: String, zone: CameraZone, offsetSeconds: Int? = nil) {
         self.id = id
@@ -48,10 +51,25 @@ public struct Camera: Codable, Identifiable, Equatable, Sendable {
         self.offsetSeconds = offsetSeconds
     }
 
+    /// The offset follows the readings, drift included, while it is the last
+    /// reading's: an offset typed or slid by hand since takes over.
+    public var followsReadings: Bool {
+        guard let last = readings.last else { return false }
+        return offsetSeconds == Int(last.offset.rounded())
+    }
+
+    /// A new offset code photo: kept with the others, and the offset set from it.
+    public mutating func add(_ reading: ClockReading) {
+        readings.removeAll { abs($0.at.timeIntervalSince(reading.at)) < 60 }
+        readings.append(reading)
+        readings.sort { $0.at < $1.at }
+        offsetSeconds = Int((readings.last?.offset ?? reading.offset).rounded())
+    }
+
     /// Ready for matching: both the zone and the offset are known.
     public var isReady: Bool { zone != .notSet && offsetSeconds != nil }
 
-    private enum CodingKeys: String, CodingKey { case id, personId, model, zone, zoneId, offsetSeconds, firmware, firmwareSeen }
+    private enum CodingKeys: String, CodingKey { case id, personId, model, zone, zoneId, offsetSeconds, firmware, firmwareSeen, readings }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -61,6 +79,7 @@ public struct Camera: Codable, Identifiable, Equatable, Sendable {
         offsetSeconds = try c.decodeIfPresent(Int.self, forKey: .offsetSeconds)
         firmware = try c.decodeIfPresent(String.self, forKey: .firmware)
         firmwareSeen = try c.decodeIfPresent(Date.self, forKey: .firmwareSeen)
+        readings = try c.decodeIfPresent([ClockReading].self, forKey: .readings) ?? []
         switch try c.decode(String.self, forKey: .zone) {
         case "photo": zone = .fromPhoto
         case "fixed": zone = .fixed(try c.decode(String.self, forKey: .zoneId))
@@ -76,6 +95,7 @@ public struct Camera: Codable, Identifiable, Equatable, Sendable {
         try c.encodeIfPresent(offsetSeconds, forKey: .offsetSeconds)
         try c.encodeIfPresent(firmware, forKey: .firmware)
         try c.encodeIfPresent(firmwareSeen, forKey: .firmwareSeen)
+        if !readings.isEmpty { try c.encode(readings, forKey: .readings) }
         switch zone {
         case .fromPhoto: try c.encode("photo", forKey: .zone)
         case .fixed(let id): try c.encode("fixed", forKey: .zone); try c.encode(id, forKey: .zoneId)

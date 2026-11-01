@@ -79,6 +79,9 @@ struct GeotagApp: App {
             CommandMenu("Download") {
                 DownloadMenu(model: model)
             }
+            CommandMenu("Clock drift") {
+                ClockDriftMenu()
+            }
             CommandMenu("Set time and date in camera") {
                 CameraClockMenu(model: model)
             }
@@ -86,6 +89,15 @@ struct GeotagApp: App {
 
         Window("Set time and date in camera", id: "camera-clock") {
             CameraClockWindow()
+                .environmentObject(model)
+        }
+
+        Window("Offset code", id: "offset-code") {
+            OffsetCodeView()
+        }
+
+        Window("Clock drift", id: "clock-drift") {
+            ClockDriftView()
                 .environmentObject(model)
         }
 

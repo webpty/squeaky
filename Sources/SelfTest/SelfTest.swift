@@ -77,6 +77,8 @@ struct SelfTest {
         await tracksLoading(scratch)
         timeLeft()
         await quitAndAway(scratch)
+        drift()
+        await offsetCodes(scratch)
         quitting()
         download(scratch)
         cardKinds()
@@ -119,7 +121,7 @@ struct SelfTest {
         let fm = FileManager.default
         let folder = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Geotag")
         var out: [String: String] = [:]
-        var paths = ["people.json", "queue.json", "unplaced.json"]
+        var paths = ["people.json", "queue.json", "unplaced.json", "temperatures.json"]
         paths += ((try? fm.contentsOfDirectory(atPath: folder.appendingPathComponent("History").path)) ?? []).map { "History/\($0)" }
         for path in paths {
             let attributes = (try? fm.attributesOfItem(atPath: folder.appendingPathComponent(path).path)) ?? [:]
@@ -1716,6 +1718,7 @@ extension SelfTest {
         await draw("09-person", SheetProbe(.person), 560, 230)
         await draw("10-camera", SheetProbe(.camera), 600, 320)
         await draw("10b-lens", SheetProbe(.lens), 460, 150)
+        await draw("12-offset-code", OffsetCodeView(), 1280, 800)
         for (i, kind) in [SheetProbe.Kind.setupOwner, .setupFolders, .setupService, .setupNAS, .setupCards].enumerated() {
             await draw("11-setup-\(i + 1)", SheetProbe(kind), 680, 460)
         }
@@ -1921,6 +1924,7 @@ extension SelfTest {
         let source = scratchCard(cardRoot)
         model.choose(source)
         model.askingWhose = nil
+        model.saveWhenReady = false
         await model.read(source, for: model.book.people[0].id)
         model.aligning = false
         for _ in 0..<100 where !model.placesSettled { try? await Task.sleep(for: .milliseconds(20)) }
@@ -2628,6 +2632,133 @@ extension SelfTest {
         await idle.checkNAS()
         idle.announceNASAway()
         check("nas away: nothing waiting, nothing said", !idle.nasAway && idle.photosLine.isEmpty)
+    }
+
+    /// A photo of the offset code screen: the code for `shown`, taken by a
+    /// camera whose clock read `clock` (its own wall time, with hundredths).
+    static func writeCodePhoto(_ url: URL, shown: Date, model: String, zone: String, clock: Date) {
+        guard let code = OffsetCode.image(shown) else { return }
+        let side = 600
+        guard let ctx = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return }
+        ctx.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: side, height: side))
+        ctx.interpolationQuality = .none
+        ctx.draw(code, in: CGRect(x: 100, y: 100, width: 400, height: 400))
+        guard let image = ctx.makeImage(),
+              let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.jpeg" as CFString, 1, nil) else { return }
+        let whole = Date(timeIntervalSince1970: clock.timeIntervalSince1970.rounded(.down))
+        let hundredths = Int(((clock.timeIntervalSince1970 - whole.timeIntervalSince1970) * 100).rounded())
+        let exif: [CFString: Any] = [kCGImagePropertyExifDateTimeOriginal: Moments.reading.string(from: whole),
+                                     kCGImagePropertyExifSubsecTimeOriginal: String(format: "%02d", hundredths),
+                                     kCGImagePropertyExifOffsetTimeOriginal: zone]
+        let props: [CFString: Any] = [kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFModel: model, kCGImagePropertyTIFFMake: "Test"],
+                                      kCGImagePropertyExifDictionary: exif]
+        CGImageDestinationAddImage(dest, image, props as CFDictionary)
+        CGImageDestinationFinalize(dest)
+    }
+
+    /// Drift between readings, and photos matched with it.
+    static func drift() {
+        let day0 = Date(timeIntervalSince1970: 1_793_000_000)
+        let readings = [ClockReading(at: day0, offset: 1.0), ClockReading(at: day0.addingTimeInterval(10 * 86_400), offset: 3.0)]
+        check("drift: per day from two readings", abs((Drift.perDay(readings) ?? 0) - 0.2) < 1e-9, "\(Drift.perDay(readings) ?? -1)")
+        check("drift: one reading, no rate", Drift.perDay([readings[0]]) == nil)
+        check("drift: between readings, in proportion",
+              abs((Drift.offset(at: day0.addingTimeInterval(5 * 86_400), readings: readings) ?? 0) - 2.0) < 1e-9)
+        check("drift: after the last, the drift since is added",
+              abs((Drift.offset(at: day0.addingTimeInterval(15 * 86_400), readings: readings) ?? 0) - 4.0) < 1e-9)
+        check("drift: before the first, the first", Drift.offset(at: day0.addingTimeInterval(-86_400), readings: readings) == 1.0)
+
+        var camera = Camera(personId: UUID(), model: "Canon EOS R7", zone: .fromPhoto)
+        for r in readings { camera.add(r) }
+        check("drift: the offset follows the last reading", camera.offsetSeconds == 3 && camera.followsReadings)
+        let later = day0.addingTimeInterval(15 * 86_400)
+        // Taken at `later`, by a clock 4 s ahead then, in UTC-3.
+        let photo = ScannedPhoto(url: URL(fileURLWithPath: "/x.jpg"), fileName: "x.jpg", size: 1,
+                                 taken: Moments.reading.string(from: later.addingTimeInterval(4 - 3 * 3600)), subSeconds: nil, zone: "-03:00",
+                                 model: "Canon EOS R7")
+        if case .success(let moment) = Moments.moment(photo, camera: camera) {
+            check("drift: a photo after the last reading is matched with the drift", abs(moment.timeIntervalSince(later)) < 0.01,
+                  "\(moment.timeIntervalSince(later))")
+        } else {
+            check("drift: a photo after the last reading is matched with the drift", false)
+        }
+        var typed = camera
+        typed.offsetSeconds = 10
+        check("drift: an offset typed by hand takes over", !typed.followsReadings)
+
+        var temps = CameraTemperatures()
+        temps.add([TemperatureSample(at: day0.addingTimeInterval(86_400), celsius: -2),
+                   TemperatureSample(at: day0.addingTimeInterval(2 * 86_400), celsius: 6),
+                   TemperatureSample(at: day0.addingTimeInterval(20 * 86_400), celsius: 30)], camera: camera.id)
+        let periods = DriftPeriod.periods(camera, temperatures: temps)
+        check("drift window: one stretch, its drift and the camera's temperature",
+              periods.count == 1 && abs(periods[0].perDay - 0.2) < 1e-9 && periods[0].average == 2 && periods[0].lowest == -2 && periods[0].highest == 6,
+              "\(periods.map { ($0.perDay, $0.average ?? .nan) })")
+    }
+
+    /// A card holding a photo of the offset code sets that camera's offset to
+    /// the hundredth; with every camera set, the photos save by themselves.
+    @MainActor
+    static func offsetCodes(_ scratch: URL) async {
+        let fm = FileManager.default
+        let root = scratch.appendingPathComponent("OC-CARD")
+        let folder = root.appendingPathComponent("DCIM/100CANON")
+        try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        let shown = Date(timeIntervalSince1970: 1_793_000_000.25)
+        // The R7 runs 3.42 s ahead; the photo records its wall time in UTC-3.
+        let clock = shown.addingTimeInterval(3.42 - 3 * 3600)
+        writeCodePhoto(folder.appendingPathComponent("IMG_0001.JPG"), shown: shown, model: "Canon EOS R7", zone: "-03:00", clock: clock)
+        check("offset code: read back from a photo of it", OffsetCode.find(in: folder.appendingPathComponent("IMG_0001.JPG")) == shown,
+              "\(String(describing: OffsetCode.find(in: folder.appendingPathComponent("IMG_0001.JPG"))))")
+        for i in 2...4 {
+            writePhoto(folder.appendingPathComponent(String(format: "IMG_%04d.JPG", i)), model: "Canon EOS R7", zone: "-03:00",
+                       taken: Moments.reading.string(from: clock.addingTimeInterval(Double(i * 60))))
+        }
+
+        var book = PeopleBook.family()
+        book.people[0].saveFolder = scratch.appendingPathComponent("OC-SAVED").path
+        try? fm.createDirectory(atPath: book.people[0].saveFolder!, withIntermediateDirectories: true)
+        let peopleFile = PeopleStoreFile(url: scratch.appendingPathComponent("oc-people.json"))
+        try? peopleFile.save(book)
+        let notes = RecordingNotifier()
+        let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("oc-lib"))),
+                             peopleStore: peopleFile, history: HistoryStoreFolder(folder: scratch.appendingPathComponent("oc-history")),
+                             queue: QueueStoreFile(url: scratch.appendingPathComponent("oc-queue.json")),
+                             unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("oc-unplaced.json")),
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("oc-maps")),
+                             exifTool: ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool")),
+                             nas: FakeNAS(root: scratch.appendingPathComponent("OC-NAS")), notifier: notes, places: FakePlaces())
+        let david = model.book.people[0].id
+        guard let before = model.book.camera(personId: david, model: "Canon EOS R7") else {
+            check("offset code: David's R7 is on the list", false)
+            return
+        }
+        check("offset code: the R7 starts with no offset", before.offsetSeconds == nil && !model.camerasReady)
+        let card = scratchCard(root)
+        model.choose(card)
+        model.askingWhose = nil
+        await model.read(card, for: david)
+        let after = model.book.camera(personId: david, model: "Canon EOS R7")
+        check("offset code: sets the offset to the hundredth",
+              after?.offsetSeconds == 3 && after?.readings.count == 1 && abs((after?.readings.first?.offset ?? 0) - 3.42) < 0.005,
+              "\(after?.readings.map(\.offset) ?? [])")
+        check("offset code: every camera set, saved straight away without the map",
+              !model.aligning && model.results.count == 4 && model.results.values.allSatisfy { $0.url != nil }, model.photosLine)
+
+        // The weekly reminder, a week after the reading and each week after.
+        let reading = after?.readings.last?.at ?? shown
+        UserDefaults.standard.removeObject(forKey: "clockReminders")
+        model.remindClocks(now: reading.addingTimeInterval(6 * 86_400))
+        check("reminder: not before a week", notes.posted.filter { $0.hasPrefix("Time to photograph") }.isEmpty)
+        model.remindClocks(now: reading.addingTimeInterval(7 * 86_400 + 60))
+        check("reminder: a week on", notes.posted.contains("Time to photograph the offset code with David's Canon EOS R7."), "\(notes.posted)")
+        model.remindClocks(now: reading.addingTimeInterval(8 * 86_400))
+        check("reminder: once that week", notes.posted.filter { $0.hasPrefix("Time to photograph") }.count == 1)
+        model.remindClocks(now: reading.addingTimeInterval(14 * 86_400 + 120))
+        check("reminder: and the week after", notes.posted.filter { $0.hasPrefix("Time to photograph") }.count == 2)
+        UserDefaults.standard.removeObject(forKey: "clockReminders")
     }
 
     /// The map window opens by itself after a card is read only when one of

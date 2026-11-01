@@ -217,6 +217,9 @@ public final class AppModel: ObservableObject {
     private let notifier: NotifierPort
     /// The battery, to warn before a save outlasts it.
     private let power: PowerPort
+    /// Each camera's own temperature, from its photos, for the Clock drift window.
+    private let temperatureStore: TemperatureStorePort
+    @Published public private(set) var temperatures = CameraTemperatures()
     /// Names the place each photo was taken, for its folder.
     private let places: PlaceNaming
 
@@ -288,7 +291,12 @@ public final class AppModel: ObservableObject {
                 nas: NASPort? = nil,
                 notifier: NotifierPort? = nil,
                 places: PlaceNaming? = nil,
-                power: PowerPort? = nil) {
+                power: PowerPort? = nil,
+                temperatures: TemperatureStorePort? = nil) {
+        // Beside the people list unless told otherwise, so a test's stays in its scratch folder.
+        self.temperatureStore = temperatures
+            ?? (peopleStore as? PeopleStoreFile).map { TemperatureStoreFile(url: $0.url.deletingLastPathComponent().appendingPathComponent("temperatures.json")) }
+            ?? TemperatureStoreFile.standard()
         self.notifier = notifier ?? MacNotifier.shared
         self.power = power ?? MacPower()
         self.places = places ?? PlaceNames.shared
@@ -318,6 +326,7 @@ public final class AppModel: ObservableObject {
         } catch {
             peopleLine = "The people list could not be read: \(error.localizedDescription)"
         }
+        self.temperatures = (try? temperatureStore.load()) ?? CameraTemperatures()
         if let raw = defaults.string(forKey: "appearance"), let mode = Appearance(rawValue: raw) {
             appearance = mode
         }
@@ -440,8 +449,12 @@ public final class AppModel: ObservableObject {
         tracks = await library.listed()
         await refresh()
         timer?.invalidate()
+        remindClocks()
         timer = Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.refresh() }
+            Task { @MainActor in
+                await self?.refresh()
+                self?.remindClocks()
+            }
         }
     }
 
@@ -968,13 +981,115 @@ public final class AppModel: ObservableObject {
             refreshBreaks()
             noteFirmware(photos, personId: personId)
             noteLenses(photos, personId: personId)
+            let codes = await readOffsetCodes(photos, personId: personId, tool: tool)
+            guard readingRound == round, self.source?.id == source.id else { return }
             await loadTimeline()
             rematch()
-            photosLine = rows.isEmpty ? "No photos on \(source.name)." : ""
-            if trackNear(alignable) { aligning = true }
+            photosLine = rows.isEmpty ? "No photos on \(source.name)." : codes
+            Task { await noteTemperatures(photos, personId: personId, tool: tool) }
+            // Every camera set: nothing to line up, so the photos are saved straight
+            // away, and the card comes out once they are on the Mac (David, 1 November 2026).
+            if camerasReady, saveWhenReady {
+                await savePhotos()
+            } else if trackNear(alignable) {
+                aligning = true
+            }
         } catch {
             if readingRound == round { photosLine = "The photos could not be read: \(error.localizedDescription)" }
         }
+    }
+
+    /// A card whose cameras are all set is saved as soon as it is read. Off
+    /// only in the self-test, to name places before saving.
+    public var saveWhenReady = true
+
+    /// Every new photo's camera is on the list with its zone and offset set.
+    public var camerasReady: Bool {
+        guard let personId = importPerson else { return false }
+        let fresh = rows.filter { $0.status != .alreadyImported }
+        guard !fresh.isEmpty else { return false }
+        return fresh.allSatisfy { row in
+            row.photo.hasLocation || (row.photo.model.flatMap { book.camera(personId: personId, model: $0) }?.isReady ?? false)
+        }
+    }
+
+    /// How many photos at each end of a camera's run are looked at for an offset code.
+    static let codeEnds = 5
+
+    /// Offset codes among the first and last photos of each camera on the
+    /// card: each sets its camera's offset, to the hundredth, and adds a
+    /// reading to its drift. Says what was set; empty when nothing was.
+    func readOffsetCodes(_ photos: [ScannedPhoto], personId: UUID, tool: ExifTool) async -> String {
+        var byModel: [String: [ScannedPhoto]] = [:]
+        for photo in photos where photo.taken != nil {
+            if let model = photo.model { byModel[model, default: []].append(photo) }
+        }
+        var candidates: [ScannedPhoto] = []
+        for (_, list) in byModel {
+            let sorted = list.sorted { (Moments.clockReading($0) ?? .distantPast) < (Moments.clockReading($1) ?? .distantPast) }
+            candidates += sorted.count <= Self.codeEnds * 2 ? sorted : Array(sorted.prefix(Self.codeEnds) + sorted.suffix(Self.codeEnds))
+        }
+        let found: [(ScannedPhoto, Date)] = await Task.detached {
+            candidates.compactMap { photo in OffsetCode.find(in: photo.url).map { (photo, $0) } }
+        }.value
+        var said: [String] = []
+        for (photo, moment) in found {
+            guard let model = photo.model, var camera = book.camera(personId: personId, model: model),
+                  let offset = Moments.exactOffset(placing: photo, camera: camera, at: moment) else { continue }
+            camera.add(ClockReading(at: moment, offset: offset))
+            save(camera)
+            said.append("\(camera.model): clock \(OffsetText.exact(offset)), set from the offset code.")
+        }
+        return said.joined(separator: " ")
+    }
+
+    /// The temperature each camera recorded, a photo every quarter of an hour
+    /// or so, with where it was taken when known.
+    func noteTemperatures(_ photos: [ScannedPhoto], personId: UUID, tool: ExifTool) async {
+        var picked: [(photo: ScannedPhoto, camera: Camera, at: Date)] = []
+        var last: [UUID: Date] = [:]
+        let rowsByPath = Dictionary(rows.map { ($0.photo.url.path, $0) }, uniquingKeysWith: { a, _ in a })
+        for photo in photos {
+            guard let model = photo.model, let camera = book.camera(personId: personId, model: model),
+                  case .success(let at) = Moments.moment(photo, camera: camera) else { continue }
+            if let previous = last[camera.id], abs(at.timeIntervalSince(previous)) < 900 { continue }
+            last[camera.id] = at
+            picked.append((photo, camera, at))
+        }
+        guard !picked.isEmpty else { return }
+        let urls = picked.map(\.photo.url)
+        let read = await Task.detached { TemperatureReader.read(urls, exifTool: tool) }.value
+        guard !read.isEmpty else { return }
+        var next = temperatures
+        for item in picked {
+            guard let celsius = read[item.photo.url.path] else { continue }
+            var sample = TemperatureSample(at: item.at, celsius: celsius)
+            if case .matched(let p)? = rowsByPath[item.photo.url.path]?.placement {
+                sample.lat = p.lat
+                sample.lon = p.lon
+            } else if let lat = item.photo.ownLat, let lon = item.photo.ownLon {
+                sample.lat = lat
+                sample.lon = lon
+            }
+            next.add([sample], camera: item.camera.id)
+        }
+        temperatures = next
+        try? temperatureStore.save(next)
+    }
+
+    /// A week after a camera's last offset code photo, and each week after,
+    /// one notification to take another (David, 1 November 2026).
+    public func remindClocks(now: Date = Date()) {
+        var reminded = defaults.dictionary(forKey: "clockReminders") as? [String: Double] ?? [:]
+        for camera in book.cameras {
+            guard let lastReading = camera.readings.last?.at else { continue }
+            let since = max(lastReading.timeIntervalSince1970, reminded[camera.id.uuidString] ?? 0)
+            guard now.timeIntervalSince1970 - since >= 7 * 86_400 else { continue }
+            let owner = book.person(camera.personId).map { "\($0.name)'s " } ?? ""
+            notifier.post("Time to photograph the offset code with \(owner)\(camera.model).", kind: "clock-\(camera.id.uuidString)")
+            reminded[camera.id.uuidString] = now.timeIntervalSince1970
+        }
+        defaults.set(reminded, forKey: "clockReminders")
     }
 
     /// Saved now, or imported on an earlier card.

@@ -190,6 +190,25 @@ enum OffsetText {
         return parts.joined(separator: " ") + (seconds > 0 ? " ahead" : " behind")
     }
 
+    /// "3.42 s ahead", "0.08 s behind", "on time": an offset to the hundredth.
+    static func exact(_ seconds: Double) -> String {
+        let a = abs(seconds)
+        if a < 0.005 { return "on time" }
+        let figure = a >= 60 ? describe(Int(seconds.rounded())).replacingOccurrences(of: " ahead", with: "").replacingOccurrences(of: " behind", with: "")
+            : String(format: "%.2f s", a)
+        return figure + (seconds > 0 ? " ahead" : " behind")
+    }
+
+    /// "Drifts 0.40 s a day, from 5 readings", or the one reading so far.
+    static func drift(_ camera: Camera) -> String? {
+        guard let last = camera.readings.last else { return nil }
+        guard let rate = Drift.perDay(camera.readings) else {
+            return "Offset code \(When.current.day(last.at)): clock \(exact(last.offset))"
+        }
+        let way = rate >= 0 ? "Gains" : "Loses"
+        return "\(way) \(String(format: "%.2f", abs(rate))) s a day, from \(camera.readings.count) readings"
+    }
+
     static func zone(_ zone: CameraZone) -> String {
         switch zone {
         case .fromPhoto: return "Zone from the photo"
@@ -213,6 +232,7 @@ enum ZoneList {
 
 struct CamerasCard: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.openWindow) private var openWindow
     @State private var editing: Camera?
     @State private var removing: Camera?
     @State private var line = ""
@@ -228,6 +248,9 @@ struct CamerasCard: View {
                                   OffsetText.zone(camera.zone),
                                   OffsetText.describe(camera.offsetSeconds)].joined(separator: " · "))
                                 .foregroundStyle(.secondary).lineLimit(1)
+                            if let drift = OffsetText.drift(camera) {
+                                Text(drift).foregroundStyle(.secondary).lineLimit(1)
+                            }
                             // The newest software its photos have shown, and when.
                             if let firmware = camera.firmware {
                                 Text("Firmware \(firmware)" + (camera.firmwareSeen.map { ", \(When.current.day($0, zone: TimeZone(secondsFromGMT: 0)!))" } ?? ""))
@@ -258,6 +281,11 @@ struct CamerasCard: View {
                     }
                 } label: {
                     Text("Add camera").buttonLabel()
+                }
+                Button {
+                    openWindow(id: "offset-code")
+                } label: {
+                    Text("Show offset code").buttonLabel()
                 }
                 StatusLine(text: line)
             }
