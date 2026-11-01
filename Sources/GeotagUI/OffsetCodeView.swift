@@ -70,42 +70,39 @@ public struct OffsetCodeView: View {
         // within a sixtieth of a second.
         TimelineView(.animation(minimumInterval: 1.0 / 60)) { context in
             let now = context.date.addingTimeInterval(correction)
-            VStack(spacing: 32) {
-                Spacer()
-                HStack(spacing: 60) {
-                    if let image = OffsetCode.image(now) {
-                        Image(decorative: image, scale: 1)
-                            .interpolation(.none)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 420, height: 420)
-                            .padding(24)
-                            .background(Color.white)
+            GeometryReader { geo in
+                // Side by side on a wide window, one above the other on a narrow one,
+                // the code as big as fits and the time shrinking to its width.
+                let wide = geo.size.width > geo.size.height * 1.3
+                let side = wide ? min(geo.size.height * 0.6, geo.size.width * 0.4) : min(geo.size.width * 0.6, geo.size.height * 0.45)
+                VStack(spacing: 24) {
+                    Spacer(minLength: 0)
+                    if wide {
+                        HStack(spacing: side * 0.12) {
+                            code(now, side: side)
+                            clock(now, side: side)
+                        }
+                    } else {
+                        VStack(spacing: side * 0.08) {
+                            code(now, side: side)
+                            clock(now, side: side)
+                        }
                     }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(Self.time.string(from: now))
-                            .font(.system(size: 110, weight: .semibold).monospacedDigit())
-                            .lineLimit(1)
-                        Text(Self.day.string(from: now) + " UTC")
-                            .font(.title)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                    Spacer(minLength: 0)
+                    Text(line)
+                        .foregroundStyle(check == nil && checked ? .orange : .secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                    Button {
+                        dismissWindow(id: "offset-code")
+                    } label: {
+                        Text("Close").buttonLabel()
                     }
+                    .keyboardShortcut(.cancelAction)
                 }
-                Spacer()
-                Text(line)
-                    .foregroundStyle(check == nil && checked ? .orange : .secondary)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-                Button {
-                    dismissWindow(id: "offset-code")
-                } label: {
-                    Text("Close").buttonLabel()
-                }
-                .keyboardShortcut(.cancelAction)
-                .padding(.bottom, 32)
+                .padding(32)
+                .frame(width: geo.size.width, height: geo.size.height)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .task {
@@ -113,6 +110,40 @@ public struct OffsetCodeView: View {
             checked = true
         }
         .background(FullScreen())
+    }
+
+    private func code(_ now: Date, side: CGFloat) -> some View {
+        Group {
+            if let image = OffsetCode.image(now) {
+                Image(decorative: image, scale: 1)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(side * 0.06)
+                    .background(Color.white)
+            }
+        }
+        .frame(width: side, height: side)
+    }
+
+    private func clock(_ now: Date, side: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(Self.time.string(from: now))
+                .font(.system(size: max(side * 0.28, 40), weight: .semibold).monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.2)
+            Text(Self.day.string(from: now) + " UTC")
+                .font(.title)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            // The code changes with every frame: a slower shutter, or one that
+            // reads the sensor line by line, catches two codes at once.
+            Text("Shutter 1/250 s or faster, mechanical shutter.")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+        }
     }
 
     static let time: DateFormatter = {
@@ -132,15 +163,20 @@ public struct OffsetCodeView: View {
     }()
 }
 
-/// Puts the window it sits in into full screen, once.
+/// Puts the window it sits in into full screen, once it is in one: asked
+/// before, the window was not there yet and it stayed small.
 struct FullScreen: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async {
-            if let window = view.window, !window.styleMask.contains(.fullScreen) { window.toggleFullScreen(nil) }
+    final class Watcher: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+            DispatchQueue.main.async {
+                if !window.styleMask.contains(.fullScreen) { window.toggleFullScreen(nil) }
+            }
         }
-        return view
     }
+
+    func makeNSView(context: Context) -> NSView { Watcher() }
 
     func updateNSView(_ nsView: NSView, context: Context) {}
 }

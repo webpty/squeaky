@@ -1719,6 +1719,8 @@ extension SelfTest {
         await draw("10-camera", SheetProbe(.camera), 600, 320)
         await draw("10b-lens", SheetProbe(.lens), 460, 150)
         await draw("12-offset-code", OffsetCodeView(), 1280, 800)
+        await draw("12b-offset-code-small", OffsetCodeView(), 1000, 760)
+        await draw("12c-offset-code-narrow", OffsetCodeView(), 700, 900)
         for (i, kind) in [SheetProbe.Kind.setupOwner, .setupFolders, .setupService, .setupNAS, .setupCards].enumerated() {
             await draw("11-setup-\(i + 1)", SheetProbe(kind), 680, 460)
         }
