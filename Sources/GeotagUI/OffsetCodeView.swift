@@ -143,6 +143,12 @@ public struct OffsetCodeView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
+            // A tilted screen read ambiguously, even at 1/500 s (David, 1 November 2026).
+            Text("Camera facing the screen straight on.")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
         }
     }
 

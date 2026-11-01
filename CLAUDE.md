@@ -585,7 +585,8 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   faster, mechanical shutter." (David asked for it to be said): the code
   changes 60 times a second, and a slower or fully electronic shutter
   catches two codes at once. 1/320 s was still too slow on his camera
-  (1 November 2026).
+  (1 November 2026). Then "Camera facing the screen straight on.": at 1/500 s
+  with the screen tilted, the reading was still ambiguous.
 - When a card is read, the first and last five photos of each camera are
   looked at for a code (Vision, on the Mac's own picture of raw files). A
   code sets the camera's offset to the hundredth: `ClockReading` added to
