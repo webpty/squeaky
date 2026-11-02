@@ -408,6 +408,14 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   (`nextToSend` skips the second), and the naming step takes a lock, so no
   two pick a name at the same moment. A connection that fails or a full
   NAS stops new ones; those already going finish.
+  A photo gets the Mac copy's dates only once it has its final name: with
+  its old date on the hidden working file, another photo starting in the
+  same folder cleared it as a leftover (0.18.1). Measured on 2 November 2026
+  away from home through Tailscale: no faster at 3 than at 1, the link
+  already full (about 0.1 MB a second).
+- In the Status columns (Queue and Photos pages) a photo going up shows
+  `SendingCell`: the step on the left, its share at the far right, and a
+  bar of that share filling the cell behind them (0.18.1).
 - Notifications come in kinds, one of each showing at a time (identifier
   `geotag-<kind>`): `nas`, `card`, `power`, `nas-away`.
 - A Mac notification per finished batch (`MacNotifier`, one at a time under

@@ -178,7 +178,7 @@ struct QueueScreen: View {
                 .width(min: 150, ideal: 180)
                 TableColumn("Status") { row in
                     if row.entry.state == .sending {
-                        SendingText(meter: model.meter, id: row.entry.id)
+                        SendingCell(meter: model.meter, id: row.entry.id)
                     } else {
                         Text(QueueText.status(row.entry))
                             .foregroundStyle(row.entry.state == .sent ? .primary : .secondary)
@@ -215,6 +215,35 @@ struct SendingText: View {
     var body: some View {
         if let going = id == nil ? meter.only : meter.going[id!] {
             Text(going.step.text).monospacedDigit().lineLimit(1)
+        }
+    }
+}
+
+/// One photo's step in a list cell: the step on the left, its share at the
+/// far right, and a bar of that share filling the cell behind them
+/// (David, 2 November 2026).
+struct SendingCell: View {
+    @ObservedObject var meter: SendMeter
+    let id: UUID
+
+    var body: some View {
+        if let going = meter.going[id] {
+            HStack(spacing: 8) {
+                Text(going.step.word).lineLimit(1)
+                Spacer(minLength: 0)
+                Text(going.step.percent).monospacedDigit().lineLimit(1)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .frame(maxWidth: .infinity)
+            .background(alignment: .leading) {
+                GeometryReader { geo in
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.accentColor.opacity(0.25))
+                        .frame(width: geo.size.width * (going.step.share ?? 0))
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 4).fill(Color.secondary.opacity(0.08)))
         }
     }
 }
@@ -277,6 +306,31 @@ struct NASCard: View {
 public struct QueueScreenProbe: View {
     public init() {}
     public var body: some View { QueueScreen() }
+}
+
+/// Status cells for photos at each step, for a picture made off-screen.
+public struct SendingCellsProbe: View {
+    @StateObject private var meter: SendMeter = {
+        let meter = SendMeter()
+        for (i, step) in [SendStep.looking, .sending(0.42), .checking(0.8), .naming].enumerated() {
+            let id = UUID(uuid: (UInt8(i), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+            meter.begin(id, name: "IMG_\(i).JPG")
+            meter.show(step, for: id)
+        }
+        return meter
+    }()
+
+    public init() {}
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(meter.order, id: \.self) { id in
+                SendingCell(meter: meter, id: id).frame(width: 220)
+            }
+        }
+        .padding(Style.pad)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
 }
 
 public struct NASCardProbe: View {

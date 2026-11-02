@@ -1703,6 +1703,7 @@ extension SelfTest {
         await draw("04d-sidebar", SheetProbe(.sidebar), 210, 620)
         model.screen = .queue
         await draw("05-queue", RootView(), 1100, 720)
+        await draw("05b-sending-cells", SendingCellsProbe(), 260, 140)
         model.screen = .history
         model.showHistory(david)
         await draw("06-history", RootView(), 1100, 720)
@@ -2800,8 +2801,31 @@ extension SelfTest {
         let checked = all.compactMap { if case .checking(let f) = $0 { return f } else { return nil } }
         check("send steps: the share sent and checked climbs to all of it, a piece at a time",
               sent.count >= 3 && sent.last == 1 && sent == sent.sorted() && checked.count >= 3 && checked.last == 1, "\(sent) \(checked)")
+        // While it goes up, its working file never looks like an old leftover:
+        // another photo starting in the folder would clear it away.
+        let old = mac.appendingPathComponent("OLD.jpg")
+        try? Data(bytes.prefix(1 << 20)).write(to: old)
+        try? fm.setAttributes([.modificationDate: Date(timeIntervalSinceNow: -86_400 * 5)], ofItemAtPath: old.path)
+        final class Seen: @unchecked Sendable {
+            let lock = NSLock()
+            var cleared = false
+        }
+        let seen = Seen()
+        let olderDay = scratch.appendingPathComponent("STEPS-NAS/2026.10.29")
+        let kept = try? NASSender.send(old, as: "OLD.jpg", into: olderDay, update: false, clean: true, exifTool: nil) { step in
+            guard step == .naming else { return }
+            NASSender.clearLeftovers(in: olderDay)
+            seen.lock.withLock { seen.cleared = true }
+        }
+        let landedDate = (try? fm.attributesOfItem(atPath: olderDay.appendingPathComponent("OLD.jpg").path))?[.modificationDate] as? Date
+        check("send steps: another photo tidying the folder leaves this one's upload alone, and it keeps the Mac copy's date",
+              seen.cleared && kept == .sent(olderDay.appendingPathComponent("OLD.jpg"))
+              && landedDate.map { abs($0.timeIntervalSinceNow + 86_400 * 5) < 5 } == true, "\(String(describing: kept))")
         check("send steps: said short", SendStep.sending(0.42).text == "Sending 42%" && SendStep.checking(0.6).text == "Checking 60%"
               && SendStep.looking.text == "Looking" && SendStep.naming.text == "Naming")
+        check("send steps: in a list cell, the step and its share apart", SendStep.sending(0.42).word == "Sending"
+              && SendStep.sending(0.42).percent == "42%" && SendStep.checking(0.8).share == 0.8
+              && SendStep.looking.percent == "" && SendStep.naming.share == nil)
     }
 
     /// Several photos up to the NAS at once, as many as Settings says, each

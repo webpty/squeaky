@@ -200,13 +200,18 @@ public enum NASSender {
             throw NASError.failed("It arrived on the NAS different from the Mac's copy.")
         }
 
-        // The Mac copy's own dates.
+        // The Mac copy's own dates, given once it has its name: a working
+        // file with an old date looks like a leftover, and another photo
+        // starting in the same folder cleared it away (David, 2 November 2026).
         progress(.naming)
         let attributes = (try? fm.attributesOfItem(atPath: local.path)) ?? [:]
         var dates: [FileAttributeKey: Any] = [:]
         if let c = attributes[.creationDate] { dates[.creationDate] = c }
         if let m = attributes[.modificationDate] { dates[.modificationDate] = m }
-        if !dates.isEmpty { try? fm.setAttributes(dates, ofItemAtPath: work.path) }
+        func dated(_ url: URL) -> URL {
+            if !dates.isEmpty { try? fm.setAttributes(dates, ofItemAtPath: url.path) }
+            return url
+        }
 
         // One photo names itself at a time: several go up at once.
         naming.lock()
@@ -227,7 +232,7 @@ public enum NASSender {
                 throw NASError.from(error, doing: "Naming \(target.lastPathComponent) on the NAS")
             }
             try? fm.removeItem(at: old)
-            return .replaced(target)
+            return .replaced(dated(target))
         }
 
         // A move never replaces: if the name was taken meanwhile, the next one.
@@ -240,7 +245,7 @@ public enum NASSender {
             }
             do {
                 try fm.moveItem(at: work, to: final)
-                return .sent(final)
+                return .sent(dated(final))
             } catch CocoaError.fileWriteFileExists {
                 n += 1
                 final = folder.appendingPathComponent(Saver.numbered(name, n))
@@ -307,6 +312,30 @@ public enum SendStep: Equatable, Sendable {
         case .checking(let f): return "Checking \(Int((f * 100).rounded(.down)))%"
         case .naming: return "Naming"
         }
+    }
+
+    /// The step alone, without its share.
+    public var word: String {
+        switch self {
+        case .looking: return "Looking"
+        case .sending: return "Sending"
+        case .checking: return "Checking"
+        case .naming: return "Naming"
+        }
+    }
+
+    /// The step's own share, for the bar behind it in a list: nil for the
+    /// steps that have none.
+    public var share: Double? {
+        switch self {
+        case .sending(let f), .checking(let f): return f
+        case .looking, .naming: return nil
+        }
+    }
+
+    /// "42%", or nothing.
+    public var percent: String {
+        share.map { "\(Int(($0 * 100).rounded(.down)))%" } ?? ""
     }
 
     /// How far the whole send has got, for a bar: sending is the first
