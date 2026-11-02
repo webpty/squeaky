@@ -391,6 +391,15 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   "Not set up" (no address, or nobody with a NAS folder). It used to wait for
   something to send, and read "Not tried yet" while everything was on the
   NAS (David, 18 October 2026).
+- Each photo's send says its step (`SendStep`, 0.17.2, David, 2 November
+  2026: "short and sweet"): "Looking" (already there? which name?),
+  "Sending 42%", "Checking 60%" (read back and compared), "Naming", then
+  "On the NAS". Shown beside the bar on the Queue page, in its Status
+  column, in the Photos page's Status and in the menu bar. The write is
+  uncached and pushed out every 2 MB, so the share is what reached the NAS:
+  before, the bar hit 100% as the Mac took the photo in, then sat for half
+  a minute while it really went, about 0.3 s a round trip away from home.
+  Still one photo at a time.
 - Notifications come in kinds, one of each showing at a time (identifier
   `geotag-<kind>`): `nas`, `card`, `power`, `nas-away`.
 - A Mac notification per finished batch (`MacNotifier`, one at a time under

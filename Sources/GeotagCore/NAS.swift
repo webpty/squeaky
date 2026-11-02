@@ -87,8 +87,9 @@ public enum NASSender {
     /// takes its name. Nothing on the NAS is overwritten, except Geotag's own
     /// earlier copy of the same photo when `update` is set.
     public static func send(_ local: URL, as name: String, into folder: URL, update: Bool, clean: Bool,
-                            exifTool: ExifTool?, progress: @escaping @Sendable (Double) -> Void) throws -> SendOutcome {
+                            exifTool: ExifTool?, progress: @escaping @Sendable (SendStep) -> Void) throws -> SendOutcome {
         let fm = FileManager.default
+        progress(.looking)
         guard fm.fileExists(atPath: local.path) else { throw NASError.failed("The copy on this Mac is no longer there.") }
         // One handle for all of it: should the copy be swapped for a newer one
         // meanwhile, this send stays whole and the newer one goes next.
@@ -164,19 +165,19 @@ public enum NASSender {
             let fd = open(work.path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
             guard fd >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
             let output = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+            // Not kept by this Mac, and pushed out every 2 MB: the share said
+            // is what has reached the NAS, not what the Mac has taken in. It
+            // used to reach 100% at once, then wait half a minute (David, 2 November 2026).
+            _ = fcntl(fd, F_NOCACHE, 1)
             try input.seek(toOffset: 0)
             var done: UInt64 = 0
-            var shown = -1
-            while let chunk = try input.read(upToCount: 1 << 20), !chunk.isEmpty {
+            progress(.sending(0))
+            while let chunk = try input.read(upToCount: 2 << 20), !chunk.isEmpty {
                 try output.write(contentsOf: chunk)
+                try output.synchronize()
                 done += UInt64(chunk.count)
-                let percent = size == 0 ? 100 : Int(done * 100 / size)
-                if percent != shown {
-                    shown = percent
-                    progress(Double(percent) / 100)
-                }
+                progress(.sending(size == 0 ? 1 : Double(done) / Double(size)))
             }
-            try output.synchronize()
             try output.close()
         } catch {
             drop()
@@ -186,7 +187,8 @@ public enum NASSender {
         // Read back from the NAS itself, and compared.
         let arrived: String
         do {
-            arrived = try hashOnNAS(work)
+            progress(.checking(0))
+            arrived = try hashOnNAS(work) { progress(.checking($0)) }
         } catch {
             drop()
             throw NASError.from(error, doing: "Reading \(name) back from the NAS")
@@ -197,6 +199,7 @@ public enum NASSender {
         }
 
         // The Mac copy's own dates.
+        progress(.naming)
         let attributes = (try? fm.attributesOfItem(atPath: local.path)) ?? [:]
         var dates: [FileAttributeKey: Any] = [:]
         if let c = attributes[.creationDate] { dates[.creationDate] = c }
@@ -259,18 +262,57 @@ public enum NASSender {
         }
     }
 
-    static func hash(_ handle: FileHandle) throws -> String {
+    static func hash(_ handle: FileHandle, read: ((Double) -> Void)? = nil) throws -> String {
         var hasher = SHA256()
-        while let chunk = try handle.read(upToCount: 4 << 20), !chunk.isEmpty { hasher.update(data: chunk) }
+        let size = read == nil ? 0 : (try? handle.seekToEnd()) ?? 0
+        if read != nil { try handle.seek(toOffset: 0) }
+        var done: UInt64 = 0
+        while let chunk = try handle.read(upToCount: read == nil ? 4 << 20 : 2 << 20), !chunk.isEmpty {
+            hasher.update(data: chunk)
+            done += UInt64(chunk.count)
+            if size > 0 { read?(Double(done) / Double(size)) }
+        }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     /// Read from the NAS itself, not from what this Mac kept of it.
-    static func hashOnNAS(_ url: URL) throws -> String {
+    static func hashOnNAS(_ url: URL, read: ((Double) -> Void)? = nil) throws -> String {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         _ = fcntl(handle.fileDescriptor, F_NOCACHE, 1)
-        return try hash(handle)
+        return try hash(handle, read: read)
+    }
+}
+
+/// Where one photo's send has got, as the Queue page says it.
+public enum SendStep: Equatable, Sendable {
+    /// Seeing whether it is on the NAS already, and under which name it goes.
+    case looking
+    /// Its share that has reached the NAS.
+    case sending(Double)
+    /// Its share read back from the NAS and compared.
+    case checking(Double)
+    /// Its dates and final name.
+    case naming
+
+    public var text: String {
+        switch self {
+        case .looking: return "Looking"
+        case .sending(let f): return "Sending \(Int((f * 100).rounded(.down)))%"
+        case .checking(let f): return "Checking \(Int((f * 100).rounded(.down)))%"
+        case .naming: return "Naming"
+        }
+    }
+
+    /// How far the whole send has got, for a bar: sending is the first
+    /// half, checking the second.
+    public var fraction: Double {
+        switch self {
+        case .looking: return 0
+        case .sending(let f): return f / 2
+        case .checking(let f): return 0.5 + f / 2
+        case .naming: return 1
+        }
     }
 }
 

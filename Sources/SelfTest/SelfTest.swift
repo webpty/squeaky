@@ -79,6 +79,7 @@ struct SelfTest {
         await quitAndAway(scratch)
         drift()
         await offsetCodes(scratch)
+        sendSteps(scratch)
         quitting()
         download(scratch)
         cardKinds()
@@ -2761,6 +2762,45 @@ extension SelfTest {
         model.remindClocks(now: reading.addingTimeInterval(14 * 86_400 + 120))
         check("reminder: and the week after", notes.posted.filter { $0.hasPrefix("Time to photograph") }.count == 2)
         UserDefaults.standard.removeObject(forKey: "clockReminders")
+    }
+
+    /// Each step of one photo's send is said, in order, with the share of it
+    /// that has reached the NAS and been read back (David, 2 November 2026).
+    static func sendSteps(_ scratch: URL) {
+        let fm = FileManager.default
+        let mac = scratch.appendingPathComponent("STEPS-MAC")
+        try? fm.createDirectory(at: mac, withIntermediateDirectories: true)
+        let file = mac.appendingPathComponent("BIG.jpg")
+        var bytes = [UInt8](repeating: 0, count: 5 << 20)
+        for i in bytes.indices { bytes[i] = UInt8(truncatingIfNeeded: i &* 31) }
+        try? Data(bytes).write(to: file)
+        let day = scratch.appendingPathComponent("STEPS-NAS/2026.11.02")
+        final class Steps: @unchecked Sendable {
+            let lock = NSLock()
+            var all: [SendStep] = []
+            func add(_ s: SendStep) { lock.withLock { all.append(s) } }
+        }
+        let steps = Steps()
+        let outcome = try? NASSender.send(file, as: "BIG.jpg", into: day, update: false, clean: true, exifTool: nil) { steps.add($0) }
+        let all = steps.all
+        let names = all.map { step -> String in
+            switch step {
+            case .looking: return "looking"
+            case .sending: return "sending"
+            case .checking: return "checking"
+            case .naming: return "naming"
+            }
+        }
+        var order: [String] = []
+        for n in names where order.last != n { order.append(n) }
+        check("send steps: looking, sending, checking, naming, in that order",
+              order == ["looking", "sending", "checking", "naming"] && outcome == .sent(day.appendingPathComponent("BIG.jpg")), "\(order)")
+        let sent = all.compactMap { if case .sending(let f) = $0 { return f } else { return nil } }
+        let checked = all.compactMap { if case .checking(let f) = $0 { return f } else { return nil } }
+        check("send steps: the share sent and checked climbs to all of it, a piece at a time",
+              sent.count >= 3 && sent.last == 1 && sent == sent.sorted() && checked.count >= 3 && checked.last == 1, "\(sent) \(checked)")
+        check("send steps: said short", SendStep.sending(0.42).text == "Sending 42%" && SendStep.checking(0.6).text == "Checking 60%"
+              && SendStep.looking.text == "Looking" && SendStep.naming.text == "Naming")
     }
 
     /// The map window opens by itself after a card is read only when one of

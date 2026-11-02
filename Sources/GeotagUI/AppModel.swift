@@ -1638,7 +1638,7 @@ public final class AppModel: ObservableObject {
                 sendBegan = Date()
                 sendDone = 0
             }
-            say("Sending \(name) to \(host)." + (more == 0 ? "" : " \(more) more waiting") + (sendingLeft().map { ", \($0) left." } ?? (more == 0 ? "" : ".")))
+            say("\(name) to \(host)." + (more == 0 ? "" : " \(more) more waiting") + (sendingLeft().map { ", \($0) left." } ?? (more == 0 ? "" : ".")))
             let local = URL(fileURLWithPath: entry.localPath)
             let tool = exifTool, update = entry.update, meter = self.meter
             // On a thread of its own: a connection that hangs must not hold up
@@ -1647,9 +1647,9 @@ public final class AppModel: ObservableObject {
                 DispatchQueue.global(qos: .utility).async {
                     do {
                         done.resume(returning: .success(try NASSender.send(local, as: name, into: folder, update: update,
-                                                                           clean: clean, exifTool: tool) { fraction in
+                                                                           clean: clean, exifTool: tool) { step in
                             Task { @MainActor [weak self] in
-                                meter.show(fraction, for: name)
+                                meter.show(step, for: name)
                                 self?.refreshWork()
                             }
                         }))
@@ -1737,6 +1737,7 @@ public final class AppModel: ObservableObject {
             let ahead = queueEntries.filter { $0.state == .waiting && NASFolder(book.person($0.personId)?.nasFolder) != nil }.count
             let total = done + now + ahead
             lines.append("Sending to the NAS: \((done + now).formatted()) of \(total.formatted())" + (sendingLeft().map { ", \($0) left" } ?? ""))
+            if now == 1, let photo = meter.name { lines.append("\(photo): \(meter.step.text)") }
             if fraction == nil, total > 0 {
                 fraction = (Double(done) + (now == 1 ? meter.fraction : 0)) / Double(total)
             }

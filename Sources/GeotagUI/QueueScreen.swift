@@ -17,20 +17,22 @@ public enum NASReach: Equatable {
 @MainActor
 public final class SendMeter: ObservableObject {
     @Published public private(set) var name: String?
-    @Published public private(set) var fraction = 0.0
+    @Published public private(set) var step = SendStep.looking
+
+    public var fraction: Double { step.fraction }
 
     func begin(_ name: String) {
         self.name = name
-        fraction = 0
+        step = .looking
     }
 
-    func show(_ fraction: Double, for name: String) {
-        if self.name == name, self.fraction != fraction { self.fraction = fraction }
+    func show(_ step: SendStep, for name: String) {
+        if self.name == name, self.step != step { self.step = step }
     }
 
     func end() {
         name = nil
-        fraction = 0
+        step = .looking
     }
 }
 
@@ -138,6 +140,7 @@ struct QueueScreen: View {
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 SendBar(meter: model.meter).levelWithText()
+                SendingText(meter: model.meter)
                 StatusLine(text: model.queueLine, lines: 2)
                 Spacer()
             }
@@ -195,7 +198,9 @@ struct SendingText: View {
     @ObservedObject var meter: SendMeter
 
     var body: some View {
-        Text("Sending \(Int((meter.fraction * 100).rounded()))%").monospacedDigit().lineLimit(1)
+        if meter.name != nil {
+            Text(meter.step.text).monospacedDigit().lineLimit(1)
+        }
     }
 }
 

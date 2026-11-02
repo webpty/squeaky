@@ -377,7 +377,10 @@ struct PhotoStatus: View {
 
     var body: some View {
         if let result = model.results[row.id] {
-            if let url = result.url, let entry = model.queueEntry(for: url.path) {
+            if let url = result.url, let entry = model.queueEntry(for: url.path), entry.state == .sending {
+                SendingText(meter: model.meter)
+                    .foregroundStyle(.secondary)
+            } else if let url = result.url, let entry = model.queueEntry(for: url.path) {
                 let why = row.needsReview ? " · " + PhotoText.location(row, gap: model.maxGapSeconds) : ""
                 Text(QueueText.photo(entry) + why)
                     .foregroundStyle(entry.state == .sent && why.isEmpty ? .primary : .secondary)
