@@ -232,6 +232,8 @@ public final class AppModel: ObservableObject {
     /// How many photos go up to the NAS at once: over a slow link most of each
     /// photo's time is waiting, which several can do together (David, 2 November 2026).
     @Published public private(set) var sendAtOnce = 3
+    /// How long each step took for the last photos, for each NAS address.
+    public private(set) var stepTimes = StepTimes()
     /// Photos are going up in this round of sending.
     private var sendingBatch = false { didSet { if sendingBatch != oldValue { refreshWork() } } }
     /// What the menu bar icon shows.
@@ -343,6 +345,7 @@ public final class AppModel: ObservableObject {
         nasUser = defaults.string(forKey: "nasUser") ?? ""
         savedNAS = nasFields
         sendPaused = defaults.bool(forKey: "sendPaused")
+        if let data = defaults.data(forKey: "stepTimes"), let times = try? JSONDecoder().decode(StepTimes.self, from: data) { stepTimes = times }
         if defaults.object(forKey: "sendAtOnce") != nil { sendAtOnce = min(max(defaults.integer(forKey: "sendAtOnce"), 1), 6) }
         // A send cut off by a crash or a shutdown starts again from the beginning.
         var entries = (try? queue.load()) ?? []
@@ -1641,7 +1644,7 @@ public final class AppModel: ObservableObject {
                     if nasReach != .through(connection.address) { nasReach = .through(connection.address) }
                     let name = (entry.relativePath as NSString).lastPathComponent
                     changeEntry(entry.id) { $0.state = .sending }
-                    meter.begin(entry.id, name: name)
+                    meter.begin(entry.id, name: name, weights: stepTimes.weights(for: connection.address))
                     sendingBatch = true
                     if sendBegan == nil {
                         sendBegan = Date()
@@ -1700,6 +1703,7 @@ public final class AppModel: ObservableObject {
         let clean = cleanedFolders.insert(folder.path).inserted
         let local = URL(fileURLWithPath: entry.localPath)
         let tool = exifTool, update = entry.update, meter = self.meter, id = entry.id
+        let clock = StepClock()
         // On a thread of its own: a connection that hangs must not hold up
         // the threads the rest of Geotag runs on.
         let outcome: Result<SendOutcome, NASError> = await withCheckedContinuation { done in
@@ -1707,6 +1711,7 @@ public final class AppModel: ObservableObject {
                 do {
                     done.resume(returning: .success(try NASSender.send(local, as: name, into: folder, update: update,
                                                                        clean: clean, exifTool: tool) { step in
+                        clock.saw(step)
                         Task { @MainActor [weak self] in
                             meter.show(step, for: id)
                             self?.refreshWork()
@@ -1722,6 +1727,11 @@ public final class AppModel: ObservableObject {
         switch outcome {
         case .success(let result):
             batchSent += 1
+            // Only a photo that went through every step times them.
+            if case .alreadyThere = result {} else if let seconds = clock.seconds() {
+                stepTimes.add(seconds, for: connection.address)
+                if let data = try? JSONEncoder().encode(stepTimes) { defaults.set(data, forKey: "stepTimes") }
+            }
             let landed = result.url.lastPathComponent
             changeEntry(id) { e in
                 e.state = .sent
@@ -1781,7 +1791,7 @@ public final class AppModel: ObservableObject {
             let total = done + now + ahead
             lines.append("Sending to the NAS: \((done + now).formatted()) of \(total.formatted())" + (sendingLeft().map { ", \($0) left" } ?? ""))
             for id in meter.order {
-                if let going = meter.going[id] { lines.append("\(going.name): \(going.step.text)") }
+                if let going = meter.going[id] { lines.append("\(going.name): \(going.text)") }
             }
             if fraction == nil, total > 0 {
                 fraction = (Double(done) + meter.done) / Double(total)

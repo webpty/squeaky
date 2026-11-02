@@ -2823,9 +2823,24 @@ extension SelfTest {
               && landedDate.map { abs($0.timeIntervalSinceNow + 86_400 * 5) < 5 } == true, "\(String(describing: kept))")
         check("send steps: said short", SendStep.sending(0.42).text == "Sending 42%" && SendStep.checking(0.6).text == "Checking 60%"
               && SendStep.looking.text == "Looking" && SendStep.naming.text == "Naming")
-        check("send steps: in a list cell, the step and its share apart", SendStep.sending(0.42).word == "Sending"
-              && SendStep.sending(0.42).percent == "42%" && SendStep.checking(0.8).share == 0.8
-              && SendStep.looking.percent == "" && SendStep.naming.share == nil)
+        // The whole photo, each step weighted by its share of the time.
+        let w = StepWeights(looking: 0.1, sending: 0.5, checking: 0.3, naming: 0.1)
+        check("send steps: one share for the whole photo, each step weighted",
+              SendStep.looking.whole(w) == 0 && abs(SendStep.sending(0.5).whole(w) - 0.35) < 1e-9
+              && abs(SendStep.checking(1).whole(w) - 0.9) < 1e-9 && abs(SendStep.naming.whole(w) - 0.9) < 1e-9
+              && SendStep.sending(0.42).word == "Sending")
+        var times = StepTimes()
+        times.add([1, 10, 8, 1], for: "smb://a")
+        times.add([1, 10, 8, 1], for: "smb://a")
+        check("send steps: the guess until three photos are timed", times.weights(for: "smb://a") == .guess)
+        times.add([2, 20, 16, 2], for: "smb://a")
+        let learnt = times.weights(for: "smb://a")
+        check("send steps: then each step's share of the time, for that address only",
+              abs(learnt.sending - 0.5) < 1e-9 && abs(learnt.checking - 0.4) < 1e-9 && abs(learnt.looking - 0.05) < 1e-9
+              && times.weights(for: "smb://b") == .guess, "\(learnt)")
+        for _ in 0..<30 { times.add([1, 1, 1, 1], for: "smb://a") }
+        check("send steps: only the last 20 photos count", times.byAddress["smb://a"]?.count == 20
+              && abs(times.weights(for: "smb://a").sending - 0.25) < 1e-9)
     }
 
     /// Several photos up to the NAS at once, as many as Settings says, each
@@ -2874,6 +2889,7 @@ extension SelfTest {
             return (most, model, entries)
         }
 
+        UserDefaults.standard.removeObject(forKey: "stepTimes")
         let one = await run("one", atOnce: 1)
         check("send together: set to 1, one at a time", one.most == 1, "\(one.most)")
         let three = await run("three", atOnce: 3)
@@ -2888,7 +2904,12 @@ extension SelfTest {
             return landed.map { Saver.sha256(nas.appendingPathComponent($0)) == Saver.sha256(URL(fileURLWithPath: e.localPath)) } ?? false
         })
         check("send together: nothing left going up", three.model.meter.count == 0)
+        check("send together: every step of every photo timed, for the address that answered",
+              three.model.stepTimes.byAddress["smb://test"]?.count == 16
+              && three.model.stepTimes.byAddress["smb://test"]?.allSatisfy { $0.count == 4 && $0.allSatisfy { $0 >= 0 } } == true,
+              "\(three.model.stepTimes.byAddress.mapValues(\.count))")
         UserDefaults.standard.removeObject(forKey: "sendAtOnce")
+        UserDefaults.standard.removeObject(forKey: "stepTimes")
     }
 
     /// The map window opens by itself after a card is read only when one of

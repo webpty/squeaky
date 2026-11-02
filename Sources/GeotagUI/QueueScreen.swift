@@ -19,6 +19,13 @@ public final class SendMeter: ObservableObject {
     public struct Going: Equatable {
         public var name: String
         public var step: SendStep
+        public var weights = StepWeights.guess
+
+        /// How far the whole photo has got.
+        public var fraction: Double { step.whole(weights) }
+        public var percent: String { "\(Int((fraction * 100).rounded(.down)))%" }
+        /// "Sending 42%", the share of the whole photo.
+        public var text: String { "\(step.word) \(percent)" }
     }
 
     @Published public private(set) var going: [UUID: Going] = [:]
@@ -29,13 +36,13 @@ public final class SendMeter: ObservableObject {
 
     /// How far the photos going up have got between them, as photos: two
     /// halfway is 1.
-    public var done: Double { going.values.map(\.step.fraction).reduce(0, +) }
+    public var done: Double { going.values.map(\.fraction).reduce(0, +) }
 
     /// The one photo going up, when only one is.
     public var only: Going? { going.count == 1 ? going.values.first : nil }
 
-    func begin(_ id: UUID, name: String) {
-        going[id] = Going(name: name, step: .looking)
+    func begin(_ id: UUID, name: String, weights: StepWeights = .guess) {
+        going[id] = Going(name: name, step: .looking, weights: weights)
         order.append(id)
     }
 
@@ -214,14 +221,14 @@ struct SendingText: View {
 
     var body: some View {
         if let going = id == nil ? meter.only : meter.going[id!] {
-            Text(going.step.text).monospacedDigit().lineLimit(1)
+            Text(going.text).monospacedDigit().lineLimit(1)
         }
     }
 }
 
-/// One photo's step in a list cell: the step on the left, its share at the
-/// far right, and a bar of that share filling the cell behind them
-/// (David, 2 November 2026).
+/// One photo's step in a list cell: the step on the left, how far the whole
+/// photo has got at the far right, and a bar of that filling the cell behind
+/// them (David, 2 November 2026).
 struct SendingCell: View {
     @ObservedObject var meter: SendMeter
     let id: UUID
@@ -231,7 +238,7 @@ struct SendingCell: View {
             HStack(spacing: 8) {
                 Text(going.step.word).lineLimit(1)
                 Spacer(minLength: 0)
-                Text(going.step.percent).monospacedDigit().lineLimit(1)
+                Text(going.percent).monospacedDigit().lineLimit(1)
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 1)
@@ -240,7 +247,7 @@ struct SendingCell: View {
                 GeometryReader { geo in
                     RoundedRectangle(cornerRadius: 4)
                         .fill(Color.accentColor.opacity(0.25))
-                        .frame(width: geo.size.width * (going.step.share ?? 0))
+                        .frame(width: geo.size.width * going.fraction)
                 }
             }
             .background(RoundedRectangle(cornerRadius: 4).fill(Color.secondary.opacity(0.08)))

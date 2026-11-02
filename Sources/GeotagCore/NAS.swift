@@ -324,28 +324,25 @@ public enum SendStep: Equatable, Sendable {
         }
     }
 
-    /// The step's own share, for the bar behind it in a list: nil for the
-    /// steps that have none.
-    public var share: Double? {
+    /// How far the whole photo has got, each step given its share of the
+    /// time: Looking and Naming can't tell how far they are, so they show
+    /// where they start.
+    public func whole(_ w: StepWeights) -> Double {
         switch self {
-        case .sending(let f), .checking(let f): return f
-        case .looking, .naming: return nil
+        case .looking: return 0
+        case .sending(let f): return w.looking + f * w.sending
+        case .checking(let f): return w.looking + w.sending + f * w.checking
+        case .naming: return w.looking + w.sending + w.checking
         }
     }
 
-    /// "42%", or nothing.
-    public var percent: String {
-        share.map { "\(Int(($0 * 100).rounded(.down)))%" } ?? ""
-    }
-
-    /// How far the whole send has got, for a bar: sending is the first
-    /// half, checking the second.
-    public var fraction: Double {
+    /// Which step, for timing: 0 to 3.
+    public var index: Int {
         switch self {
         case .looking: return 0
-        case .sending(let f): return f / 2
-        case .checking(let f): return 0.5 + f / 2
-        case .naming: return 1
+        case .sending: return 1
+        case .checking: return 2
+        case .naming: return 3
         }
     }
 }

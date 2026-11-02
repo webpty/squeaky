@@ -414,8 +414,16 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   away from home through Tailscale: no faster at 3 than at 1, the link
   already full (about 0.1 MB a second).
 - In the Status columns (Queue and Photos pages) a photo going up shows
-  `SendingCell`: the step on the left, its share at the far right, and a
-  bar of that share filling the cell behind them (0.18.1).
+  `SendingCell`: the step on the left, how far the whole photo has got at
+  the far right, and a bar of that filling the cell behind them (0.18.1).
+  The same share shows in the menu bar and above the list.
+- That share weights each step by its real time (0.18.2, David: "reflect
+  reality more"). `StepClock` times every step of each photo that went
+  through all four; `StepTimes` keeps the last 20 per NAS address (home and
+  Tailscale differ), saved in defaults as `stepTimes`; each step's weight is
+  its share of their time. Until an address has 3 timed, `StepWeights.guess`:
+  2/60/36/2. Looking and Naming can't tell how far they are, so they show
+  where they start.
 - Notifications come in kinds, one of each showing at a time (identifier
   `geotag-<kind>`): `nas`, `card`, `power`, `nas-away`.
 - A Mac notification per finished batch (`MacNotifier`, one at a time under
