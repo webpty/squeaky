@@ -400,7 +400,8 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   before, the bar hit 100% as the Mac took the photo in, then sat for half
   a minute while it really went, about 0.3 s a round trip away from home.
 - Several photos go up at once (0.18.0, David, 2 November 2026):
-  `sendAtOnce`, 1 to 6, default 3, in Settings, NAS, "Photos at once".
+  `sendAtOnce`, 1 to 6, in Settings, NAS, "Photos at once"; default 1
+  since 0.18.2, 3 gaining nothing over Tailscale (David, 2 November 2026).
   `sendWaiting` keeps that many sends running in a task group, the next
   waiting photo starting as one finishes. `SendMeter` keeps each photo's
   step by queue entry; the bar shows them together, the menu bar a line

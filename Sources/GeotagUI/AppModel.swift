@@ -229,9 +229,9 @@ public final class AppModel: ObservableObject {
     }
     /// The latest entry for each copy on this Mac.
     private var queueIndex: [String: QueueEntry] = [:]
-    /// How many photos go up to the NAS at once: over a slow link most of each
-    /// photo's time is waiting, which several can do together (David, 2 November 2026).
-    @Published public private(set) var sendAtOnce = 3
+    /// How many photos go up to the NAS at once (David, 2 November 2026). One
+    /// by default: over Tailscale three were no faster, the link already full.
+    @Published public private(set) var sendAtOnce = 1
     /// How long each step took for the last photos, for each NAS address.
     public private(set) var stepTimes = StepTimes()
     /// Photos are going up in this round of sending.
