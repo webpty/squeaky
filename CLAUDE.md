@@ -399,7 +399,15 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   uncached and pushed out every 2 MB, so the share is what reached the NAS:
   before, the bar hit 100% as the Mac took the photo in, then sat for half
   a minute while it really went, about 0.3 s a round trip away from home.
-  Still one photo at a time.
+- Several photos go up at once (0.18.0, David, 2 November 2026):
+  `sendAtOnce`, 1 to 6, default 3, in Settings, NAS, "Photos at once".
+  `sendWaiting` keeps that many sends running in a task group, the next
+  waiting photo starting as one finishes. `SendMeter` keeps each photo's
+  step by queue entry; the bar shows them together, the menu bar a line
+  each. Two photos of the same name into the same folder never go at once
+  (`nextToSend` skips the second), and the naming step takes a lock, so no
+  two pick a name at the same moment. A connection that fails or a full
+  NAS stops new ones; those already going finish.
 - Notifications come in kinds, one of each showing at a time (identifier
   `geotag-<kind>`): `nas`, `card`, `power`, `nas-away`.
 - A Mac notification per finished batch (`MacNotifier`, one at a time under

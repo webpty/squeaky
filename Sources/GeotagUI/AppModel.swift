@@ -229,7 +229,9 @@ public final class AppModel: ObservableObject {
     }
     /// The latest entry for each copy on this Mac.
     private var queueIndex: [String: QueueEntry] = [:]
-    @Published public private(set) var sendingId: UUID?
+    /// How many photos go up to the NAS at once: over a slow link most of each
+    /// photo's time is waiting, which several can do together (David, 2 November 2026).
+    @Published public private(set) var sendAtOnce = 3
     /// Photos are going up in this round of sending.
     private var sendingBatch = false { didSet { if sendingBatch != oldValue { refreshWork() } } }
     /// What the menu bar icon shows.
@@ -248,7 +250,7 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var nasAway = false
     public static let nasAwayText = "The NAS isn't answering. If you're away from home, turn on Tailscale; otherwise check the connection."
     private var checkingNAS = false
-    /// The photo going up now; apart, so its progress redraws only the bar.
+    /// The photos going up now; apart, so their progress redraws only the bar.
     public let meter = SendMeter()
     private let nasPort: NASPort?
     private var ourMounts: [String: NASConnection] = [:]
@@ -341,6 +343,7 @@ public final class AppModel: ObservableObject {
         nasUser = defaults.string(forKey: "nasUser") ?? ""
         savedNAS = nasFields
         sendPaused = defaults.bool(forKey: "sendPaused")
+        if defaults.object(forKey: "sendAtOnce") != nil { sendAtOnce = min(max(defaults.integer(forKey: "sendAtOnce"), 1), 6) }
         // A send cut off by a crash or a shutdown starts again from the beginning.
         var entries = (try? queue.load()) ?? []
         for i in entries.indices where entries[i].state == .sending { entries[i].state = .waiting }
@@ -1549,11 +1552,16 @@ public final class AppModel: ObservableObject {
         sendPaused = on
         defaults.set(on, forKey: "sendPaused")
         if on {
-            say(sendingId == nil ? "Paused." : "Pausing after this photo.")
+            say(meter.count == 0 ? "Paused." : meter.count == 1 ? "Pausing after this photo." : "Pausing after these \(meter.count) photos.")
         } else {
             nextTry = nil
             say("")
         }
+    }
+
+    public func setSendAtOnce(_ count: Int) {
+        sendAtOnce = min(max(count, 1), 6)
+        defaults.set(sendAtOnce, forKey: "sendAtOnce")
     }
 
     public func retryFailed() {
@@ -1573,19 +1581,23 @@ public final class AppModel: ObservableObject {
         if queueLine != line { queueLine = line }
     }
 
-    /// The oldest photo that can go now: its person has a NAS folder, and it
-    /// is not resting after a try that broke off.
+    /// The oldest photo that can go now: its person has a NAS folder, it is
+    /// not resting after a try that broke off, and no photo of the same name
+    /// is going up into the same folder, where the two would race for it.
     private func nextToSend() -> QueueEntry? {
         let now = Date()
+        let place: (QueueEntry) -> String? = { [book] in book.person($0.personId)?.nasFolder }
+        let going = Set(queueEntries.filter { $0.state == .sending }.map { "\(place($0) ?? "")/\($0.relativePath)" })
         return queueEntries
-            .filter { $0.state == .waiting && ($0.notBefore ?? .distantPast) <= now && NASFolder(book.person($0.personId)?.nasFolder) != nil }
+            .filter { $0.state == .waiting && ($0.notBefore ?? .distantPast) <= now && NASFolder(place($0)) != nil
+                && !going.contains("\(place($0) ?? "")/\($0.relativePath)") }
             .min { $0.added < $1.added }
     }
 
-    /// Sends waiting photos to the NAS, oldest first and one at a time, until
-    /// nothing more can go now, the NAS can't be reached, or sending is paused.
-    /// Called every few seconds from launch; the queue is on disk, so it
-    /// carries on after a restart.
+    /// Sends waiting photos to the NAS, oldest first and `sendAtOnce` at a
+    /// time, until nothing more can go now, the NAS can't be reached, or
+    /// sending is paused. Called every few seconds from launch; the queue is
+    /// on disk, so it carries on after a restart.
     public func sendWaiting() async {
         guard !sendingNow, !sendPaused else { return }
         if let next = nextTry, Date() < next { return }
@@ -1605,95 +1617,57 @@ public final class AppModel: ObservableObject {
                 }
             }
         }
-        while !sendPaused, let entry = nextToSend() {
-            guard let place = NASFolder(book.person(entry.personId)?.nasFolder) else { break }
-            let connection: NASConnection
-            do {
-                connection = try await nas.connect(share: place.share)
-            } catch {
-                nasReach = .unreachable
-                // A pause is no part of the pace.
-                sendBegan = nil
-                let retry = Date().addingTimeInterval(60)
-                nextTry = retry
-                say("\(error.localizedDescription) Trying again at \(When.current.time(retry)).")
-                return
-            }
-            if connection.ours { ourMounts[connection.folder.path] = connection }
-            if nasReach != .through(connection.address) { nasReach = .through(connection.address) }
-
-            let name = (entry.relativePath as NSString).lastPathComponent
-            let day = (entry.relativePath as NSString).deletingLastPathComponent
-            var folder = place.folder(in: connection.folder)
-            if !day.isEmpty { folder.appendPathComponent(day, isDirectory: true) }
-            let clean = cleanedFolders.insert(folder.path).inserted
-            changeEntry(entry.id) { $0.state = .sending }
-            sendingId = entry.id
-            meter.begin(name)
-            sendingBatch = true
-            refreshWork()
-            let more = queueEntries.filter { $0.state == .waiting }.count
-            let host = NASOverSMB.host(connection.address) ?? connection.address
-            if sendBegan == nil {
-                sendBegan = Date()
-                sendDone = 0
-            }
-            say("\(name) to \(host)." + (more == 0 ? "" : " \(more) more waiting") + (sendingLeft().map { ", \($0) left." } ?? (more == 0 ? "" : ".")))
-            let local = URL(fileURLWithPath: entry.localPath)
-            let tool = exifTool, update = entry.update, meter = self.meter
-            // On a thread of its own: a connection that hangs must not hold up
-            // the threads the rest of Geotag runs on.
-            let outcome: Result<SendOutcome, NASError> = await withCheckedContinuation { done in
-                DispatchQueue.global(qos: .utility).async {
+        // Set when the NAS can't take more for now: those going up finish,
+        // no more begin, and the line says when it tries again.
+        var halt: String?
+        await withTaskGroup(of: Bool.self) { group in
+            var running = 0
+            while true {
+                while halt == nil, !sendPaused, running < sendAtOnce, let entry = nextToSend() {
+                    guard let place = NASFolder(book.person(entry.personId)?.nasFolder) else { break }
+                    let connection: NASConnection
                     do {
-                        done.resume(returning: .success(try NASSender.send(local, as: name, into: folder, update: update,
-                                                                           clean: clean, exifTool: tool) { step in
-                            Task { @MainActor [weak self] in
-                                meter.show(step, for: name)
-                                self?.refreshWork()
-                            }
-                        }))
+                        connection = try await nas.connect(share: place.share)
                     } catch {
-                        done.resume(returning: .failure(error as? NASError ?? .failed(error.localizedDescription)))
+                        nasReach = .unreachable
+                        // A pause is no part of the pace.
+                        sendBegan = nil
+                        let retry = Date().addingTimeInterval(60)
+                        nextTry = retry
+                        halt = "\(error.localizedDescription) Trying again at \(When.current.time(retry))."
+                        break
+                    }
+                    if connection.ours { ourMounts[connection.folder.path] = connection }
+                    if nasReach != .through(connection.address) { nasReach = .through(connection.address) }
+                    let name = (entry.relativePath as NSString).lastPathComponent
+                    changeEntry(entry.id) { $0.state = .sending }
+                    meter.begin(entry.id, name: name)
+                    sendingBatch = true
+                    if sendBegan == nil {
+                        sendBegan = Date()
+                        sendDone = 0
+                    }
+                    sayGoing(to: connection.address)
+                    refreshWork()
+                    running += 1
+                    group.addTask { @MainActor [self] in
+                        await sendOne(entry, as: name, into: place, on: connection)
                     }
                 }
+                guard running > 0, let full = await group.next() else { break }
+                running -= 1
+                if full {
+                    let retry = Date().addingTimeInterval(300)
+                    nextTry = retry
+                    halt = "NAS full. Trying again at \(When.current.time(retry))."
+                }
+                if halt == nil, running > 0, case .through(let address) = nasReach { sayGoing(to: address) }
+                refreshWork()
             }
-            sendingId = nil
-            meter.end()
-            sendDone += 1
-            switch outcome {
-            case .success(let result):
-                batchSent += 1
-                let landed = result.url.lastPathComponent
-                changeEntry(entry.id) { e in
-                    e.state = .sent
-                    e.sent = Date()
-                    e.sentAs = landed == name ? nil : landed
-                    e.reason = nil
-                    e.notBefore = nil
-                }
-            case .failure(.offline(let why)):
-                // It rests a little longer after each break, so the others go first.
-                changeEntry(entry.id) { e in
-                    e.state = .waiting
-                    e.tries += 1
-                    e.reason = why
-                    e.notBefore = Date().addingTimeInterval(Double(min(e.tries, 10)) * 60)
-                }
-            case .failure(.full):
-                changeEntry(entry.id) { $0.state = .waiting }
-                let retry = Date().addingTimeInterval(300)
-                nextTry = retry
-                say("NAS full. Trying again at \(When.current.time(retry)).")
-                return
-            case .failure(.failed(let why)):
-                batchFailed += 1
-                changeEntry(entry.id) { e in
-                    e.state = .failed
-                    e.reason = why
-                }
-            }
-            refreshWork()
+        }
+        if let halt {
+            say(halt)
+            return
         }
         say(sendPaused ? "Paused." : restingLine())
         let waiting = queueEntries.contains { $0.state == .waiting && NASFolder(book.person($0.personId)?.nasFolder) != nil }
@@ -1708,11 +1682,80 @@ public final class AppModel: ObservableObject {
         if !waiting { sendBegan = nil }
     }
 
+    /// "IMG_0001.JPG to nas. 12 more waiting, about 20 min left.", or with
+    /// several going up, "3 photos to nas at once. ..."
+    private func sayGoing(to address: String) {
+        let host = NASOverSMB.host(address) ?? address
+        let more = queueEntries.filter { $0.state == .waiting }.count
+        let going = meter.only.map { "\($0.name) to \(host)." } ?? "\(meter.count) photos to \(host) at once."
+        say(going + (more == 0 ? "" : " \(more) more waiting") + (sendingLeft().map { ", \($0) left." } ?? (more == 0 ? "" : ".")))
+    }
+
+    /// One photo up to the NAS, and the queue told how it went. True when the
+    /// NAS is full.
+    private func sendOne(_ entry: QueueEntry, as name: String, into place: NASFolder, on connection: NASConnection) async -> Bool {
+        let day = (entry.relativePath as NSString).deletingLastPathComponent
+        var folder = place.folder(in: connection.folder)
+        if !day.isEmpty { folder.appendPathComponent(day, isDirectory: true) }
+        let clean = cleanedFolders.insert(folder.path).inserted
+        let local = URL(fileURLWithPath: entry.localPath)
+        let tool = exifTool, update = entry.update, meter = self.meter, id = entry.id
+        // On a thread of its own: a connection that hangs must not hold up
+        // the threads the rest of Geotag runs on.
+        let outcome: Result<SendOutcome, NASError> = await withCheckedContinuation { done in
+            DispatchQueue.global(qos: .utility).async {
+                do {
+                    done.resume(returning: .success(try NASSender.send(local, as: name, into: folder, update: update,
+                                                                       clean: clean, exifTool: tool) { step in
+                        Task { @MainActor [weak self] in
+                            meter.show(step, for: id)
+                            self?.refreshWork()
+                        }
+                    }))
+                } catch {
+                    done.resume(returning: .failure(error as? NASError ?? .failed(error.localizedDescription)))
+                }
+            }
+        }
+        meter.end(id)
+        sendDone += 1
+        switch outcome {
+        case .success(let result):
+            batchSent += 1
+            let landed = result.url.lastPathComponent
+            changeEntry(id) { e in
+                e.state = .sent
+                e.sent = Date()
+                e.sentAs = landed == name ? nil : landed
+                e.reason = nil
+                e.notBefore = nil
+            }
+        case .failure(.offline(let why)):
+            // It rests a little longer after each break, so the others go first.
+            changeEntry(id) { e in
+                e.state = .waiting
+                e.tries += 1
+                e.reason = why
+                e.notBefore = Date().addingTimeInterval(Double(min(e.tries, 10)) * 60)
+            }
+        case .failure(.full):
+            changeEntry(id) { $0.state = .waiting }
+            return true
+        case .failure(.failed(let why)):
+            batchFailed += 1
+            changeEntry(id) { e in
+                e.state = .failed
+                e.reason = why
+            }
+        }
+        return false
+    }
+
     /// "about 20 min" of sending left at this run's pace; nil until it can tell.
     public func sendingLeft() -> String? {
         guard let began = sendBegan else { return nil }
         let ahead = queueEntries.filter { $0.state == .waiting && NASFolder(book.person($0.personId)?.nasFolder) != nil }.count
-        let now = sendingId == nil ? 0 : 1
+        let now = meter.count
         return Remaining.estimate(done: sendDone, total: sendDone + now + ahead, since: began).map(Remaining.text)
     }
 
@@ -1733,13 +1776,15 @@ public final class AppModel: ObservableObject {
         }
         if sendingBatch {
             let done = batchSent + batchFailed
-            let now = sendingId == nil ? 0 : 1
+            let now = meter.count
             let ahead = queueEntries.filter { $0.state == .waiting && NASFolder(book.person($0.personId)?.nasFolder) != nil }.count
             let total = done + now + ahead
             lines.append("Sending to the NAS: \((done + now).formatted()) of \(total.formatted())" + (sendingLeft().map { ", \($0) left" } ?? ""))
-            if now == 1, let photo = meter.name { lines.append("\(photo): \(meter.step.text)") }
+            for id in meter.order {
+                if let going = meter.going[id] { lines.append("\(going.name): \(going.step.text)") }
+            }
             if fraction == nil, total > 0 {
-                fraction = (Double(done) + (now == 1 ? meter.fraction : 0)) / Double(total)
+                fraction = (Double(done) + meter.done) / Double(total)
             }
         }
         work.set(lines: lines, fraction: fraction)

@@ -81,6 +81,8 @@ public struct NASFolder: Equatable, Sendable {
 }
 
 public enum NASSender {
+    private static let naming = NSLock()
+
     /// Copies a photo saved on this Mac into a folder on the NAS. It goes up
     /// under a hidden working name, is read back from the NAS itself and
     /// compared with the Mac's copy, gets the Mac copy's dates, and only then
@@ -206,6 +208,9 @@ public enum NASSender {
         if let m = attributes[.modificationDate] { dates[.modificationDate] = m }
         if !dates.isEmpty { try? fm.setAttributes(dates, ofItemAtPath: work.path) }
 
+        // One photo names itself at a time: several go up at once.
+        naming.lock()
+        defer { naming.unlock() }
         if replacing {
             let old = hidden("old")
             do {

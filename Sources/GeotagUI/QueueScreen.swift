@@ -12,27 +12,40 @@ public enum NASReach: Equatable {
     case notSetUp
 }
 
-/// The photo going up to the NAS now and how far it has got, kept apart from
-/// the model so that its progress redraws only what shows it.
+/// The photos going up to the NAS now and how far each has got, kept apart
+/// from the model so that their progress redraws only what shows it.
 @MainActor
 public final class SendMeter: ObservableObject {
-    @Published public private(set) var name: String?
-    @Published public private(set) var step = SendStep.looking
-
-    public var fraction: Double { step.fraction }
-
-    func begin(_ name: String) {
-        self.name = name
-        step = .looking
+    public struct Going: Equatable {
+        public var name: String
+        public var step: SendStep
     }
 
-    func show(_ step: SendStep, for name: String) {
-        if self.name == name, self.step != step { self.step = step }
+    @Published public private(set) var going: [UUID: Going] = [:]
+    /// Oldest first, as they began.
+    public private(set) var order: [UUID] = []
+
+    public var count: Int { going.count }
+
+    /// How far the photos going up have got between them, as photos: two
+    /// halfway is 1.
+    public var done: Double { going.values.map(\.step.fraction).reduce(0, +) }
+
+    /// The one photo going up, when only one is.
+    public var only: Going? { going.count == 1 ? going.values.first : nil }
+
+    func begin(_ id: UUID, name: String) {
+        going[id] = Going(name: name, step: .looking)
+        order.append(id)
     }
 
-    func end() {
-        name = nil
-        step = .looking
+    func show(_ step: SendStep, for id: UUID) {
+        if let now = going[id], now.step != step { going[id]?.step = step }
+    }
+
+    func end(_ id: UUID) {
+        going[id] = nil
+        order.removeAll { $0 == id }
     }
 }
 
@@ -165,7 +178,7 @@ struct QueueScreen: View {
                 .width(min: 150, ideal: 180)
                 TableColumn("Status") { row in
                     if row.entry.state == .sending {
-                        SendingText(meter: model.meter)
+                        SendingText(meter: model.meter, id: row.entry.id)
                     } else {
                         Text(QueueText.status(row.entry))
                             .foregroundStyle(row.entry.state == .sent ? .primary : .secondary)
@@ -182,24 +195,26 @@ struct QueueScreen: View {
     }
 }
 
-/// The bar for the photo going up now; nothing when none is.
+/// The bar for the photos going up now, all of them together; nothing when none is.
 struct SendBar: View {
     @ObservedObject var meter: SendMeter
 
     var body: some View {
-        if meter.name != nil {
-            ProgressView(value: meter.fraction)
+        if meter.count > 0 {
+            ProgressView(value: meter.done / Double(meter.count))
                 .frame(width: 200)
         }
     }
 }
 
+/// One photo's step, or with no photo named, the step of the only one going up.
 struct SendingText: View {
     @ObservedObject var meter: SendMeter
+    var id: UUID?
 
     var body: some View {
-        if meter.name != nil {
-            Text(meter.step.text).monospacedDigit().lineLimit(1)
+        if let going = id == nil ? meter.only : meter.going[id!] {
+            Text(going.step.text).monospacedDigit().lineLimit(1)
         }
     }
 }
@@ -229,6 +244,13 @@ struct NASCard: View {
                     Text("Password").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
                     SecureField("", text: $model.nasPassword)
                         .textFieldStyle(.roundedBorder)
+                }
+                GridRow {
+                    Text("Photos at once").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
+                    Stepper(value: Binding(get: { model.sendAtOnce }, set: { model.setSendAtOnce($0) }), in: 1...6) {
+                        Text(model.sendAtOnce.formatted()).monospacedDigit().lineLimit(1)
+                    }
+                    .fixedSize()
                 }
             }
             HStack(alignment: .firstTextBaseline, spacing: Style.gap) {

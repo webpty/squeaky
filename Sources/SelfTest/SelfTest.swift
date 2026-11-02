@@ -80,6 +80,7 @@ struct SelfTest {
         drift()
         await offsetCodes(scratch)
         sendSteps(scratch)
+        await sendTogether(scratch)
         quitting()
         download(scratch)
         cardKinds()
@@ -2801,6 +2802,69 @@ extension SelfTest {
               sent.count >= 3 && sent.last == 1 && sent == sent.sorted() && checked.count >= 3 && checked.last == 1, "\(sent) \(checked)")
         check("send steps: said short", SendStep.sending(0.42).text == "Sending 42%" && SendStep.checking(0.6).text == "Checking 60%"
               && SendStep.looking.text == "Looking" && SendStep.naming.text == "Naming")
+    }
+
+    /// Several photos up to the NAS at once, as many as Settings says, each
+    /// with its own step; two of the same name into one folder never race for it.
+    @MainActor
+    static func sendTogether(_ scratch: URL) async {
+        let fm = FileManager.default
+        var book = PeopleBook.family()
+        book.people[0].nasFolder = "homes/david/Photos"
+        let peopleFile = PeopleStoreFile(url: scratch.appendingPathComponent("st-people.json"))
+        try? peopleFile.save(book)
+        let david = book.people[0].id
+        let mac = scratch.appendingPathComponent("ST-MAC")
+        func queue(_ tag: String, count: Int) -> [QueueEntry] {
+            (0..<count).map { i in
+                let folder = mac.appendingPathComponent("\(tag)/\(i)")
+                try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+                let url = folder.appendingPathComponent("IMG_\(i % 4).JPG")
+                var bytes = [UInt8](repeating: UInt8(i), count: 3 << 20)
+                bytes[0] = UInt8(truncatingIfNeeded: i &* 7)
+                try? Data(bytes).write(to: url)
+                // Photos 0 and 4 share a name and a day: so do 1 and 5, and so on.
+                return QueueEntry(personId: david, localPath: url.path, relativePath: "\(tag)/IMG_\(i % 4).JPG",
+                                  added: Date().addingTimeInterval(Double(i)))
+            }
+        }
+        func run(_ tag: String, atOnce: Int) async -> (most: Int, model: AppModel, entries: [QueueEntry]) {
+            let entries = queue(tag, count: 8)
+            let queueFile = QueueStoreFile(url: scratch.appendingPathComponent("st-\(tag).json"))
+            try? queueFile.save(entries)
+            let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("st-lib"))),
+                                 peopleStore: peopleFile, history: HistoryStoreFolder(folder: scratch.appendingPathComponent("st-history")),
+                                 queue: queueFile, unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("st-unplaced.json")),
+                                 secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("st-maps")),
+                                 exifTool: nil, nas: FakeNAS(root: scratch.appendingPathComponent("ST-NAS-\(tag)")), notifier: RecordingNotifier())
+            model.setSendAtOnce(atOnce)
+            var most = 0
+            let watch = Task { @MainActor in
+                while !Task.isCancelled {
+                    most = max(most, model.meter.count)
+                    try? await Task.sleep(for: .milliseconds(2))
+                }
+            }
+            await model.sendWaiting()
+            watch.cancel()
+            return (most, model, entries)
+        }
+
+        let one = await run("one", atOnce: 1)
+        check("send together: set to 1, one at a time", one.most == 1, "\(one.most)")
+        let three = await run("three", atOnce: 3)
+        check("send together: set to 3, three at once and never more", three.most == 3, "\(three.most)")
+        let nas = scratch.appendingPathComponent("ST-NAS-three/homes/david/Photos/three")
+        let there = Set((try? fm.contentsOfDirectory(atPath: nas.path)) ?? [])
+        check("send together: every photo there, the second of each name numbered",
+              three.model.queueEntries.allSatisfy { $0.state == .sent }
+              && there == Set((0..<4).flatMap { ["IMG_\($0).JPG", "IMG_\($0)_2.JPG"] }), "\(there.sorted())")
+        check("send together: each arrived whole", three.entries.allSatisfy { e in
+            let landed = three.model.queueEntries.first { $0.id == e.id }.map { $0.sentAs ?? (e.relativePath as NSString).lastPathComponent }
+            return landed.map { Saver.sha256(nas.appendingPathComponent($0)) == Saver.sha256(URL(fileURLWithPath: e.localPath)) } ?? false
+        })
+        check("send together: nothing left going up", three.model.meter.count == 0)
+        UserDefaults.standard.removeObject(forKey: "sendAtOnce")
     }
 
     /// The map window opens by itself after a card is read only when one of
