@@ -425,6 +425,21 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   its share of their time. Until an address has 3 timed, `StepWeights.guess`:
   2/60/36/2. Looking and Naming can't tell how far they are, so they show
   where they start.
+- Copies on this Mac are removed once on the NAS (0.19.0, David, 5 November
+  2026: saving locally does not scale). `sent.jsonl` beside `queue.json`
+  (`SentLogFile`) records every photo that passed the check on arrival, for
+  good: where it landed, when, and the Mac copy's size and date as sent.
+  `MacTidy.plan` decides by that record alone. Geotag never looks at the NAS
+  again: its job ends with the send and its first check, and the photos
+  there will be sorted, renamed or deleted later. Settings, NAS, "Keep
+  photos on this Mac": 30 days after reaching the NAS (default, as the
+  Mac's Trash: time to use them while fresh), until on the NAS, or always.
+  Never removed: a copy with a queue entry not yet sent, one waiting for a
+  location (`unplaced.json`), or one changed since it went. An emptied day
+  folder goes too, never the person's save folder. Runs every ten minutes
+  from the send timer. The first run puts what the queue still lists as
+  sent into the record; copies sent before that have none and stay.
+  The Queue page's "Freed on this Mac" adds up `freed`.
 - Notifications come in kinds, one of each showing at a time (identifier
   `geotag-<kind>`): `nas`, `card`, `power`, `nas-away`.
 - A Mac notification per finished batch (`MacNotifier`, one at a time under

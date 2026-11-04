@@ -232,6 +232,12 @@ public final class AppModel: ObservableObject {
     /// How many photos go up to the NAS at once (David, 2 November 2026). One
     /// by default: over Tailscale three were no faster, the link already full.
     @Published public private(set) var sendAtOnce = 1
+    /// How long a copy stays on this Mac once on the NAS (David, 5 November 2026).
+    @Published public private(set) var keepOnMac = KeepOnMac.thirtyDays
+    /// Every photo that reached the NAS, for good.
+    @Published public private(set) var sentRecords: [SentRecord] = []
+    private var lastTidy: Date?
+    private var sentSinceTidy = false
     /// How long each step took for the last photos, for each NAS address.
     public private(set) var stepTimes = StepTimes()
     /// Photos are going up in this round of sending.
@@ -270,6 +276,7 @@ public final class AppModel: ObservableObject {
     private let history: HistoryStorePort
     private let queue: QueueStorePort
     private let unplaced: UnplacedStorePort
+    private let sentLog: SentLogPort
     @Published public private(set) var placingLater = false
     private let exifTool: ExifTool?
     private let cardGuard = CardGuard()
@@ -296,11 +303,15 @@ public final class AppModel: ObservableObject {
                 notifier: NotifierPort? = nil,
                 places: PlaceNaming? = nil,
                 power: PowerPort? = nil,
-                temperatures: TemperatureStorePort? = nil) {
+                temperatures: TemperatureStorePort? = nil,
+                sentLog: SentLogPort? = nil) {
         // Beside the people list unless told otherwise, so a test's stays in its scratch folder.
         self.temperatureStore = temperatures
             ?? (peopleStore as? PeopleStoreFile).map { TemperatureStoreFile(url: $0.url.deletingLastPathComponent().appendingPathComponent("temperatures.json")) }
             ?? TemperatureStoreFile.standard()
+        self.sentLog = sentLog
+            ?? (queue as? QueueStoreFile).map { SentLogFile(url: $0.url.deletingLastPathComponent().appendingPathComponent("sent.jsonl")) }
+            ?? SentLogFile.standard()
         self.notifier = notifier ?? MacNotifier.shared
         self.power = power ?? MacPower()
         self.places = places ?? PlaceNames.shared
@@ -351,6 +362,19 @@ public final class AppModel: ObservableObject {
         var entries = (try? queue.load()) ?? []
         for i in entries.indices where entries[i].state == .sending { entries[i].state = .waiting }
         queueEntries = entries
+        keepOnMac = defaults.string(forKey: "keepOnMac").flatMap(KeepOnMac.init(rawValue:)) ?? .thirtyDays
+        sentRecords = (try? self.sentLog.load()) ?? []
+        // The first time: the photos the queue still lists as sent go into the
+        // record. Those sent before that have none, and stay (David, 5 November 2026).
+        if sentRecords.isEmpty {
+            let seeded = entries.filter { $0.state == .sent }.compactMap { e -> SentRecord? in
+                guard let stamp = SentRecord.stamp(e.localPath) else { return nil }
+                return SentRecord(personId: e.personId, localPath: e.localPath, nasPath: Self.landed(e), sent: e.sent ?? e.added,
+                                  size: stamp.size, modified: stamp.modified)
+            }
+            try? self.sentLog.add(seeded)
+            sentRecords = seeded
+        }
 
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.cameBack() }
@@ -1567,6 +1591,52 @@ public final class AppModel: ObservableObject {
         defaults.set(sendAtOnce, forKey: "sendAtOnce")
     }
 
+    public func setKeepOnMac(_ keep: KeepOnMac) {
+        keepOnMac = keep
+        defaults.set(keep.rawValue, forKey: "keepOnMac")
+        tidyMac()
+    }
+
+    /// Space freed on this Mac by removing copies that are on the NAS.
+    public var freedOnMac: Int64 { sentRecords.compactMap(\.freed).reduce(0, +) }
+
+    /// "2026.10.29/IMG_0001_2.jpg": where a sent photo landed under its person's folder.
+    static func landed(_ e: QueueEntry) -> String {
+        guard let name = e.sentAs else { return e.relativePath }
+        let day = (e.relativePath as NSString).deletingLastPathComponent
+        return day.isEmpty ? name : "\(day)/\(name)"
+    }
+
+    /// Removes the copies on this Mac that have been on the NAS long enough,
+    /// going by the record alone. Never one still to send, still waiting for
+    /// a location, or changed since it went. An emptied day folder goes too.
+    public func tidyMac(now: Date = Date()) {
+        lastTidy = now
+        sentSinceTidy = false
+        var busy = Set(queueEntries.filter { $0.state != .sent }.map(\.localPath))
+        busy.formUnion(((try? unplaced.load()) ?? []).map(\.localPath))
+        let plan = MacTidy.plan(sentRecords, keep: keepOnMac, busy: busy, now: now)
+        guard !plan.remove.isEmpty || !plan.gone.isEmpty else { return }
+        let fm = FileManager.default
+        let roots = Set(book.people.compactMap { $0.saveFolder.map { URL(fileURLWithPath: $0).standardizedFileURL.path } })
+        var records = sentRecords
+        var folders: Set<String> = []
+        for i in plan.remove {
+            let url = URL(fileURLWithPath: records[i].localPath)
+            guard (try? fm.removeItem(at: url)) != nil else { continue }
+            records[i].removed = now
+            records[i].freed = records[i].size
+            folders.insert(url.deletingLastPathComponent().standardizedFileURL.path)
+        }
+        for i in plan.gone { records[i].removed = now }
+        for folder in folders where !roots.contains(folder) {
+            let left = ((try? fm.contentsOfDirectory(atPath: folder)) ?? ["?"]).filter { $0 != ".DS_Store" }
+            if left.isEmpty { try? fm.removeItem(atPath: folder) }
+        }
+        sentRecords = records
+        try? sentLog.save(records)
+    }
+
     public func retryFailed() {
         changeQueue { all in
             for i in all.indices where all[i].state == .failed {
@@ -1683,6 +1753,8 @@ public final class AppModel: ObservableObject {
         }
         if !sendPaused, !waiting { await closeOurMounts() }
         if !waiting { sendBegan = nil }
+        // Every ten minutes, and straight after a send when copies go as soon as they are on the NAS.
+        if lastTidy.map({ Date().timeIntervalSince($0) > 600 }) ?? true || (sentSinceTidy && keepOnMac == .untilOnNAS) { tidyMac() }
     }
 
     /// "IMG_0001.JPG to nas. 12 more waiting, about 20 min left.", or with
@@ -1704,6 +1776,7 @@ public final class AppModel: ObservableObject {
         let local = URL(fileURLWithPath: entry.localPath)
         let tool = exifTool, update = entry.update, meter = self.meter, id = entry.id
         let clock = StepClock()
+        let before = SentRecord.stamp(entry.localPath)
         // On a thread of its own: a connection that hangs must not hold up
         // the threads the rest of Geotag runs on.
         let outcome: Result<SendOutcome, NASError> = await withCheckedContinuation { done in
@@ -1733,6 +1806,15 @@ public final class AppModel: ObservableObject {
                 if let data = try? JSONEncoder().encode(stepTimes) { defaults.set(data, forKey: "stepTimes") }
             }
             let landed = result.url.lastPathComponent
+            if let before {
+                var done = entry
+                done.sentAs = landed == name ? nil : landed
+                let record = SentRecord(personId: entry.personId, localPath: entry.localPath, nasPath: Self.landed(done),
+                                        sent: Date(), size: before.size, modified: before.modified)
+                try? sentLog.add([record])
+                sentRecords.append(record)
+                sentSinceTidy = true
+            }
             changeEntry(id) { e in
                 e.state = .sent
                 e.sent = Date()

@@ -141,6 +141,7 @@ struct QueueScreen: View {
                 Tile(label: "Waiting", value: waiting.formatted())
                 Tile(label: "On the NAS", value: sent.formatted())
                 Tile(label: "Not sent", value: failed.formatted())
+                Tile(label: "Freed on this Mac", value: ByteCountFormatter.string(fromByteCount: model.freedOnMac, countStyle: .file))
             }
 
             if model.nasAway {
@@ -286,6 +287,14 @@ struct NASCard: View {
                     Stepper(value: Binding(get: { model.sendAtOnce }, set: { model.setSendAtOnce($0) }), in: 1...6) {
                         Text(model.sendAtOnce.formatted()).monospacedDigit().lineLimit(1)
                     }
+                    .fixedSize()
+                }
+                GridRow {
+                    Text("Keep photos on this Mac").lineLimit(1).fixedSize()
+                    Picker("", selection: Binding(get: { model.keepOnMac }, set: { model.setKeepOnMac($0) })) {
+                        ForEach(KeepOnMac.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                    .labelsHidden()
                     .fixedSize()
                 }
             }

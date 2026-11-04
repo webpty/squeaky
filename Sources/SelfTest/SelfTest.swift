@@ -81,6 +81,7 @@ struct SelfTest {
         await offsetCodes(scratch)
         sendSteps(scratch)
         await sendTogether(scratch)
+        macTidy(scratch)
         quitting()
         download(scratch)
         cardKinds()
@@ -2869,7 +2870,8 @@ extension SelfTest {
         }
         func run(_ tag: String, atOnce: Int) async -> (most: Int, model: AppModel, entries: [QueueEntry]) {
             let entries = queue(tag, count: 8)
-            let queueFile = QueueStoreFile(url: scratch.appendingPathComponent("st-\(tag).json"))
+            // Its own folder: the record of sent photos sits beside the queue.
+            let queueFile = QueueStoreFile(url: scratch.appendingPathComponent("st-\(tag)/queue.json"))
             try? queueFile.save(entries)
             let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("st-lib"))),
                                  peopleStore: peopleFile, history: HistoryStoreFolder(folder: scratch.appendingPathComponent("st-history")),
@@ -2904,12 +2906,113 @@ extension SelfTest {
             return landed.map { Saver.sha256(nas.appendingPathComponent($0)) == Saver.sha256(URL(fileURLWithPath: e.localPath)) } ?? false
         })
         check("send together: nothing left going up", three.model.meter.count == 0)
+        let records = three.model.sentRecords
+        check("send together: each photo sent is recorded, where it landed",
+              records.count == 8 && Set(records.map(\.nasPath)) == Set((0..<4).flatMap { ["three/IMG_\($0).JPG", "three/IMG_\($0)_2.JPG"] })
+              && (try? SentLogFile(url: scratch.appendingPathComponent("st-three/sent.jsonl")).load())?.count == 8,
+              "\(records.map(\.nasPath).sorted())")
         check("send together: every step of every photo timed, for the address that answered",
               three.model.stepTimes.byAddress["smb://test"]?.count == 16
               && three.model.stepTimes.byAddress["smb://test"]?.allSatisfy { $0.count == 4 && $0.allSatisfy { $0 >= 0 } } == true,
               "\(three.model.stepTimes.byAddress.mapValues(\.count))")
         UserDefaults.standard.removeObject(forKey: "sendAtOnce")
         UserDefaults.standard.removeObject(forKey: "stepTimes")
+    }
+
+    /// Copies on this Mac removed once on the NAS long enough, by the record
+    /// alone: never one still to send, waiting for a location, or changed
+    /// since it went (David, 5 November 2026).
+    @MainActor
+    static func macTidy(_ scratch: URL) {
+        let fm = FileManager.default
+        var book = PeopleBook.family()
+        let root = scratch.appendingPathComponent("TIDY-MAC")
+        book.people[0].saveFolder = root.path
+        book.people[0].nasFolder = "homes/david/Photos"
+        let peopleFile = PeopleStoreFile(url: scratch.appendingPathComponent("tidy-people.json"))
+        try? peopleFile.save(book)
+        let david = book.people[0].id
+        let old = Date().addingTimeInterval(-40 * 86_400)
+        func copy(_ day: String, _ name: String, bytes: Int = 1000) -> URL {
+            let folder = root.appendingPathComponent(day)
+            try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            let url = folder.appendingPathComponent(name)
+            try? Data(repeating: 7, count: bytes).write(to: url)
+            return url
+        }
+        func record(_ url: URL, sent: Date) -> SentRecord {
+            let stamp = SentRecord.stamp(url.path)!
+            return SentRecord(personId: david, localPath: url.path, nasPath: "\(url.deletingLastPathComponent().lastPathComponent)/\(url.lastPathComponent)", sent: sent, size: stamp.size, modified: stamp.modified)
+        }
+        let gone = copy("2026.09.01", "A.jpg", bytes: 2000)
+        let lone = copy("2026.09.02", "B.jpg", bytes: 3000)
+        let fresh = copy("2026.10.30", "C.jpg")
+        let waiting = copy("2026.09.03", "D.jpg")
+        let unplacedOne = copy("2026.09.03", "E.jpg")
+        let changed = copy("2026.09.03", "F.jpg")
+        let vanished = copy("2026.09.03", "G.jpg")
+        var log = [record(gone, sent: old), record(lone, sent: old), record(fresh, sent: Date().addingTimeInterval(-5 * 86_400)),
+                   record(waiting, sent: old), record(unplacedOne, sent: old), record(changed, sent: old), record(vanished, sent: old)]
+        log[0].nasPath = "2026.09.01/A_2.jpg"
+        let logFile = SentLogFile(url: scratch.appendingPathComponent("tidy-sent.jsonl"))
+        try? logFile.add(log)
+        // Edited since, the same size: its date tells.
+        try? Data(repeating: 9, count: 1000).write(to: changed)
+        try? fm.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: changed.path)
+        try? fm.removeItem(at: vanished)
+        // A newer copy of D waiting to go, E waiting for a location.
+        let queueFile = QueueStoreFile(url: scratch.appendingPathComponent("tidy-queue.json"))
+        try? queueFile.save([QueueEntry(personId: david, localPath: waiting.path, relativePath: "2026.09.03/D.jpg", update: true)])
+        let unplacedFile = UnplacedStoreFile(url: scratch.appendingPathComponent("tidy-unplaced.json"))
+        try? unplacedFile.save([UnplacedEntry(personId: david, localPath: unplacedOne.path, photo: photo("2026:09:03 10:00:00", zone: nil))])
+
+        let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("tidy-lib"))),
+                             peopleStore: peopleFile, history: HistoryStoreFolder(folder: scratch.appendingPathComponent("tidy-history")),
+                             queue: queueFile, unplaced: unplacedFile,
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("tidy-maps")),
+                             exifTool: nil, nas: FakeNAS(root: scratch.appendingPathComponent("TIDY-NAS")), notifier: RecordingNotifier(),
+                             sentLog: logFile)
+        check("tidy: 30 days after the NAS to start", model.keepOnMac == .thirtyDays)
+        model.setKeepOnMac(.always)
+        check("tidy: set to Always, nothing removed", [gone, lone, fresh, waiting, unplacedOne, changed].allSatisfy { fm.fileExists(atPath: $0.path) })
+        model.setKeepOnMac(.thirtyDays)
+        check("tidy: on the NAS over 30 days, removed", !fm.fileExists(atPath: gone.path) && !fm.fileExists(atPath: lone.path))
+        check("tidy: an emptied day folder removed, the save folder kept",
+              !fm.fileExists(atPath: gone.deletingLastPathComponent().path) && fm.fileExists(atPath: root.path))
+        check("tidy: sent 5 days ago, kept", fm.fileExists(atPath: fresh.path))
+        check("tidy: a newer copy still to send, kept", fm.fileExists(atPath: waiting.path))
+        check("tidy: waiting for a location, kept", fm.fileExists(atPath: unplacedOne.path))
+        check("tidy: changed since it was sent, kept", fm.fileExists(atPath: changed.path))
+        check("tidy: the space freed counted, a copy already gone not", model.freedOnMac == 5000, "\(model.freedOnMac)")
+        let onDisk = (try? logFile.load()) ?? []
+        check("tidy: the record keeps every photo, the removed marked, written to disk",
+              onDisk.count == 7 && onDisk.filter { $0.removed != nil }.count == 3 && onDisk[0].nasPath == "2026.09.01/A_2.jpg")
+        model.setKeepOnMac(.untilOnNAS)
+        check("tidy: Until on the NAS, the fresh one removed too", !fm.fileExists(atPath: fresh.path)
+              && fm.fileExists(atPath: waiting.path) && fm.fileExists(atPath: changed.path))
+
+        // A copy sent twice counts by its latest send.
+        let twice = copy("2026.09.04", "H.jpg")
+        let plan = MacTidy.plan([record(twice, sent: old), record(twice, sent: Date())], keep: .thirtyDays, busy: [])
+        check("tidy: a copy sent again lately waits for the latest send", plan.remove.isEmpty && plan.gone.isEmpty)
+
+        // The first run: the photos the queue lists as sent go into the record.
+        let seedQueue = QueueStoreFile(url: scratch.appendingPathComponent("tidy-seed/queue.json"))
+        let seedOne = copy("2026.09.05", "S.jpg")
+        var sentEntry = QueueEntry(personId: david, localPath: seedOne.path, relativePath: "2026.09.05/S.jpg")
+        sentEntry.state = .sent
+        sentEntry.sent = Date().addingTimeInterval(-3 * 86_400)
+        sentEntry.sentAs = "S_2.jpg"
+        try? seedQueue.save([sentEntry])
+        let seeded = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("tidy-lib"))),
+                              peopleStore: peopleFile, history: HistoryStoreFolder(folder: scratch.appendingPathComponent("tidy-history")),
+                              queue: seedQueue, unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("seed-unplaced.json")),
+                              secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("tidy-maps")),
+                              exifTool: nil, nas: FakeNAS(root: scratch.appendingPathComponent("TIDY-NAS")), notifier: RecordingNotifier())
+        check("tidy: the first time, what the queue lists as sent goes into the record, beside the queue",
+              seeded.sentRecords.map(\.nasPath) == ["2026.09.05/S_2.jpg"]
+              && (try? SentLogFile(url: scratch.appendingPathComponent("tidy-seed/sent.jsonl")).load())?.contains { $0.localPath == seedOne.path } == true)
+        UserDefaults.standard.removeObject(forKey: "keepOnMac")
     }
 
     /// The map window opens by itself after a card is read only when one of
