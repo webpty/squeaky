@@ -436,7 +436,9 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   among every photo timed, home and Tailscale together (thirds), once 10
   are timed. The line is said again at every step and queue change
   (`sayGoing`); it used to be said only as a photo started, and read "1
-  more waiting" while a card added 243. While photos go up, the NAS box
+  more waiting" while a card added 243. It no longer counts what is waiting: the
+  Waiting box above has it (David, 5 November 2026); the menu bar keeps
+  "12 of 200". While photos go up, the NAS box
   names the address they go through (`sendingThrough`).
 - Copies on this Mac are removed once on the NAS (0.19.0, David, 5 November
   2026: saving locally does not scale). `sent.jsonl` beside `queue.json`

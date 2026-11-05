@@ -1857,15 +1857,15 @@ public final class AppModel: ObservableObject {
         if lastTidy.map({ Date().timeIntervalSince($0) > 600 }) ?? true || (sentSinceTidy && keepOnMac == .untilOnNAS) { tidyMac() }
     }
 
-    /// "IMG_0001.JPG to nas. 12 more waiting, about 20 min left. Slow.", or
-    /// with several going up, "3 photos to nas at once. ..." Said again as
-    /// photos move along and the queue changes, so it never goes stale.
+    /// "IMG_0001.JPG to nas, about 20 min left. Slow.", or with several
+    /// going up, "3 photos to nas at once, ..." The Waiting box above has the
+    /// count (David, 5 November 2026). Said again as photos move along and
+    /// the queue changes, so it never goes stale.
     private func sayGoing() {
         guard let address = sendingThrough, meter.count > 0, !sendPaused else { return }
         let host = NASOverSMB.host(address) ?? address
-        let more = queueEntries.filter { $0.state == .waiting }.count
-        let going = meter.only.map { "\($0.name) to \(host)." } ?? "\(meter.count) photos to \(host) at once."
-        var line = going + (more == 0 ? "" : " \(more) more waiting") + (sendingLeft().map { ", \($0) left." } ?? (more == 0 ? "" : "."))
+        let going = meter.only.map { "\($0.name) to \(host)" } ?? "\(meter.count) photos to \(host) at once"
+        var line = going + (sendingLeft().map { ", \($0) left." } ?? ".")
         if let word = sendingSpeed() { line += " \(word.rawValue)." }
         say(line)
     }
