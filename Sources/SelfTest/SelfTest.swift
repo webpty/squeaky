@@ -82,6 +82,7 @@ struct SelfTest {
         sendSteps(scratch)
         await sendTogether(scratch)
         macTidy(scratch)
+        await cloudCopy(scratch)
         quitting()
         download(scratch)
         cardKinds()
@@ -3013,6 +3014,64 @@ extension SelfTest {
               seeded.sentRecords.map(\.nasPath) == ["2026.09.05/S_2.jpg"]
               && (try? SentLogFile(url: scratch.appendingPathComponent("tidy-seed/sent.jsonl")).load())?.contains { $0.localPath == seedOne.path } == true)
         UserDefaults.standard.removeObject(forKey: "keepOnMac")
+    }
+
+    /// This Mac's settings and list of photos read copied to iCloud, only what
+    /// changed, never a secret and never what stays on each Mac. A test's
+    /// copy stays in its scratch folder.
+    @MainActor
+    static func cloudCopy(_ scratch: URL) async {
+        let fm = FileManager.default
+        var book = PeopleBook.family()
+        book.people[0].nasFolder = "homes/david/Photos"
+        let peopleFile = PeopleStoreFile(url: scratch.appendingPathComponent("cloud/people.json"))
+        try? fm.createDirectory(at: peopleFile.url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? peopleFile.save(book)
+        let history = HistoryStoreFolder(folder: scratch.appendingPathComponent("cloud/History"))
+        try? history.save(book.people[0].id, [HistoryEntry(fileName: "IMG_0001.JPG", size: 1000, taken: "2026:11:01 10:00:00",
+                                                           subSeconds: "12", imported: Date())])
+        let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("cloud/lib"))),
+                             peopleStore: peopleFile, history: history,
+                             queue: QueueStoreFile(url: scratch.appendingPathComponent("cloud/queue.json")),
+                             unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("cloud/unplaced.json")),
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("cloud/maps")),
+                             exifTool: nil, nas: FakeNAS(root: scratch.appendingPathComponent("CLOUD-NAS")), notifier: RecordingNotifier())
+        guard let folder = model.cloudFolder else { check("cloud: a test's iCloud folder", false); return }
+        check("cloud: a test's copy stays in its scratch folder", folder.path.hasPrefix(scratch.path), folder.path)
+        let defaults = UserDefaults.standard
+        defaults.set(240, forKey: "maxGapSeconds")
+        defaults.set("tester", forKey: "nasUser")
+        defaults.set(4, forKey: "sendAtOnce")
+        defaults.set("thirtyDays", forKey: "keepOnMac")
+        defaults.set("not-a-real-one", forKey: "nasPassword")
+        await model.copyToCloud()
+        let settings = (try? Data(contentsOf: folder.appendingPathComponent("settings.plist")))
+            .flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [String: Any] } ?? [:]
+        check("cloud: the shared settings copied", settings["maxGapSeconds"] as? Int == 240 && settings["nasUser"] as? String == "tester",
+              "\(settings.keys.sorted())")
+        check("cloud: what stays on each Mac not copied", Set(settings.keys).isSubset(of: Set(CloudCopy.sharedKeys))
+              && settings["sendAtOnce"] == nil && settings["keepOnMac"] == nil && settings["macOwner"] == nil)
+        let everything = (fm.enumerator(at: folder, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
+            .compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined()
+        check("cloud: no secret in iCloud", !everything.contains("not-a-real-one") && !everything.contains("nasPassword"))
+        check("cloud: people and the list of photos read copied as they are",
+              (try? Data(contentsOf: folder.appendingPathComponent("people.json"))) == (try? Data(contentsOf: peopleFile.url))
+              && (try? Data(contentsOf: folder.appendingPathComponent("History/\(book.people[0].id.uuidString).json"))) != nil,
+              "\((try? fm.contentsOfDirectory(atPath: folder.appendingPathComponent("History").path)) ?? [])")
+        let first = CloudCopy.macs(in: folder)
+        check("cloud: this Mac named in the header, with when it copied", first.count == 1 && model.cloudMacs == first
+              && first[0].name == (Host.current().localizedName ?? "This Mac") && model.cloudProblem == nil, "\(first)")
+        try? await Task.sleep(for: .milliseconds(1100))
+        await model.copyToCloud()
+        check("cloud: nothing changed, nothing written", CloudCopy.macs(in: folder) == first)
+        book.people[1].name = "Amanda R"
+        try? peopleFile.save(book)
+        await model.copyToCloud()
+        let later = CloudCopy.macs(in: folder)
+        check("cloud: a change copied, and the time moves",
+              (try? Data(contentsOf: folder.appendingPathComponent("people.json"))) == (try? Data(contentsOf: peopleFile.url))
+              && later.count == 1 && later[0].copied > first[0].copied)
+        for key in ["maxGapSeconds", "nasUser", "sendAtOnce", "keepOnMac", "nasPassword"] { defaults.removeObject(forKey: key) }
     }
 
     /// The map window opens by itself after a card is read only when one of

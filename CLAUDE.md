@@ -440,6 +440,19 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   from the send timer. The first run puts what the queue still lists as
   sent into the record; copies sent before that have none and stay.
   The Queue page's "Freed on this Mac" adds up `freed`.
+- iCloud, step one (0.20.0, David, 5 November 2026): `CloudCopy` copies
+  this Mac's settings (`CloudCopy.sharedKeys` from defaults, as
+  `settings.plist`), `people.json`, `temperatures.json` and History into
+  iCloud Drive's Geotag folder, only what changed, at launch and every
+  minute; `Macs/<host uuid>.json` holds the Mac's name and when it last
+  copied, shown in the header (`CloudMacs` in RootView). Nothing is read
+  back. Secrets stay in the keychain; whose Mac it is, photos at once, keep
+  on this Mac, pause, step times and setup stay per Mac. A test's folder is
+  "iCloud" beside its people file, never the real one.
+  Step two (0.21.0, approved, not built): iCloud becomes the source;
+  a fresh install on David's other Mac takes everything from it, its old
+  data dropped (never raise it); a new install without iCloud starts with
+  nobody, people added in Settings; the header shows each Mac's last sync.
 - Notifications come in kinds, one of each showing at a time (identifier
   `geotag-<kind>`): `nas`, `card`, `power`, `nas-away`.
 - A Mac notification per finished batch (`MacNotifier`, one at a time under

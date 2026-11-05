@@ -16,12 +16,49 @@ public struct RootView: View {
                 .background(Color(nsColor: .windowBackgroundColor))
         }
         .navigationTitle(appName)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) { CloudMacs() }
+        }
         .sheet(isPresented: $model.settingUp) {
             SetupView()
                 .textSelection(.enabled)
         }
         // Every word in Geotag can be selected and copied.
         .textSelection(.enabled)
+    }
+}
+
+/// In the header: each Mac that has copied its settings to iCloud, and when
+/// (0.20.0, David, 5 November 2026).
+struct CloudMacs: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            HStack(spacing: 14) {
+                if let problem = model.cloudProblem {
+                    Label(problem, systemImage: "icloud.slash")
+                        .foregroundStyle(.orange)
+                        .lineLimit(1)
+                } else {
+                    ForEach(model.cloudMacs, id: \.name) { mac in
+                        Label("\(mac.name), \(Self.ago(mac.copied, now: context.date))", systemImage: "icloud")
+                            .lineLimit(1)
+                    }
+                }
+            }
+            .labelStyle(.titleAndIcon)
+            .padding(.horizontal, 8)
+        }
+    }
+
+    /// "just now", "2 min ago", "3 h ago", then the day and time.
+    static func ago(_ date: Date, now: Date) -> String {
+        let seconds = now.timeIntervalSince(date)
+        if seconds < 60 { return "just now" }
+        if seconds < 3600 { return "\(Int(seconds / 60)) min ago" }
+        if seconds < 86_400 { return "\(Int(seconds / 3600)) h ago" }
+        return When.current.dayAndTime(date)
     }
 }
 

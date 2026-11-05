@@ -277,6 +277,13 @@ public final class AppModel: ObservableObject {
     private let queue: QueueStorePort
     private let unplaced: UnplacedStorePort
     private let sentLog: SentLogPort
+    /// Geotag's folder in iCloud Drive; nil when iCloud Drive is off. A test's
+    /// stays in its scratch folder.
+    public let cloudFolder: URL?
+    /// The Macs that have copied their settings to iCloud, and why this one could not.
+    @Published public private(set) var cloudMacs: [CloudCopy.Mac] = []
+    @Published public private(set) var cloudProblem: String?
+    private var cloudTimer: Timer?
     @Published public private(set) var placingLater = false
     private let exifTool: ExifTool?
     private let cardGuard = CardGuard()
@@ -312,6 +319,13 @@ public final class AppModel: ObservableObject {
         self.sentLog = sentLog
             ?? (queue as? QueueStoreFile).map { SentLogFile(url: $0.url.deletingLastPathComponent().appendingPathComponent("sent.jsonl")) }
             ?? SentLogFile.standard()
+        if let file = peopleStore as? PeopleStoreFile {
+            self.cloudFolder = file.url == PeopleStoreFile.standard().url
+                ? CloudCopy.standardFolder
+                : file.url.deletingLastPathComponent().appendingPathComponent("iCloud", isDirectory: true)
+        } else {
+            self.cloudFolder = nil
+        }
         self.notifier = notifier ?? MacNotifier.shared
         self.power = power ?? MacPower()
         self.places = places ?? PlaceNames.shared
@@ -478,6 +492,11 @@ public final class AppModel: ObservableObject {
         }
         tracks = await library.listed()
         await refresh()
+        await copyToCloud()
+        cloudTimer?.invalidate()
+        cloudTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in await self?.copyToCloud() }
+        }
         timer?.invalidate()
         remindClocks()
         timer = Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
@@ -1589,6 +1608,37 @@ public final class AppModel: ObservableObject {
     public func setSendAtOnce(_ count: Int) {
         sendAtOnce = min(max(count, 1), 6)
         defaults.set(sendAtOnce, forKey: "sendAtOnce")
+    }
+
+    /// Copies this Mac's settings and its list of photos read to iCloud,
+    /// whatever changed since last time. Nothing is read back yet.
+    public func copyToCloud() async {
+        guard let folder = cloudFolder,
+              let people = peopleStore as? PeopleStoreFile,
+              let history = history as? HistoryStoreFolder,
+              let temperatures = temperatureStore as? TemperatureStoreFile else {
+            cloudProblem = "iCloud Drive is off on this Mac."
+            return
+        }
+        let all = defaults.dictionaryRepresentation()
+        var settings: [String: Any] = [:]
+        for key in CloudCopy.sharedKeys { if let value = all[key] { settings[key] = value } }
+        nonisolated(unsafe) let shared = settings
+        let name = Host.current().localizedName ?? "This Mac"
+        let outcome: Result<[CloudCopy.Mac], Error> = await Task.detached {
+            Result {
+                try CloudCopy.copy(CloudCopy.What(settings: shared, people: people.url, temperatures: temperatures.url,
+                                                  history: history.folder, macName: name), into: folder)
+                return CloudCopy.macs(in: folder)
+            }
+        }.value
+        switch outcome {
+        case .success(let macs):
+            cloudProblem = nil
+            if cloudMacs != macs { cloudMacs = macs }
+        case .failure(let error):
+            cloudProblem = "Not copied to iCloud: \(error.localizedDescription)"
+        }
     }
 
     public func setKeepOnMac(_ keep: KeepOnMac) {
