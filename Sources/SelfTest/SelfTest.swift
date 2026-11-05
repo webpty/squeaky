@@ -83,6 +83,7 @@ struct SelfTest {
         await sendTogether(scratch)
         macTidy(scratch)
         await cloudCopy(scratch)
+        await sidebarPhoto(scratch)
         quitting()
         download(scratch)
         cardKinds()
@@ -3051,6 +3052,59 @@ extension SelfTest {
               seeded.sentRecords.map(\.nasPath) == ["2026.09.05/S_2.jpg"]
               && (try? SentLogFile(url: scratch.appendingPathComponent("tidy-seed/sent.jsonl")).load())?.contains { $0.localPath == seedOne.path } == true)
         UserDefaults.standard.removeObject(forKey: "keepOnMac")
+    }
+
+    @MainActor
+    /// The photo behind the sidebar: one per card, the newest upright JPEG,
+    /// else the newest JPEG, kept as Geotag's own copy beside the people list.
+    static func sidebarPhoto(_ scratch: URL) async {
+        let fm = FileManager.default
+        let dir = scratch.appendingPathComponent("sidebar")
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        func jpeg(_ name: String, _ w: Int, _ h: Int, turned: Bool = false, taken: String) -> ScannedPhoto {
+            let url = dir.appendingPathComponent(name)
+            let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h, bitsPerSample: 8, samplesPerPixel: 3,
+                                       hasAlpha: false, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+            if let image = rep.cgImage, let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.jpeg" as CFString, 1, nil) {
+                CGImageDestinationAddImage(dest, image, [kCGImagePropertyOrientation: turned ? 6 : 1] as CFDictionary)
+                CGImageDestinationFinalize(dest)
+            }
+            return ScannedPhoto(url: url, fileName: name, size: 1, taken: taken, subSeconds: nil, zone: nil, model: "Canon EOS R5m2", hasLocation: false)
+        }
+        let wide = jpeg("WIDE.JPG", 300, 200, taken: "2026:10:20 10:00:00")
+        let tall = jpeg("TALL.JPG", 200, 300, taken: "2026:10:18 10:00:00")
+        let turned = jpeg("TURNED.JPG", 300, 200, turned: true, taken: "2026:10:19 10:00:00")
+        let older = jpeg("OLDER.JPG", 200, 300, taken: "2026:10:01 10:00:00")
+        let raw = ScannedPhoto(url: dir.appendingPathComponent("NEWEST.CR3"), fileName: "NEWEST.CR3", size: 1, taken: "2026:10:30 10:00:00",
+                               subSeconds: nil, zone: nil, model: "Canon EOS R5m2", hasLocation: false)
+        check("sidebar photo: the newest upright JPEG, turned by the camera counting",
+              SidebarPhoto.choose([older, tall, wide, turned, raw])?.lastPathComponent == "TURNED.JPG")
+        check("sidebar photo: the upright one before a newer wide one",
+              SidebarPhoto.choose([older, tall, wide, raw])?.lastPathComponent == "TALL.JPG")
+        check("sidebar photo: no upright one, the newest JPEG", SidebarPhoto.choose([wide, raw])?.lastPathComponent == "WIDE.JPG")
+        check("sidebar photo: no JPEG, none", SidebarPhoto.choose([raw]) == nil)
+
+        let peopleFile = PeopleStoreFile(url: dir.appendingPathComponent("mac/people.json"))
+        func mac() -> AppModel {
+            AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: dir.appendingPathComponent("mac/lib"))),
+                     peopleStore: peopleFile, history: HistoryStoreFolder(folder: dir.appendingPathComponent("mac/History")),
+                     queue: QueueStoreFile(url: dir.appendingPathComponent("mac/queue.json")),
+                     unplaced: UnplacedStoreFile(url: dir.appendingPathComponent("mac/unplaced.json")),
+                     secrets: NoSecrets(), thumbnails: MapThumbnails(folder: dir.appendingPathComponent("mac/maps")),
+                     exifTool: nil, nas: FakeNAS(root: dir.appendingPathComponent("NAS")), notifier: RecordingNotifier())
+        }
+        let model = mac()
+        check("sidebar photo: none before a card", model.sidebarImage == nil)
+        await model.chooseSidebarPhoto([wide, turned, raw])
+        let kept = dir.appendingPathComponent("mac/Sidebar.jpg")
+        let size = model.sidebarImage.map { $0.representations.first.map { CGSize(width: $0.pixelsWide, height: $0.pixelsHigh) } ?? .zero }
+        check("sidebar photo: kept beside the people list, the right way up",
+              fm.fileExists(atPath: kept.path) && size.map { $0.height > $0.width } == true, "\(String(describing: size))")
+        await model.chooseSidebarPhoto([raw])
+        check("sidebar photo: a card with no JPEG leaves it", model.sidebarImage != nil && fm.fileExists(atPath: kept.path))
+        check("sidebar photo: still there after a restart", mac().sidebarImage != nil)
+        check("sidebar photo: the card's photo untouched", SidebarPhoto.upright(turned.url) == true
+              && (CGImageSourceCreateWithURL(turned.url as CFURL, nil).flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] })?[kCGImagePropertyPixelWidth] as? Int == 300)
     }
 
     /// This Mac and iCloud kept the same both ways (0.21.0): settings, people

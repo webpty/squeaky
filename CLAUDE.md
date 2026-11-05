@@ -88,8 +88,16 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   the row shows the bare line. The credit line under the list is required.
 - Never Apple Maps or MapKit: David ruled them out on 16 October 2026 (their
   words cannot be removed). He wants maps with no text.
-- The sidebar is an orange gradient with white words, so the window stands
-  out (his request, 16 October 2026). The icon is his `Resources/AppIcon.svg`,
+- The sidebar is a photo from the last card inserted (0.23.0, David,
+  5 November 2026; orange with white words, his request of 16 October 2026,
+  only until a card has had a JPEG). One per card, chosen once it is read
+  (`SidebarPhoto.choose`): the newest upright JPEG, the camera's turn
+  counted, else the newest JPEG; no JPEG leaves the last. A small copy,
+  `Sidebar.jpg` beside people.json, keeps it through restarts and through
+  the Mac copies being removed. Centred, cropped evenly. A band of the
+  window's colour sits behind the menu and the title area and fades out
+  over 160 points below it; a short one behind the version line. The words
+  follow light and dark. The icon is his `Resources/AppIcon.svg`,
   drawn into the Mac's rounded square by `Tools/makeicon.swift`.
 - FIT reading is our own (`FITReader`), checked against Garmin's own
   decoder on its sample files. A real fenix 9 file has not been tried yet.

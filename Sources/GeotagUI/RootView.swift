@@ -62,10 +62,16 @@ struct CloudMacs: View {
     }
 }
 
-/// Orange, so Geotag stands out from every other window. White words on it.
+/// A photo from the last card inserted, centred, with a band of the
+/// window's own colour behind the menu fading out over it (0.23.0, David,
+/// 5 November 2026). Orange, with white words, until a card has had a JPEG.
 struct Sidebar: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.colorScheme) private var scheme
+    /// Where the menu ends, from the top of the sidebar.
+    @State private var menuBottom: CGFloat = 200
+    /// How far below the menu the band fades to nothing.
+    static let fade: CGFloat = 160
 
     private var gradient: LinearGradient {
         let colours: [Color] = scheme == .dark
@@ -93,7 +99,8 @@ struct Sidebar: View {
                             .frame(height: 32)
                             .background(
                                 RoundedRectangle(cornerRadius: Style.radius)
-                                    .fill(Color.white.opacity(model.screen == screen ? 0.24 : 0))
+                                    .fill((model.sidebarImage == nil ? Color.white.opacity(0.24) : Color.primary.opacity(0.12))
+                                        .opacity(model.screen == screen ? 1 : 0))
                             )
                             .contentShape(Rectangle())
                         }
@@ -103,6 +110,7 @@ struct Sidebar: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.top, 8)
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named("sidebar")).maxY } action: { menuBottom = $0 }
             }
 
             Text("\(appName) \(appVersion)")
@@ -110,9 +118,47 @@ struct Sidebar: View {
                 .opacity(0.85)
                 .lineLimit(1)
                 .padding(12)
+                .background(alignment: .bottom) {
+                    // The version line stays readable over the photo too.
+                    if model.sidebarImage != nil {
+                        LinearGradient(colors: [window.opacity(0), window], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 60)
+                            .ignoresSafeArea()
+                    }
+                }
         }
-        .foregroundStyle(.white)
-        .background(gradient.ignoresSafeArea())
+        .foregroundStyle(model.sidebarImage == nil ? Color.white : Color.primary)
+        .coordinateSpace(name: "sidebar")
+        .background(alignment: .top) {
+            if model.sidebarImage != nil {
+                // Solid behind the menu and the title area above it, then fading.
+                VStack(spacing: 0) {
+                    window.frame(height: max(0, menuBottom))
+                        .background(alignment: .bottom) { window.ignoresSafeArea(edges: .top) }
+                    LinearGradient(colors: [window, window.opacity(0)], startPoint: .top, endPoint: .bottom)
+                        .frame(height: Self.fade)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .background { backdrop.ignoresSafeArea() }
+    }
+
+    private var window: Color { Color(nsColor: .windowBackgroundColor) }
+
+    @ViewBuilder private var backdrop: some View {
+        if let image = model.sidebarImage {
+            // The photo's centre on the sidebar's, cropped evenly.
+            GeometryReader { box in
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: box.size.width, height: box.size.height)
+                    .clipped()
+            }
+        } else {
+            gradient
+        }
     }
 }
 

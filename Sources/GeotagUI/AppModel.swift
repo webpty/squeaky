@@ -284,6 +284,10 @@ public final class AppModel: ObservableObject {
     /// Geotag's folder in iCloud Drive; nil when iCloud Drive is off. A test's
     /// stays in its scratch folder.
     public let cloudFolder: URL?
+    /// The photo behind the sidebar, from the last card inserted; nil until one has had a JPEG.
+    @Published public private(set) var sidebarImage: NSImage?
+    /// Its copy, beside the people list; nil when people are not kept in a file.
+    let sidebarFile: URL?
     /// The Macs that have copied their settings to iCloud, and why this one could not.
     @Published public private(set) var cloudMacs: [CloudCopy.Mac] = []
     @Published public private(set) var cloudProblem: String?
@@ -331,6 +335,10 @@ public final class AppModel: ObservableObject {
         self.sentLog = sentLog
             ?? (queue as? QueueStoreFile).map { SentLogFile(url: $0.url.deletingLastPathComponent().appendingPathComponent("sent.jsonl")) }
             ?? SentLogFile.standard()
+        self.sidebarFile = (peopleStore as? PeopleStoreFile)?.url.deletingLastPathComponent().appendingPathComponent("Sidebar.jpg")
+        if let sidebarFile, FileManager.default.fileExists(atPath: sidebarFile.path) {
+            self.sidebarImage = NSImage(contentsOf: sidebarFile)
+        }
         if let cloudFolder {
             self.cloudFolder = cloudFolder
         } else if let file = peopleStore as? PeopleStoreFile {
@@ -1047,6 +1055,7 @@ public final class AppModel: ObservableObject {
             guard readingRound == round, self.source?.id == source.id else { return }
             rows = ImportList.rows(photos, history: past, book: book, personId: personId)
             refreshBreaks()
+            Task { await chooseSidebarPhoto(photos) }
             noteFirmware(photos, personId: personId)
             noteLenses(photos, personId: personId)
             let codes = await readOffsetCodes(photos, personId: personId, tool: tool)
@@ -1065,6 +1074,17 @@ public final class AppModel: ObservableObject {
         } catch {
             if readingRound == round { photosLine = "The photos could not be read: \(error.localizedDescription)" }
         }
+    }
+
+    /// One photo per card inserted goes behind the sidebar; a card with no
+    /// JPEG leaves the last one. The card is only read.
+    public func chooseSidebarPhoto(_ photos: [ScannedPhoto]) async {
+        guard let file = sidebarFile else { return }
+        let kept: Bool = await Task.detached {
+            guard let photo = SidebarPhoto.choose(photos) else { return false }
+            return (try? SidebarPhoto.keep(photo, at: file)) != nil
+        }.value
+        if kept, let image = NSImage(contentsOf: file) { sidebarImage = image }
     }
 
     /// A card whose cameras are all set is saved as soon as it is read. Off
