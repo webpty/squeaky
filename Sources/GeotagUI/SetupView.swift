@@ -25,6 +25,7 @@ struct SetupView: View {
 
     @EnvironmentObject var model: AppModel
     @State private var step: Step
+    @State private var newName = ""
 
     init(at step: Step = .owner) {
         _step = State(initialValue: step)
@@ -104,7 +105,27 @@ struct SetupView: View {
             }
             .pickerStyle(.radioGroup)
             .labelsHidden()
+            // A new install starts with nobody (0.21.0): people are added here or in Settings.
+            HStack(spacing: Style.gap) {
+                TextField("Name", text: $newName)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 220)
+                    .onSubmit(addPerson)
+                Button(action: addPerson) {
+                    Text("Add person").buttonLabel()
+                }
+                .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
         }
+    }
+
+    private func addPerson() {
+        let name = newName.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        let person = Person(name: name)
+        model.save(person)
+        if model.macOwner == nil { model.setMacOwner(person.id) }
+        newName = ""
     }
 
     /// Each person's save folder on this Mac; any can stay empty.

@@ -392,7 +392,7 @@ extension SelfTest {
             writeGPX(url, start: 1_792_000_000 + i * 86_400, count: 1800, name: spot.0, lat: spot.1, lon: spot.2)
             _ = try? await lib.importFile(url, role: .reader)
         }
-        let model = AppModel(library: lib, peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("viewer-people.json")),
+        let model = AppModel(library: lib, peopleStore: familyFile( scratch.appendingPathComponent("viewer-people.json")),
                              history: HistoryStoreFolder(folder: scratch.appendingPathComponent("viewer-history")),
                              queue: QueueStoreFile(url: scratch.appendingPathComponent("viewer-queue.json")),
                              unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("viewer-unplaced.json")),
@@ -569,7 +569,7 @@ extension SelfTest {
     static func photosPicture(_ scratch: URL) async {
         let card = scratch.appendingPathComponent("CARD")
         let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("pp-lib"))),
-                             peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("pp-people.json")),
+                             peopleStore: familyFile( scratch.appendingPathComponent("pp-people.json")),
                              history: HistoryStoreFolder(folder: scratch.appendingPathComponent("history")),
                              queue: QueueStoreFile(url: scratch.appendingPathComponent("pp-queue.json")),
                              unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("pp-unplaced.json")),
@@ -702,7 +702,7 @@ extension SelfTest {
             let taken = String(format: "2026:10:16 12:%02d:%02d", s / 60, s % 60)
             writePhoto(card.appendingPathComponent(String(format: "IMG_%04d.JPG", i + 1)), model: "Canon EOS R5m2", zone: "-03:00", taken: taken)
         }
-        let model = AppModel(library: lib, peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("al-people.json")),
+        let model = AppModel(library: lib, peopleStore: familyFile( scratch.appendingPathComponent("al-people.json")),
                              history: HistoryStoreFolder(folder: scratch.appendingPathComponent("al-history")),
                              queue: QueueStoreFile(url: scratch.appendingPathComponent("al-queue.json")),
                              unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("al-unplaced.json")),
@@ -1035,7 +1035,7 @@ extension SelfTest {
         let historyFolder = HistoryStoreFolder(folder: scratch.appendingPathComponent("flow-history"))
         let flowPlaces = FakePlaces()
         let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("flow-lib"))),
-                             peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("flow-people.json")),
+                             peopleStore: familyFile( scratch.appendingPathComponent("flow-people.json")),
                              history: historyFolder, queue: queueFile,
                              unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("flow-unplaced.json")), secrets: NoSecrets(),
                              thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("flow-maps")), exifTool: tool,
@@ -1098,7 +1098,7 @@ extension SelfTest {
         let queueFile = QueueStoreFile(url: scratch.appendingPathComponent("\(tag)-queue.json"))
         let nasRoot = scratch.appendingPathComponent("\(tag.uppercased())-NAS")
         let notes = RecordingNotifier()
-        let model = AppModel(library: lib, peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("\(tag)-people.json")),
+        let model = AppModel(library: lib, peopleStore: familyFile( scratch.appendingPathComponent("\(tag)-people.json")),
                              history: HistoryStoreFolder(folder: scratch.appendingPathComponent("\(tag)-history")),
                              queue: queueFile, unplaced: unplacedFile, secrets: NoSecrets(),
                              thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("\(tag)-maps")), exifTool: tool,
@@ -1198,6 +1198,17 @@ final class RecordingNotifier: NotifierPort, @unchecked Sendable {
 }
 
 /// A folder standing in for the NAS: the tests never touch David's real one.
+/// A people file holding the four people tests use, unless one is there
+/// already: a new install starts with nobody (0.21.0).
+func familyFile(_ url: URL) -> PeopleStoreFile {
+    let file = PeopleStoreFile(url: url)
+    if !FileManager.default.fileExists(atPath: url.path) {
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? file.save(.family())
+    }
+    return file
+}
+
 final class FakeNAS: NASPort, @unchecked Sendable {
     let root: URL
     private let lock = NSLock()
@@ -1471,7 +1482,7 @@ extension SelfTest {
         // No internet: OpenStreetMap does not answer.
         let offline = FakePlaces { _, _ in .unreachable }
         let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("batch-lib"))),
-                             peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("batch-people.json")),
+                             peopleStore: familyFile( scratch.appendingPathComponent("batch-people.json")),
                              history: HistoryStoreFolder(folder: scratch.appendingPathComponent("batch-history")),
                              queue: QueueStoreFile(url: scratch.appendingPathComponent("batch-queue.json")),
                              unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("batch-unplaced.json")),
@@ -1575,7 +1586,7 @@ extension SelfTest {
         await model.checkNAS()
         check("nas box: or that it can't be reached", model.nasReach == .unreachable, "\(model.nasReach)")
         let bare = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("bare-lib"))),
-                            peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("bare-people.json")),
+                            peopleStore: familyFile( scratch.appendingPathComponent("bare-people.json")),
                             history: HistoryStoreFolder(folder: scratch.appendingPathComponent("bare-history")),
                             queue: QueueStoreFile(url: scratch.appendingPathComponent("bare-queue.json")),
                             unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("bare-unplaced.json")),
@@ -2393,7 +2404,7 @@ extension SelfTest {
     static func buttonsSay(_ scratch: URL) async {
         let fm = FileManager.default
         let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("bs-lib"))),
-                             peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("bs-people.json")),
+                             peopleStore: familyFile( scratch.appendingPathComponent("bs-people.json")),
                              history: HistoryStoreFolder(folder: scratch.appendingPathComponent("bs-history")),
                              queue: QueueStoreFile(url: scratch.appendingPathComponent("bs-queue.json")),
                              unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("bs-unplaced.json")),
@@ -2629,7 +2640,7 @@ extension SelfTest {
         check("nas away: goes once the NAS answers", !model.nasAway && model.photosLine.isEmpty, model.photosLine)
 
         let idle = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("qa2-lib"))),
-                            peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("qa2-people.json")),
+                            peopleStore: familyFile( scratch.appendingPathComponent("qa2-people.json")),
                             history: HistoryStoreFolder(folder: scratch.appendingPathComponent("qa2-history")),
                             queue: QueueStoreFile(url: scratch.appendingPathComponent("qa2-queue.json")),
                             unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("qa2-unplaced.json")),
@@ -3016,62 +3027,108 @@ extension SelfTest {
         UserDefaults.standard.removeObject(forKey: "keepOnMac")
     }
 
-    /// This Mac's settings and list of photos read copied to iCloud, only what
-    /// changed, never a secret and never what stays on each Mac. A test's
-    /// copy stays in its scratch folder.
+    /// This Mac and iCloud kept the same both ways (0.21.0): settings, people
+    /// without save folders, and the lists of photos read combined; never a
+    /// secret, never what stays on each Mac; a new install takes everything.
+    /// A test's iCloud stays in its scratch folder.
     @MainActor
     static func cloudCopy(_ scratch: URL) async {
         let fm = FileManager.default
         var book = PeopleBook.family()
         book.people[0].nasFolder = "homes/david/Photos"
+        book.people[0].saveFolder = "/Users/test/Pictures/Geotag"
         let peopleFile = PeopleStoreFile(url: scratch.appendingPathComponent("cloud/people.json"))
         try? fm.createDirectory(at: peopleFile.url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? peopleFile.save(book)
         let history = HistoryStoreFolder(folder: scratch.appendingPathComponent("cloud/History"))
         try? history.save(book.people[0].id, [HistoryEntry(fileName: "IMG_0001.JPG", size: 1000, taken: "2026:11:01 10:00:00",
                                                            subSeconds: "12", imported: Date())])
-        let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("cloud/lib"))),
-                             peopleStore: peopleFile, history: history,
-                             queue: QueueStoreFile(url: scratch.appendingPathComponent("cloud/queue.json")),
-                             unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("cloud/unplaced.json")),
-                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("cloud/maps")),
-                             exifTool: nil, nas: FakeNAS(root: scratch.appendingPathComponent("CLOUD-NAS")), notifier: RecordingNotifier())
+        func mac(_ tag: String, people: PeopleStoreFile, history: HistoryStoreFolder, cloud: URL? = nil) -> AppModel {
+            AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("\(tag)/lib"))),
+                     peopleStore: people, history: history,
+                     queue: QueueStoreFile(url: scratch.appendingPathComponent("\(tag)/queue.json")),
+                     unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("\(tag)/unplaced.json")),
+                     secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("\(tag)/maps")),
+                     exifTool: nil, nas: FakeNAS(root: scratch.appendingPathComponent("CLOUD-NAS")), notifier: RecordingNotifier(),
+                     cloudFolder: cloud)
+        }
+        let model = mac("cloud", people: peopleFile, history: history)
         guard let folder = model.cloudFolder else { check("cloud: a test's iCloud folder", false); return }
-        check("cloud: a test's copy stays in its scratch folder", folder.path.hasPrefix(scratch.path), folder.path)
+        check("cloud: a test's iCloud stays in its scratch folder", folder.path.hasPrefix(scratch.path), folder.path)
         let defaults = UserDefaults.standard
         defaults.set(240, forKey: "maxGapSeconds")
         defaults.set("tester", forKey: "nasUser")
+        defaults.set("smb://10.9.9.9", forKey: "nasAddress")
         defaults.set(4, forKey: "sendAtOnce")
         defaults.set("thirtyDays", forKey: "keepOnMac")
         defaults.set("not-a-real-one", forKey: "nasPassword")
-        await model.copyToCloud()
-        let settings = (try? Data(contentsOf: folder.appendingPathComponent("settings.plist")))
-            .flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [String: Any] } ?? [:]
-        check("cloud: the shared settings copied", settings["maxGapSeconds"] as? Int == 240 && settings["nasUser"] as? String == "tester",
+        await model.syncWithCloud()
+        func cloudSettings() -> [String: Any] {
+            (try? Data(contentsOf: folder.appendingPathComponent("settings.plist")))
+                .flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [String: Any] } ?? [:]
+        }
+        let settings = cloudSettings()
+        check("cloud: the shared settings go up", settings["maxGapSeconds"] as? Int == 240 && settings["nasUser"] as? String == "tester",
               "\(settings.keys.sorted())")
-        check("cloud: what stays on each Mac not copied", Set(settings.keys).isSubset(of: Set(CloudCopy.sharedKeys))
+        check("cloud: what stays on each Mac does not", Set(settings.keys).isSubset(of: Set(CloudCopy.sharedKeys))
               && settings["sendAtOnce"] == nil && settings["keepOnMac"] == nil && settings["macOwner"] == nil)
         let everything = (fm.enumerator(at: folder, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? [])
             .compactMap { try? String(contentsOf: $0, encoding: .utf8) }.joined()
         check("cloud: no secret in iCloud", !everything.contains("not-a-real-one") && !everything.contains("nasPassword"))
-        check("cloud: people and the list of photos read copied as they are",
-              (try? Data(contentsOf: folder.appendingPathComponent("people.json"))) == (try? Data(contentsOf: peopleFile.url))
-              && (try? Data(contentsOf: folder.appendingPathComponent("History/\(book.people[0].id.uuidString).json"))) != nil,
-              "\((try? fm.contentsOfDirectory(atPath: folder.appendingPathComponent("History").path)) ?? [])")
+        let up = try? PeopleStoreFile(url: folder.appendingPathComponent("people.json")).load()
+        check("cloud: people go up without this Mac's save folders",
+              up?.people.map(\.name) == book.people.map(\.name) && up?.people.allSatisfy { $0.saveFolder == nil } == true
+              && up?.people[0].nasFolder == "homes/david/Photos" && (try? peopleFile.load())?.people[0].saveFolder == "/Users/test/Pictures/Geotag")
+        check("cloud: the list of photos read goes up",
+              (try? HistoryStoreFolder(folder: folder.appendingPathComponent("History")).load(book.people[0].id))?.count == 1)
         let first = CloudCopy.macs(in: folder)
-        check("cloud: this Mac named in the header, with when it copied", first.count == 1 && model.cloudMacs == first
+        check("cloud: this Mac named in the header, with when it synced", first.count == 1 && model.cloudMacs == first
               && first[0].name == (Host.current().localizedName ?? "This Mac") && model.cloudProblem == nil, "\(first)")
-        try? await Task.sleep(for: .milliseconds(1100))
-        await model.copyToCloud()
+        await model.syncWithCloud()
         check("cloud: nothing changed, nothing written", CloudCopy.macs(in: folder) == first)
-        book.people[1].name = "Amanda R"
-        try? peopleFile.save(book)
-        await model.copyToCloud()
-        let later = CloudCopy.macs(in: folder)
-        check("cloud: a change copied, and the time moves",
-              (try? Data(contentsOf: folder.appendingPathComponent("people.json"))) == (try? Data(contentsOf: peopleFile.url))
-              && later.count == 1 && later[0].copied > first[0].copied)
-        for key in ["maxGapSeconds", "nasUser", "sendAtOnce", "keepOnMac", "nasPassword"] { defaults.removeObject(forKey: key) }
+
+        // A new install of David's, on the same iCloud: nobody, then everything.
+        let otherPeople = PeopleStoreFile(url: scratch.appendingPathComponent("cloud-other/people.json"))
+        let otherHistory = HistoryStoreFolder(folder: scratch.appendingPathComponent("cloud-other/History"))
+        let other = mac("cloud-other", people: otherPeople, history: otherHistory, cloud: folder)
+        check("cloud: a new install starts with nobody", other.book.people.isEmpty)
+        await other.syncWithCloud()
+        check("cloud: and takes everyone from iCloud, with no save folder of the other Mac's",
+              other.book.people.map(\.name) == book.people.map(\.name) && other.book.people.allSatisfy { $0.saveFolder == nil })
+        check("cloud: and the list of photos read", (try? otherHistory.load(book.people[0].id))?.count == 1)
+        check("cloud: and it still asks for the NAS password", other.needsSetup)
+
+        // A card read on the new Mac counts on the first, and a name changed there too.
+        try? otherHistory.save(book.people[0].id, ((try? otherHistory.load(book.people[0].id)) ?? [])
+                               + [HistoryEntry(fileName: "IMG_0002.JPG", size: 2000, taken: nil, subSeconds: nil, imported: Date())])
+        var renamed = other.book.people[1]
+        renamed.name = "Amanda R"
+        other.save(renamed)
+        var otherDavid = other.book.people[0]
+        otherDavid.saveFolder = "/Volumes/Other/Geotag"
+        other.save(otherDavid)
+        await other.syncWithCloud()
+        await model.syncWithCloud()
+        check("cloud: a photo read on another Mac counts here", (try? history.load(book.people[0].id))?.count == 2)
+        check("cloud: a name changed on another Mac changes here, this Mac's save folder kept",
+              model.book.people[1].name == "Amanda R" && model.book.people[0].saveFolder == "/Users/test/Pictures/Geotag")
+
+        // A setting changed on another Mac is taken here, and shown.
+        var changed = cloudSettings()
+        changed["maxGapSeconds"] = 300
+        try? PropertyListSerialization.data(fromPropertyList: changed, format: .xml, options: 0)
+            .write(to: folder.appendingPathComponent("settings.plist"))
+        await model.syncWithCloud()
+        check("cloud: a setting changed on another Mac is taken here", model.maxGapSeconds == 300, "\(model.maxGapSeconds)")
+
+        check("cloud: which way", CloudSync.way(local: "a", cloud: nil, seen: nil, localNewer: false) == .push
+              && CloudSync.way(local: nil, cloud: "b", seen: nil, localNewer: true) == .pull
+              && CloudSync.way(local: "a", cloud: "b", seen: "a", localNewer: true) == .pull
+              && CloudSync.way(local: "a", cloud: "b", seen: "b", localNewer: false) == .push
+              && CloudSync.way(local: "a", cloud: "b", seen: "c", localNewer: true) == .push
+              && CloudSync.way(local: "a", cloud: "a", seen: nil, localNewer: false) == .same)
+        for key in ["maxGapSeconds", "nasUser", "nasAddress", "sendAtOnce", "keepOnMac", "nasPassword",
+                    "cloudSeen-" + peopleFile.url.path, "cloudSeen-" + otherPeople.url.path] { defaults.removeObject(forKey: key) }
     }
 
     /// The map window opens by itself after a card is read only when one of
@@ -3097,7 +3154,7 @@ extension SelfTest {
             }
             return scratchCard(root)
         }
-        let model = AppModel(library: lib, peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("mo-people.json")),
+        let model = AppModel(library: lib, peopleStore: familyFile( scratch.appendingPathComponent("mo-people.json")),
                              history: HistoryStoreFolder(folder: scratch.appendingPathComponent("mo-history")),
                              queue: QueueStoreFile(url: scratch.appendingPathComponent("mo-queue.json")),
                              unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("mo-unplaced.json")),
@@ -3236,7 +3293,7 @@ extension SelfTest {
         try? fm.createDirectory(at: saveTo, withIntermediateDirectories: true)
         let nas = FakeNAS(root: scratch.appendingPathComponent("MENU-NAS"))
         let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("menu-lib"))),
-                             peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("menu-people.json")),
+                             peopleStore: familyFile( scratch.appendingPathComponent("menu-people.json")),
                              history: HistoryStoreFolder(folder: scratch.appendingPathComponent("menu-history")),
                              queue: QueueStoreFile(url: scratch.appendingPathComponent("menu-queue.json")),
                              unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("menu-unplaced.json")),

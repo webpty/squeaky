@@ -440,19 +440,26 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   from the send timer. The first run puts what the queue still lists as
   sent into the record; copies sent before that have none and stay.
   The Queue page's "Freed on this Mac" adds up `freed`.
-- iCloud, step one (0.20.0, David, 5 November 2026): `CloudCopy` copies
-  this Mac's settings (`CloudCopy.sharedKeys` from defaults, as
-  `settings.plist`), `people.json`, `temperatures.json` and History into
-  iCloud Drive's Geotag folder, only what changed, at launch and every
-  minute; `Macs/<host uuid>.json` holds the Mac's name and when it last
-  copied, shown in the header (`CloudMacs` in RootView). Nothing is read
-  back. Secrets stay in the keychain; whose Mac it is, photos at once, keep
-  on this Mac, pause, step times and setup stay per Mac. A test's folder is
-  "iCloud" beside its people file, never the real one.
-  Step two (0.21.0, approved, not built): iCloud becomes the source;
-  a fresh install on David's other Mac takes everything from it, its old
-  data dropped (never raise it); a new install without iCloud starts with
-  nobody, people added in Settings; the header shows each Mac's last sync.
+- iCloud (0.20.0 copied up only; 0.21.0 both ways, David, 5 November 2026):
+  `CloudSync.sync` at launch, before the setup decision, and every minute.
+  Shared: `CloudCopy.sharedKeys` from defaults (`settings.plist`),
+  `people.json` without save folders, `temperatures.json`, and History,
+  combined both ways so a photo read on any of David's Macs counts on all.
+  For the rest, whichever side changed since they last agreed
+  (`CloudSync.Seen`, defaults `cloudSeen`) goes to the other; both changed,
+  the newer file wins, this Mac's settings win. A file iCloud has not
+  brought down (`.name.icloud`) is asked for and left alone that time.
+  Stays on each Mac: secrets (keychain), save folders, whose Mac it is,
+  photos at once, keep on this Mac, pause, step times, setup.
+  `Macs/<host uuid>.json` holds each Mac's name and last sync (written on
+  a change, at least every ten minutes), shown in the header (`CloudMacs`).
+  A new install starts with nobody (`PeopleBook()`; the setup's first step
+  adds people); one that takes everyone from iCloud opens the setup for
+  its own password, key and save folders. iCloud only links Macs on the
+  same Apple account, so David's brother's never see his. A test's iCloud
+  is "iCloud" beside its people file; tests use `familyFile` for the four
+  people they expect. David's other Mac gets a fresh install from iCloud;
+  its old data is dropped: never raise it.
 - Notifications come in kinds, one of each showing at a time (identifier
   `geotag-<kind>`): `nas`, `card`, `power`, `nas-away`.
 - A Mac notification per finished batch (`MacNotifier`, one at a time under

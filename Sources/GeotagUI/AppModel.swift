@@ -284,6 +284,13 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var cloudMacs: [CloudCopy.Mac] = []
     @Published public private(set) var cloudProblem: String?
     private var cloudTimer: Timer?
+    /// Everyone came from iCloud into an install that had nobody.
+    private var newFromCloud = false
+    /// Where this Mac and iCloud last agreed; a test's own, beside its people file.
+    private var cloudSeenKey: String {
+        guard let file = peopleStore as? PeopleStoreFile, file.url != PeopleStoreFile.standard().url else { return "cloudSeen" }
+        return "cloudSeen-" + file.url.path
+    }
     @Published public private(set) var placingLater = false
     private let exifTool: ExifTool?
     private let cardGuard = CardGuard()
@@ -311,7 +318,8 @@ public final class AppModel: ObservableObject {
                 places: PlaceNaming? = nil,
                 power: PowerPort? = nil,
                 temperatures: TemperatureStorePort? = nil,
-                sentLog: SentLogPort? = nil) {
+                sentLog: SentLogPort? = nil,
+                cloudFolder: URL? = nil) {
         // Beside the people list unless told otherwise, so a test's stays in its scratch folder.
         self.temperatureStore = temperatures
             ?? (peopleStore as? PeopleStoreFile).map { TemperatureStoreFile(url: $0.url.deletingLastPathComponent().appendingPathComponent("temperatures.json")) }
@@ -319,7 +327,9 @@ public final class AppModel: ObservableObject {
         self.sentLog = sentLog
             ?? (queue as? QueueStoreFile).map { SentLogFile(url: $0.url.deletingLastPathComponent().appendingPathComponent("sent.jsonl")) }
             ?? SentLogFile.standard()
-        if let file = peopleStore as? PeopleStoreFile {
+        if let cloudFolder {
+            self.cloudFolder = cloudFolder
+        } else if let file = peopleStore as? PeopleStoreFile {
             self.cloudFolder = file.url == PeopleStoreFile.standard().url
                 ? CloudCopy.standardFolder
                 : file.url.deletingLastPathComponent().appendingPathComponent("iCloud", isDirectory: true)
@@ -349,8 +359,9 @@ public final class AppModel: ObservableObject {
             if let saved = try peopleStore.load() {
                 book = saved
             } else {
-                book = .family()
-                try peopleStore.save(book)
+                // A new install starts with nobody: people are added in the setup or in Settings,
+                // or come from iCloud (0.21.0, David, 5 November 2026).
+                book = PeopleBook()
             }
         } catch {
             peopleLine = "The people list could not be read: \(error.localizedDescription)"
@@ -437,7 +448,9 @@ public final class AppModel: ObservableObject {
     /// folder already, and never sees it unasked.
     public var needsSetup: Bool {
         guard !defaults.bool(forKey: "setupDone") else { return false }
-        return serviceAddress.isEmpty && !book.people.contains { !($0.saveFolder ?? "").isEmpty }
+        // A new install that took its settings from iCloud still wants this
+        // Mac's own: the password, the key, the save folders.
+        return serviceAddress.isEmpty && !book.people.contains { !($0.saveFolder ?? "").isEmpty } || newFromCloud
     }
 
     public func finishSetup() {
@@ -473,6 +486,8 @@ public final class AppModel: ObservableObject {
         guard !started else { return }
         started = true
         Quitting.cutOff = { [weak self] in self?.quitCutOff() }
+        // iCloud first: a new install of David's takes everything from it.
+        await syncWithCloud()
         if needsSetup {
             settingUp = true
         } else {
@@ -492,10 +507,9 @@ public final class AppModel: ObservableObject {
         }
         tracks = await library.listed()
         await refresh()
-        await copyToCloud()
         cloudTimer?.invalidate()
         cloudTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.copyToCloud() }
+            Task { @MainActor in await self?.syncWithCloud() }
         }
         timer?.invalidate()
         remindClocks()
@@ -1610,9 +1624,9 @@ public final class AppModel: ObservableObject {
         defaults.set(sendAtOnce, forKey: "sendAtOnce")
     }
 
-    /// Copies this Mac's settings and its list of photos read to iCloud,
-    /// whatever changed since last time. Nothing is read back yet.
-    public func copyToCloud() async {
+    /// Keeps this Mac and iCloud the same: what changed on either side goes
+    /// to the other, the lists of photos read combined (0.21.0).
+    public func syncWithCloud() async {
         guard let folder = cloudFolder,
               let people = peopleStore as? PeopleStoreFile,
               let history = history as? HistoryStoreFolder,
@@ -1624,21 +1638,50 @@ public final class AppModel: ObservableObject {
         var settings: [String: Any] = [:]
         for key in CloudCopy.sharedKeys { if let value = all[key] { settings[key] = value } }
         nonisolated(unsafe) let shared = settings
-        let name = Host.current().localizedName ?? "This Mac"
-        let outcome: Result<[CloudCopy.Mac], Error> = await Task.detached {
-            Result {
-                try CloudCopy.copy(CloudCopy.What(settings: shared, people: people.url, temperatures: temperatures.url,
-                                                  history: history.folder, macName: name), into: folder)
-                return CloudCopy.macs(in: folder)
-            }
+        let seen = defaults.data(forKey: cloudSeenKey).flatMap { try? JSONDecoder().decode(CloudSync.Seen.self, from: $0) } ?? CloudSync.Seen()
+        let local = CloudSync.Local(people: people.url, temperatures: temperatures.url, history: history.folder,
+                                    macName: Host.current().localizedName ?? "This Mac")
+        let outcome: Result<CloudSync.Outcome, Error> = await Task.detached {
+            Result { try CloudSync.sync(local, settings: shared, seen: seen, into: folder) }
         }.value
         switch outcome {
-        case .success(let macs):
+        case .success(let done):
             cloudProblem = nil
-            if cloudMacs != macs { cloudMacs = macs }
+            if let data = try? JSONEncoder().encode(done.seen) { defaults.set(data, forKey: cloudSeenKey) }
+            if done.peopleTaken, let book = try? peopleStore.load() {
+                if self.book.people.isEmpty { newFromCloud = true }
+                self.book = book
+            }
+            if done.temperaturesTaken, let taken = try? temperatureStore.load() { self.temperatures = taken }
+            if let taken = done.settingsTaken { takeSettings(taken) }
+            if cloudMacs != done.macs { cloudMacs = done.macs }
         case .failure(let error):
-            cloudProblem = "Not copied to iCloud: \(error.localizedDescription)"
+            cloudProblem = "Not synced with iCloud: \(error.localizedDescription)"
         }
+    }
+
+    /// iCloud's settings in place of this Mac's, and shown at once.
+    private func takeSettings(_ taken: [String: Any]) {
+        for key in CloudCopy.sharedKeys {
+            if let value = taken[key] { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
+        }
+        openOnCard = defaults.object(forKey: "openOnCard") as? Bool ?? true
+        maxGapSeconds = defaults.object(forKey: "maxGapSeconds") != nil ? defaults.integer(forKey: "maxGapSeconds") : 120
+        if defaults.object(forKey: "breakMinutes") != nil { breakMinutes = defaults.integer(forKey: "breakMinutes") }
+        if defaults.object(forKey: "clockFixMinutes") != nil { clockFixMinutes = defaults.integer(forKey: "clockFixMinutes") }
+        dateOrder = defaults.string(forKey: "dateOrder").flatMap(DateOrder.init(rawValue:)) ?? .system
+        clock24 = defaults.object(forKey: "clock24") as? Bool
+        When.current = When(order: dateOrder, clock24: clock24)
+        if let raw = defaults.string(forKey: "appearance"), let mode = Appearance(rawValue: raw) { appearance = mode }
+        if NSApp != nil { applyAppearance() }
+        serviceAddress = defaults.string(forKey: "trackServiceAddress") ?? ""
+        savedService = ServiceFields(address: serviceAddress, key: serviceKey)
+        mapCredit = defaults.string(forKey: "mapCredit") ?? ""
+        nasAddress = defaults.string(forKey: "nasAddress") ?? ""
+        nasBackupAddress = defaults.string(forKey: "nasBackupAddress") ?? ""
+        nasUser = defaults.string(forKey: "nasUser") ?? ""
+        savedNAS = nasFields
+        rematch()
     }
 
     public func setKeepOnMac(_ keep: KeepOnMac) {
