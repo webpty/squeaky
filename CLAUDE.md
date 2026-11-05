@@ -425,6 +425,19 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   its share of their time. Until an address has 3 timed, `StepWeights.guess`:
   2/60/36/2. Looking and Naming can't tell how far they are, so they show
   where they start.
+- Time left for sending (0.22.0, David, 5 November 2026: it "easily loses
+  the estimation"): `SendSpeeds`, each whole photo's bytes and seconds per
+  NAS address, 200 kept, saved in defaults as `sendSpeeds`. Time left is
+  the bytes still to go (the waiting copies' sizes, plus what is left of
+  those going up) over the pace of the address's latest 20 photos, so it
+  shows from the first photo and survives breaks, pauses and restarts.
+  Before 0.22.0 it went by photos since the last break and needed three.
+  The line ends "Slow.", "Average." or "Fast.": the latest photo's speed
+  among every photo timed, home and Tailscale together (thirds), once 10
+  are timed. The line is said again at every step and queue change
+  (`sayGoing`); it used to be said only as a photo started, and read "1
+  more waiting" while a card added 243. While photos go up, the NAS box
+  names the address they go through (`sendingThrough`).
 - Copies on this Mac are removed once on the NAS (0.19.0, David, 5 November
   2026: saving locally does not scale). `sent.jsonl` beside `queue.json`
   (`SentLogFile`) records every photo that passed the check on arrival, for

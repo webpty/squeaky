@@ -266,8 +266,12 @@ public final class AppModel: ObservableObject {
     private var nextTry: Date?
     private var sendingNow = false
     /// When this run of sending began, and how many photos it has done: the pace for "about 20 min left".
-    private var sendBegan: Date?
-    private var sendDone = 0
+    /// Whole photos timed going up, per NAS address, kept between launches.
+    public private(set) var sendSpeeds = SendSpeeds()
+    /// The address photos are going up through now; nil when none are.
+    private var sendingThrough: String?
+    /// Each queue entry's Mac copy size, for the time left.
+    private var entrySizes: [UUID: Int64] = [:]
     private var sendTimer: Timer?
 
     public let library: TrackLibrary
@@ -382,6 +386,7 @@ public final class AppModel: ObservableObject {
         savedNAS = nasFields
         sendPaused = defaults.bool(forKey: "sendPaused")
         if let data = defaults.data(forKey: "stepTimes"), let times = try? JSONDecoder().decode(StepTimes.self, from: data) { stepTimes = times }
+        if let data = defaults.data(forKey: "sendSpeeds"), let speeds = try? JSONDecoder().decode(SendSpeeds.self, from: data) { sendSpeeds = speeds }
         if defaults.object(forKey: "sendAtOnce") != nil { sendAtOnce = min(max(defaults.integer(forKey: "sendAtOnce"), 1), 6) }
         // A send cut off by a crash or a shutdown starts again from the beginning.
         var entries = (try? queue.load()) ?? []
@@ -1494,6 +1499,8 @@ public final class AppModel: ObservableObject {
         next.removeAll { $0.state == .sent && ($0.sent ?? $0.added) < cutoff }
         queueEntries = next
         try? queue.save(next)
+        // Photos added or gone while one goes up: the line keeps up.
+        if sendingThrough != nil, meter.count > 0 { sayGoing() }
     }
 
     private func changeEntry(_ id: UUID, _ change: (inout QueueEntry) -> Void) {
@@ -1579,6 +1586,11 @@ public final class AppModel: ObservableObject {
     /// settings. Every shared folder in People must answer.
     public func checkNAS() async {
         guard !checkingNAS else { return }
+        // Photos going up: the box names the address they go through.
+        if let address = sendingThrough {
+            if nasReach != .through(address) { nasReach = .through(address) }
+            return
+        }
         let shares = Set(book.people.compactMap { NASFolder($0.nasFolder)?.share }).sorted()
         guard !shares.isEmpty, nasPort != nil || !savedNAS.port.addresses.isEmpty else {
             nasReach = .notSetUp
@@ -1796,24 +1808,19 @@ public final class AppModel: ObservableObject {
                         connection = try await nas.connect(share: place.share)
                     } catch {
                         nasReach = .unreachable
-                        // A pause is no part of the pace.
-                        sendBegan = nil
                         let retry = Date().addingTimeInterval(60)
                         nextTry = retry
                         halt = "\(error.localizedDescription) Trying again at \(When.current.time(retry))."
                         break
                     }
                     if connection.ours { ourMounts[connection.folder.path] = connection }
+                    sendingThrough = connection.address
                     if nasReach != .through(connection.address) { nasReach = .through(connection.address) }
                     let name = (entry.relativePath as NSString).lastPathComponent
                     changeEntry(entry.id) { $0.state = .sending }
                     meter.begin(entry.id, name: name, weights: stepTimes.weights(for: connection.address))
                     sendingBatch = true
-                    if sendBegan == nil {
-                        sendBegan = Date()
-                        sendDone = 0
-                    }
-                    sayGoing(to: connection.address)
+                    sayGoing()
                     refreshWork()
                     running += 1
                     group.addTask { @MainActor [self] in
@@ -1827,10 +1834,11 @@ public final class AppModel: ObservableObject {
                     nextTry = retry
                     halt = "NAS full. Trying again at \(When.current.time(retry))."
                 }
-                if halt == nil, running > 0, case .through(let address) = nasReach { sayGoing(to: address) }
+                if halt == nil, running > 0 { sayGoing() }
                 refreshWork()
             }
         }
+        sendingThrough = nil
         if let halt {
             say(halt)
             return
@@ -1845,18 +1853,35 @@ public final class AppModel: ObservableObject {
             batchFailed = 0
         }
         if !sendPaused, !waiting { await closeOurMounts() }
-        if !waiting { sendBegan = nil }
         // Every ten minutes, and straight after a send when copies go as soon as they are on the NAS.
         if lastTidy.map({ Date().timeIntervalSince($0) > 600 }) ?? true || (sentSinceTidy && keepOnMac == .untilOnNAS) { tidyMac() }
     }
 
-    /// "IMG_0001.JPG to nas. 12 more waiting, about 20 min left.", or with
-    /// several going up, "3 photos to nas at once. ..."
-    private func sayGoing(to address: String) {
+    /// "IMG_0001.JPG to nas. 12 more waiting, about 20 min left. Slow.", or
+    /// with several going up, "3 photos to nas at once. ..." Said again as
+    /// photos move along and the queue changes, so it never goes stale.
+    private func sayGoing() {
+        guard let address = sendingThrough, meter.count > 0, !sendPaused else { return }
         let host = NASOverSMB.host(address) ?? address
         let more = queueEntries.filter { $0.state == .waiting }.count
         let going = meter.only.map { "\($0.name) to \(host)." } ?? "\(meter.count) photos to \(host) at once."
-        say(going + (more == 0 ? "" : " \(more) more waiting") + (sendingLeft().map { ", \($0) left." } ?? (more == 0 ? "" : ".")))
+        var line = going + (more == 0 ? "" : " \(more) more waiting") + (sendingLeft().map { ", \($0) left." } ?? (more == 0 ? "" : "."))
+        if let word = sendingSpeed() { line += " \(word.rawValue)." }
+        say(line)
+    }
+
+    private func size(of entry: QueueEntry) -> Int64 {
+        if let known = entrySizes[entry.id] { return known }
+        let size = SentRecord.stamp(entry.localPath)?.size ?? 0
+        entrySizes[entry.id] = size
+        return size
+    }
+
+    /// Slow, average or fast: the latest photo through this address against
+    /// every photo timed, home and away.
+    public func sendingSpeed() -> SendSpeeds.Rating? {
+        guard let address = sendingThrough, let speed = sendSpeeds.latest(for: address) else { return nil }
+        return sendSpeeds.rating(of: speed)
     }
 
     /// One photo up to the NAS, and the queue told how it went. True when the
@@ -1880,6 +1905,7 @@ public final class AppModel: ObservableObject {
                         clock.saw(step)
                         Task { @MainActor [weak self] in
                             meter.show(step, for: id)
+                            self?.sayGoing()
                             self?.refreshWork()
                         }
                     }))
@@ -1888,8 +1914,9 @@ public final class AppModel: ObservableObject {
                 }
             }
         }
+        let fullSize = size(of: entry)
         meter.end(id)
-        sendDone += 1
+        entrySizes[id] = nil
         switch outcome {
         case .success(let result):
             batchSent += 1
@@ -1897,6 +1924,8 @@ public final class AppModel: ObservableObject {
             if case .alreadyThere = result {} else if let seconds = clock.seconds() {
                 stepTimes.add(seconds, for: connection.address)
                 if let data = try? JSONEncoder().encode(stepTimes) { defaults.set(data, forKey: "stepTimes") }
+                sendSpeeds.add(bytes: before?.size ?? fullSize, seconds: seconds.reduce(0, +), for: connection.address)
+                if let data = try? JSONEncoder().encode(sendSpeeds) { defaults.set(data, forKey: "sendSpeeds") }
             }
             let landed = result.url.lastPathComponent
             if let before {
@@ -1936,12 +1965,17 @@ public final class AppModel: ObservableObject {
         return false
     }
 
-    /// "about 20 min" of sending left at this run's pace; nil until it can tell.
+    /// "about 20 min" of sending left: the bytes still to go, what is left of
+    /// the photos going up included, at the recent pace through this address.
+    /// Nil before a photo has been timed through it.
     public func sendingLeft() -> String? {
-        guard let began = sendBegan else { return nil }
-        let ahead = queueEntries.filter { $0.state == .waiting && NASFolder(book.person($0.personId)?.nasFolder) != nil }.count
-        let now = meter.count
-        return Remaining.estimate(done: sendDone, total: sendDone + now + ahead, since: began).map(Remaining.text)
+        guard let address = sendingThrough else { return nil }
+        let ahead = queueEntries.filter { $0.state == .waiting && NASFolder(book.person($0.personId)?.nasFolder) != nil }
+        var bytes = ahead.reduce(0.0) { $0 + Double(size(of: $1)) }
+        for entry in queueEntries where entry.state == .sending {
+            bytes += Double(size(of: entry)) * (1 - (meter.going[entry.id]?.fraction ?? 0))
+        }
+        return sendSpeeds.seconds(for: bytes, through: address).map(Remaining.text)
     }
 
     /// What the menu bar icon shows while Geotag works: the Photos page's own

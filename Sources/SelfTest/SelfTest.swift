@@ -2904,6 +2904,7 @@ extension SelfTest {
         }
 
         UserDefaults.standard.removeObject(forKey: "stepTimes")
+        UserDefaults.standard.removeObject(forKey: "sendSpeeds")
         let one = await run("one", atOnce: 1)
         check("send together: set to 1, one at a time", one.most == 1, "\(one.most)")
         let three = await run("three", atOnce: 3)
@@ -2927,8 +2928,33 @@ extension SelfTest {
               three.model.stepTimes.byAddress["smb://test"]?.count == 16
               && three.model.stepTimes.byAddress["smb://test"]?.allSatisfy { $0.count == 4 && $0.allSatisfy { $0 >= 0 } } == true,
               "\(three.model.stepTimes.byAddress.mapValues(\.count))")
+        check("send together: every photo's speed kept for the address, between launches",
+              three.model.sendSpeeds.byAddress["smb://test"]?.count == 16
+              && (UserDefaults.standard.data(forKey: "sendSpeeds").flatMap { try? JSONDecoder().decode(SendSpeeds.self, from: $0) })?.byAddress["smb://test"]?.count == 16,
+              "\(three.model.sendSpeeds.byAddress.mapValues(\.count))")
         UserDefaults.standard.removeObject(forKey: "sendAtOnce")
         UserDefaults.standard.removeObject(forKey: "stepTimes")
+        UserDefaults.standard.removeObject(forKey: "sendSpeeds")
+
+        // The time left goes by bytes at the recent pace, and slow, average
+        // and fast by where a speed falls among all those timed.
+        var speeds = SendSpeeds()
+        check("send speeds: nothing timed, no time left", speeds.seconds(for: 1_000, through: "home") == nil)
+        speeds.add(bytes: 10_000_000, seconds: 10, for: "home")
+        check("send speeds: from the first photo, bytes over the pace",
+              speeds.seconds(for: 50_000_000, through: "home").map { abs($0 - 50) < 0.001 } == true)
+        check("send speeds: each address its own pace", speeds.seconds(for: 1, through: "away") == nil)
+        for i in 1...30 { speeds.add(bytes: 30_000_000, seconds: Double(300 + i), for: "away") }
+        check("send speeds: only the latest photos count",
+              speeds.rate(for: "away").map { abs($0 - 30_000_000 * 20 / Double((11...30).map { 300 + $0 }.reduce(0, +))) < 0.01 } == true)
+        check("send speeds: none of it rated before ten", SendSpeeds().rating(of: 1) == nil)
+        for _ in 1...15 { speeds.add(bytes: 30_000_000, seconds: 10, for: "home") }
+        check("send speeds: away slow, home fast",
+              speeds.rating(of: speeds.latest(for: "away")!) == .slow && speeds.rating(of: speeds.latest(for: "home")!) == .fast,
+              "\(String(describing: speeds.rating(of: speeds.latest(for: "away")!)))")
+        check("send speeds: in between, average", speeds.rating(of: 1_000_000) == .average)
+        for _ in 1...300 { speeds.add(bytes: 1, seconds: 1, for: "home") }
+        check("send speeds: at most 200 kept a place", speeds.byAddress["home"]?.count == SendSpeeds.kept)
     }
 
     /// Copies on this Mac removed once on the NAS long enough, by the record
