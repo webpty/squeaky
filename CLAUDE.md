@@ -780,5 +780,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   Applications and in `build/`.
 - Raise `appVersion` in `Sources/GeotagCore/Version.swift` with every push, and
   start the commit subject with that number.
-- Commit locally as often as it is worth. Push only when he says so, each time.
+- Commit locally as often as it is worth, and push to GitHub without asking
+  (David, 6 November 2026: a push here only saves versions; nothing goes
+  live from it). Installing a new build on his Mac still needs his yes.
 - British spelling. No em dashes.
