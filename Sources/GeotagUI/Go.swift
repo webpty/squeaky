@@ -38,25 +38,29 @@ public struct GoMenu: View {
 struct DownloadScreen: View {
     @EnvironmentObject var model: AppModel
 
+    // In a scroll view like the other pages: a page that sized itself to its
+    // words was asked its height at no width and grew taller than the
+    // window, which pushed the sidebar and the page out of sight (0.25.1).
     var body: some View {
-        VStack(alignment: .leading, spacing: Style.gap) {
-            ScreenTitle(text: "Download")
-            Text("Makes a disk image that installs Geotag on another Mac. It is saved to Downloads.")
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: Style.gap) {
-                ForEach(Installer.Chip.allCases, id: \.self) { chip in
-                    Button {
-                        Task { await model.saveDownload(chip) }
-                    } label: {
-                        Text("Download for \(chip.title)").buttonLabel()
+        ScrollView {
+            VStack(alignment: .leading, spacing: Style.gap) {
+                ScreenTitle(text: "Download")
+                Text("Makes a disk image that installs Geotag on another Mac. It is saved to Downloads.")
+                HStack(spacing: Style.gap) {
+                    ForEach(Installer.Chip.allCases, id: \.self) { chip in
+                        Button {
+                            Task { await model.saveDownload(chip) }
+                        } label: {
+                            Text("Download for \(chip.title)").buttonLabel()
+                        }
+                        .fixedSize()
+                        .disabled(model.makingDownload)
                     }
-                    .fixedSize()
-                    .disabled(model.makingDownload)
                 }
+                StatusLine(text: model.downloadLine, busy: model.makingDownload)
             }
-            StatusLine(text: model.downloadLine, busy: model.makingDownload)
-            Spacer()
+            .padding(Style.pad * 1.5)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(Style.pad * 1.5)
     }
 }
