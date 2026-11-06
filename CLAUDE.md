@@ -213,14 +213,45 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   question a second, identified as Geotag; else the track's name; else the
   day.
 
-## Tracks out of the way (0.10.0, 16 October 2026)
+## Tracks out of the way (0.10.0, 16 October 2026; sidebar from 0.24.0)
 
-- Tracks is not in the sidebar. It is a "Tracks" menu in the Mac's menu bar
-  (Show Tracks, Refresh, Import GPX or FIT…); Show Tracks opens a window of
-  its own (`Window` id "tracks") with the tracks as a grid of map cards, and
-  the track viewer opens over that window. Geotag opens on Photos. David's
-  instructions: "when tracks are working I don't need to see them", "they
-  should be a grid", "in the Apple top bar", never Geotag's own toolbar.
+- Tracks is not a page. It opens a window of its own (`Window` id
+  "tracks") with the tracks as a grid of map cards, Refresh and Import GPX
+  or FIT at the top, and the track viewer opens over that window. Geotag
+  opens on Photos. David's instructions: "when tracks are working I don't
+  need to see them", "they should be a grid", never Geotag's own toolbar.
+  It was a menu in the Mac's menu bar until 0.24.0.
+
+## The sidebar's second group (0.24.0, David, 6 November 2026)
+
+- The menus at the top of the screen moved to the sidebar ("the top is
+  getting really crowded"): under the pages, after a thin line, Tracks,
+  Clock drift, Camera clocks and Download (`Tool`). Settings and Set Up
+  This Mac stay in the Geotag menu.
+- Command and a number for every sidebar item in order, Settings keeping
+  Command-comma: Photos 1, Queue 2, History 3, Tracks 4, Clock drift 5,
+  Camera clocks 6, Download 7 (`Shortcuts`, `GoMenu`, listed in the View
+  menu). The pages bring the main window forward.
+- Escape closes every window or panel over the main window: the three tool
+  windows by `EscapeCloses` (the track viewer first, when open), every sheet
+  by its Cancel or Later button.
+
+## Ordering the tables (0.24.0, David, 6 November 2026)
+
+- Every column with something in it sorts, on Photos, Queue and History
+  (`SortColumns`): a click ascending, the next descending, the Mac's arrow
+  at the right of the heading; the column ordering it has its heading in
+  the accent colour and a faint tint down its cells. The Photos picture
+  column has nothing to order by. The saved tick ascending puts photos
+  still to save first.
+- Photos opens newest first; its choice is kept (`photoSort`,
+  `photoSortAscending`). Queue and History start in their usual order.
+- "Hide photos saved before" (`hideSavedBefore`, kept) hides photos saved
+  from an earlier card; those saved this time and those not saved stay.
+- Ejecting a card, or taking it out, leaves the Photos list: "Clear photos"
+  (shown once the card is out) or the next card empties it. With the card
+  out, pictures come from the Mac copies (`pictureURL`), and Save and the
+  map say the card is out. The list is not kept through a restart.
 
 ## Saving (stage 7, 16 October 2026)
 
@@ -298,7 +329,8 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   2025 opened it on an empty world map and he could not tell what it
   wanted). "See photos on the map" still opens it; that is the way in for a
   camera whose clock is far out, whose photos fall nowhere near a track.
-- "Set time and date in camera", in the menu bar, has a page per family
+- "Camera clocks", in the sidebar (the menu "Set time and date in camera"
+  until 0.24.0), opens on the first camera and has a page per family
   camera (`CameraGuide.all`): steps in the camera's own menu words from the
   maker's manual, with pictures of the camera's screens in
   `Resources/CameraClock/<camera>` (Canon's manual pictures for the R5
@@ -512,8 +544,8 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   set"); the Without location count and filter keep counting those photos.
 - History shows dates in the format chosen in Settings, under "Date and
   time".
-- The disk image for another Mac comes from the Download menu, next to
-  Tracks in the Mac's menu bar: "Save to Downloads" makes it there and then
+- The disk image for another Mac comes from Download in the sidebar (a menu
+  in the Mac's menu bar until 0.24.0), which makes it there and then
   from the running Geotag (`Installer`, `hdiutil`), puts "Geotag
   <version>.dmg" in Downloads over one of the same name, and shows it in
   Finder (David, 17 October 2026: in the app, made on demand so it works on
@@ -697,7 +729,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Camera temperature: Canon's `CameraTemperature`, in the maker notes the
   fast read skips, so read afterwards for one photo per camera per quarter
   hour, with its position, into `temperatures.json` beside people.json.
-- "Clock drift" in the menu bar opens a window: per camera, each stretch
+- "Clock drift" in the sidebar opens a window: per camera, each stretch
   between two readings with its drift, the camera's temperature (average,
   lowest, highest), the outside temperature and up to three places, and a
   chart of drift against temperature. The outside temperature is to come

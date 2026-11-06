@@ -31,26 +31,7 @@ public struct CameraGuide: Identifiable, Sendable {
     }
 }
 
-/// The "Set time and date in camera" menu: one item per camera.
-public struct CameraClockMenu: View {
-    @Environment(\.openWindow) private var openWindow
-    @ObservedObject var model: AppModel
-
-    public init(model: AppModel) {
-        self.model = model
-    }
-
-    public var body: some View {
-        ForEach(CameraGuide.all) { guide in
-            Button(guide.name) {
-                model.cameraGuide = guide.id
-                openWindow(id: "camera-clock")
-            }
-        }
-    }
-}
-
-/// The window the menu opens: the chosen camera's steps, with the pictures of
+/// The window Camera clocks opens: the chosen camera's steps, with the pictures of
 /// its screens.
 public struct CameraClockWindow: View {
     @EnvironmentObject var model: AppModel

@@ -67,10 +67,31 @@ enum PhotoText {
     }
 }
 
+/// A row of the Photos table with what each column is ordered by.
+struct PhotoLine: Identifiable {
+    let row: ImportRow
+    /// 0 not saved, 1 saved: ascending puts the photos still to save first.
+    let saved: Int
+    let name: String
+    let status: String
+    let place: String
+    let gap: Int
+    let taken: Date
+    let camera: String
+    let size: Int64
+    var id: String { row.id }
+}
+
 struct PhotosScreen: View {
     @EnvironmentObject var model: AppModel
     @State private var reviewOnly = false
-    @State private var columns = TableColumnCustomization<ImportRow>()
+    @State private var columns = TableColumnCustomization<PhotoLine>()
+    @State private var order: [KeyPathComparator<PhotoLine>] = []
+    /// The column the photos are ordered by, and which way; newest first to start.
+    @AppStorage("photoSort") private var sortId = "taken"
+    @AppStorage("photoSortAscending") private var sortAscending = false
+    /// Photos saved from an earlier card hidden; those saved this time stay.
+    @AppStorage("hideSavedBefore") private var hideSavedBefore = false
     @AppStorage("photoColumns") private var savedColumns = Data()
     @State private var selection = Set<ImportRow.ID>()
     /// The photo shown big, as Finder's space bar shows it.
@@ -95,9 +116,39 @@ struct PhotosScreen: View {
         row.needsReview && (row.ticked || model.results[row.id]?.url != nil)
     }
 
-    private var shown: [ImportRow] {
-        reviewOnly ? model.rows.filter(withoutLocation) : model.rows
+    static let sorts = SortColumns<PhotoLine>(all: [
+        ("done", KeyPathComparator(\PhotoLine.saved)), ("name", KeyPathComparator(\PhotoLine.name)),
+        ("status", KeyPathComparator(\PhotoLine.status)), ("place", KeyPathComparator(\PhotoLine.place)),
+        ("gap", KeyPathComparator(\PhotoLine.gap)), ("taken", KeyPathComparator(\PhotoLine.taken)),
+        ("camera", KeyPathComparator(\PhotoLine.camera)), ("size", KeyPathComparator(\PhotoLine.size)),
+    ])
+
+    /// What the Status column says, to order by.
+    private func statusText(_ row: ImportRow) -> String {
+        if let result = model.results[row.id] {
+            if let url = result.url, let entry = model.queueEntry(for: url.path) { return QueueText.photo(entry) }
+            switch result {
+            case .saved: return "Saved"
+            case .alreadyThere: return "Already saved"
+            case .failed(let why): return "Not saved: \(why)"
+            }
+        }
+        return row.status == .alreadyImported ? PhotoText.status(row.status) : PhotoText.location(row, gap: model.maxGapSeconds)
     }
+
+    private var shown: [PhotoLine] {
+        var rows = reviewOnly ? model.rows.filter(withoutLocation) : model.rows
+        if hideSavedBefore { rows.removeAll { $0.status == .alreadyImported && model.results[$0.id] == nil } }
+        let lines = rows.map { row in
+            PhotoLine(row: row, saved: model.isSaved(row) ? 1 : 0, name: row.photo.fileName, status: statusText(row),
+                      place: model.placeName(row) ?? "", gap: model.breaks[row.id] ?? 0,
+                      taken: Moments.clockReading(row.photo) ?? .distantPast, camera: row.photo.model ?? "Unknown",
+                      size: row.photo.size)
+        }
+        return order.isEmpty ? lines : lines.sorted(using: order)
+    }
+
+    private var sortedBy: String? { Self.sorts.id(of: order) }
 
     private var counts: (photos: Int, fresh: Int, before: Int, review: Int) {
         let rows = model.rows
@@ -204,6 +255,19 @@ struct PhotosScreen: View {
                 .fixedSize()
                 .handCursor()
                 if !model.rows.isEmpty {
+                    Toggle("Hide photos saved before", isOn: $hideSavedBefore)
+                        .toggleStyle(.checkbox)
+                        .fixedSize()
+                    if model.source == nil {
+                        Button {
+                            selection = []
+                            model.clearPhotos()
+                        } label: {
+                            Text("Clear photos").buttonLabel()
+                        }
+                        .fixedSize()
+                        .disabled(model.saving)
+                    }
                     Picker("", selection: $reviewOnly) {
                         Text("All").tag(false)
                         Text("Without location (\(c.review))").tag(true)
@@ -215,64 +279,74 @@ struct PhotosScreen: View {
             }
             .frame(minHeight: 40)
 
-            Table(shown, selection: $selection, columnCustomization: $columns) {
-                TableColumn("") { row in
+            let by = sortedBy
+            Table(shown, selection: $selection, sortOrder: $order, columnCustomization: $columns) {
+                TableColumn(Text("").sortHeading(by == "done"), value: \PhotoLine.saved) { line in
                     // A checkmark once the photo is saved, now or on an earlier card.
-                    if model.isSaved(row) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                            .accessibilityLabel("Saved")
+                    Group {
+                        if line.saved == 1 {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                                .accessibilityLabel("Saved")
+                        }
                     }
+                    .sortTint(by == "done")
                 }
                 .width(24)
                 .customizationID("done")
                 .disabledCustomizationBehavior(.visibility)
-                TableColumn("") { row in
-                    PhotoPreview(url: row.photo.url)
+                TableColumn("") { line in
+                    if let url = model.pictureURL(line.row) { PhotoPreview(url: url) }
                 }
                 .width(56)
                 .customizationID("preview")
-                TableColumn("Name") { row in
-                    Text(row.photo.fileName).lineLimit(1)
+                TableColumn(Text("Name").sortHeading(by == "name"), value: \PhotoLine.name) { line in
+                    Text(line.name).lineLimit(1).sortTint(by == "name")
                 }
                 .width(min: 100, ideal: 120)
                 .customizationID("name")
                 // Next to the name, so it shows even in the smallest window.
-                TableColumn("Status") { row in
-                    PhotoStatus(model: model, row: row)
+                TableColumn(Text("Status").sortHeading(by == "status"), value: \PhotoLine.status) { line in
+                    PhotoStatus(model: model, row: line.row).sortTint(by == "status")
                 }
                 .width(min: 150, ideal: 240)
                 .customizationID("status")
                 // The place its folder is named after: typed, else OpenStreetMap's.
-                TableColumn("Place") { row in
-                    if let name = model.placeName(row) {
-                        Text(name).lineLimit(1)
-                    } else if model.placesSettled {
-                        Text("No place").foregroundStyle(.secondary).lineLimit(1)
+                TableColumn(Text("Place").sortHeading(by == "place"), value: \PhotoLine.place) { line in
+                    Group {
+                        if !line.place.isEmpty {
+                            Text(line.place).lineLimit(1)
+                        } else if model.placesSettled {
+                            Text("No place").foregroundStyle(.secondary).lineLimit(1)
+                        }
                     }
+                    .sortTint(by == "place")
                 }
                 .width(min: 90, ideal: 140)
                 .customizationID("place")
                 // A long break before this photo: often a new place.
-                TableColumn("Gap") { row in
-                    if let seconds = model.breaks[row.id] {
-                        Text(PhotoText.gap(seconds)).monospacedDigit().lineLimit(1)
+                TableColumn(Text("Gap").sortHeading(by == "gap"), value: \PhotoLine.gap) { line in
+                    Group {
+                        if line.gap > 0 {
+                            Text(PhotoText.gap(line.gap)).monospacedDigit().lineLimit(1)
+                        }
                     }
+                    .sortTint(by == "gap")
                 }
                 .width(min: 60, ideal: 80)
                 .customizationID("gap")
-                TableColumn("Date and time") { row in
-                    Text(PhotoText.taken(row.photo)).monospacedDigit().lineLimit(1)
+                TableColumn(Text("Date and time").sortHeading(by == "taken"), value: \PhotoLine.taken) { line in
+                    Text(PhotoText.taken(line.row.photo)).monospacedDigit().lineLimit(1).sortTint(by == "taken")
                 }
                 .width(min: 170, ideal: 200)
                 .customizationID("taken")
-                TableColumn("Camera model") { row in
-                    Text(row.photo.model ?? "Unknown").lineLimit(1)
+                TableColumn(Text("Camera model").sortHeading(by == "camera"), value: \PhotoLine.camera) { line in
+                    Text(line.camera).lineLimit(1).sortTint(by == "camera")
                 }
                 .width(min: 100, ideal: 130)
                 .customizationID("camera")
-                TableColumn("Size") { row in
-                    Text(PhotoText.size(row.photo.size)).monospacedDigit().lineLimit(1)
+                TableColumn(Text("Size").sortHeading(by == "size"), value: \PhotoLine.size) { line in
+                    Text(PhotoText.size(line.size)).monospacedDigit().lineLimit(1).sortTint(by == "size")
                 }
                 .width(min: 60, ideal: 70)
                 .customizationID("size")
@@ -284,18 +358,25 @@ struct PhotosScreen: View {
                     previewing = nil
                     return .handled
                 }
-                guard let row = shown.first(where: { selection.contains($0.id) }) else { return .ignored }
-                previewing = row.photo.url
+                guard let line = shown.first(where: { selection.contains($0.id) }), let url = model.pictureURL(line.row) else { return .ignored }
+                previewing = url
                 return .handled
             }
             .onChange(of: selection) { _, now in
-                if previewing != nil, let row = shown.first(where: { now.contains($0.id) }) { previewing = row.photo.url }
+                if previewing != nil, let line = shown.first(where: { now.contains($0.id) }) { previewing = model.pictureURL(line.row) }
             }
-            .quickLookPreview($previewing, in: shown.map(\.photo.url))
+            .quickLookPreview($previewing, in: shown.compactMap { model.pictureURL($0.row) })
         }
         .padding(Style.pad * 1.5)
         .onAppear {
-            if let saved = try? JSONDecoder().decode(TableColumnCustomization<ImportRow>.self, from: savedColumns) { columns = saved }
+            if let saved = try? JSONDecoder().decode(TableColumnCustomization<PhotoLine>.self, from: savedColumns) { columns = saved }
+            order = Self.sorts.order(sortId, ascending: sortAscending)
+        }
+        .onChange(of: order) { _, now in
+            // The latest choice is the order next time, through restarts.
+            guard let id = Self.sorts.id(of: now), let first = now.first else { return }
+            sortId = id
+            sortAscending = first.order == .forward
         }
         .onChange(of: columns) { _, now in
             if let data = try? JSONEncoder().encode(now) { savedColumns = data }
@@ -538,6 +619,13 @@ struct PhotoPreview: View {
 
 struct HistoryScreen: View {
     @EnvironmentObject var model: AppModel
+    /// Empty until a heading is clicked: the usual order. Not kept between launches.
+    @State private var order: [KeyPathComparator<HistoryRow>] = []
+
+    static let sorts = SortColumns<HistoryRow>(all: [
+        ("name", KeyPathComparator(\HistoryRow.name)), ("taken", KeyPathComparator(\HistoryRow.taken)),
+        ("size", KeyPathComparator(\HistoryRow.size)), ("imported", KeyPathComparator(\HistoryRow.imported)),
+    ])
 
     var body: some View {
         VStack(alignment: .leading, spacing: Style.gap) {
@@ -549,16 +637,24 @@ struct HistoryScreen: View {
                 .labelsHidden()
                 .fixedSize()
             }
-            Table(model.historyEntries.indices.map { HistoryRow(index: $0, entry: model.historyEntries[$0]) }) {
-                TableColumn("Name") { Text($0.entry.fileName).lineLimit(1) }
-                    .width(min: 120, ideal: 170)
-                TableColumn("Date and time") { row in
-                    Text(PhotoText.taken(raw: row.entry.taken, zone: nil)).monospacedDigit().lineLimit(1)
+            let rows = model.historyEntries.indices.map { HistoryRow(index: $0, entry: model.historyEntries[$0]) }
+            let by = Self.sorts.id(of: order)
+            Table(order.isEmpty ? rows : rows.sorted(using: order), sortOrder: $order) {
+                TableColumn(Text("Name").sortHeading(by == "name"), value: \HistoryRow.name) { row in
+                    Text(row.name).lineLimit(1).sortTint(by == "name")
+                }
+                .width(min: 120, ideal: 170)
+                TableColumn(Text("Date and time").sortHeading(by == "taken"), value: \HistoryRow.taken) { row in
+                    Text(PhotoText.taken(raw: row.entry.taken, zone: nil)).monospacedDigit().lineLimit(1).sortTint(by == "taken")
                 }
                 .width(min: 160, ideal: 210)
-                TableColumn("Size") { Text(PhotoText.size($0.entry.size)).monospacedDigit().lineLimit(1) }
-                    .width(min: 60, ideal: 80)
-                TableColumn("Imported") { Text(When.current.dayAndTime($0.entry.imported)).lineLimit(1) }
+                TableColumn(Text("Size").sortHeading(by == "size"), value: \HistoryRow.size) { row in
+                    Text(PhotoText.size(row.size)).monospacedDigit().lineLimit(1).sortTint(by == "size")
+                }
+                .width(min: 60, ideal: 80)
+                TableColumn(Text("Imported").sortHeading(by == "imported"), value: \HistoryRow.imported) { row in
+                    Text(When.current.dayAndTime(row.imported)).lineLimit(1).sortTint(by == "imported")
+                }
             }
             .clipShape(RoundedRectangle(cornerRadius: Style.radius))
         }
@@ -573,6 +669,11 @@ struct HistoryRow: Identifiable {
     let index: Int
     let entry: HistoryEntry
     var id: Int { index }
+    var name: String { entry.fileName }
+    /// The camera's "YYYY:MM:DD HH:MM:SS", which sorts as written.
+    var taken: String { (entry.taken ?? "") + (entry.subSeconds ?? "") }
+    var size: Int64 { entry.size }
+    var imported: Date { entry.imported }
 }
 
 struct DatesCard: View {

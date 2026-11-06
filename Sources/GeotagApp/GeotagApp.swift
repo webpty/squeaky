@@ -73,17 +73,9 @@ struct GeotagApp: App {
                     Windows.bringForward()
                 }
             }
-            CommandMenu("Tracks") {
-                TracksMenu(model: model)
-            }
-            CommandMenu("Download") {
-                DownloadMenu(model: model)
-            }
-            CommandMenu("Clock drift") {
-                ClockDriftMenu()
-            }
-            CommandMenu("Set time and date in camera") {
-                CameraClockMenu(model: model)
+            // Command and a number for each sidebar item, listed in the View menu.
+            CommandGroup(before: .sidebar) {
+                GoMenu(model: model)
             }
         }
 

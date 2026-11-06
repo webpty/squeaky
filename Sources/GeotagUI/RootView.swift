@@ -19,6 +19,7 @@ public struct RootView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) { CloudMacs() }
         }
+        .task { EscapeCloses.start(model) }
         .sheet(isPresented: $model.settingUp) {
             SetupView()
                 .textSelection(.enabled)
@@ -67,6 +68,7 @@ struct CloudMacs: View {
 /// 5 November 2026). Orange, with white words, until a card has had a JPEG.
 struct Sidebar: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var scheme
     /// Where the menu ends, from the top of the sidebar.
     @State private var menuBottom: CGFloat = 200
@@ -85,27 +87,20 @@ struct Sidebar: View {
             ScrollView {
                 VStack(spacing: 4) {
                     ForEach(Screen.sidebar) { screen in
-                        Button {
+                        item(screen.title, screen.symbol, chosen: model.screen == screen) {
                             model.screen = screen
-                        } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: screen.symbol)
-                                    .frame(width: 20)
-                                Text(screen.title)
-                                    .lineLimit(1)
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 10)
-                            .frame(height: 32)
-                            .background(
-                                RoundedRectangle(cornerRadius: Style.radius)
-                                    .fill((model.sidebarImage == nil ? Color.white.opacity(0.24) : Color.primary.opacity(0.12))
-                                        .opacity(model.screen == screen ? 1 : 0))
-                            )
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
-                        .handCursor()
+                    }
+                    // What used to be menus at the top of the screen.
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.2))
+                        .frame(height: 1)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                    ForEach(Tool.allCases) { tool in
+                        item(tool.title, tool.symbol, chosen: false, busy: tool == .download && model.makingDownload) {
+                            tool.run(model, openWindow)
+                        }
                     }
                 }
                 .padding(.horizontal, 10)
@@ -118,6 +113,7 @@ struct Sidebar: View {
                 .opacity(0.85)
                 .lineLimit(1)
                 .padding(12)
+                .frame(maxWidth: .infinity)
                 .background(alignment: .bottom) {
                     // The version line stays readable over the photo too.
                     if model.sidebarImage != nil {
@@ -145,6 +141,30 @@ struct Sidebar: View {
     }
 
     private var window: Color { Color(nsColor: .windowBackgroundColor) }
+
+    private func item(_ title: String, _ symbol: String, chosen: Bool, busy: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: symbol)
+                    .frame(width: 20)
+                Text(title)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if busy { ProgressView().controlSize(.small) }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 32)
+            .background(
+                RoundedRectangle(cornerRadius: Style.radius)
+                    .fill((model.sidebarImage == nil ? Color.white.opacity(0.24) : Color.primary.opacity(0.12))
+                        .opacity(chosen ? 1 : 0))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .handCursor()
+        .disabled(busy)
+    }
 
     @ViewBuilder private var backdrop: some View {
         if let image = model.sidebarImage {

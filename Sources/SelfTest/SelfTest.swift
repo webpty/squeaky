@@ -84,6 +84,7 @@ struct SelfTest {
         macTidy(scratch)
         await cloudCopy(scratch)
         await sidebarPhoto(scratch)
+        shortcuts()
         quitting()
         download(scratch)
         cardKinds()
@@ -3052,6 +3053,16 @@ extension SelfTest {
               seeded.sentRecords.map(\.nasPath) == ["2026.09.05/S_2.jpg"]
               && (try? SentLogFile(url: scratch.appendingPathComponent("tidy-seed/sent.jsonl")).load())?.contains { $0.localPath == seedOne.path } == true)
         UserDefaults.standard.removeObject(forKey: "keepOnMac")
+    }
+
+    /// Command and a number for every sidebar item in order, Settings keeping Command-comma.
+    @MainActor
+    static func shortcuts() {
+        let pages = Shortcuts.pages.map { "\($0.title) \(Shortcuts.key($0).map { String($0.character) } ?? "-")" }
+        let tools = Tool.allCases.map { "\($0.title) \(Shortcuts.key($0).map { String($0.character) } ?? "-")" }
+        check("shortcuts: Photos 1 to Download 7, Settings none",
+              pages + tools == ["Photos 1", "Queue 2", "History 3", "Tracks 4", "Clock drift 5", "Camera clocks 6", "Download 7"]
+              && Shortcuts.key(.settings) == nil, "\(pages + tools)")
     }
 
     @MainActor

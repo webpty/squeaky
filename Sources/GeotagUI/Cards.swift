@@ -95,6 +95,21 @@ public enum LoginItem {
 }
 
 public enum Windows {
+    /// The main window to the front, not one of the windows opened over it.
+    @MainActor
+    public static func bringMainForward() {
+        let tools = Tool.allCases.compactMap(\.window)
+        NSApp.activate(ignoringOtherApps: true)
+        if let window = NSApp.windows.first(where: { w in
+            w.canBecomeMain && !tools.contains { id in w.identifier?.rawValue == id || w.identifier?.rawValue.hasPrefix(id + "-") == true }
+        }), window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            // Opening the app again makes it reopen its window.
+            NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: NSWorkspace.OpenConfiguration())
+        }
+    }
+
     /// Geotag to the front, opening its window again if it was closed.
     @MainActor
     public static func bringForward() {

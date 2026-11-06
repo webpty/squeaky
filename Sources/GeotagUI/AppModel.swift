@@ -12,8 +12,8 @@ public enum Screen: String, CaseIterable, Identifiable {
 
     public var id: String { rawValue }
 
-    /// The sidebar's sections. Tracks is not one of them: it is a menu in the
-    /// Mac's menu bar, out of the way while it works (David, 16 October 2026).
+    /// The sidebar's pages. Tracks is not one of them: it opens a window of
+    /// its own, from the sidebar's second group (`Tool`, 6 November 2026).
     public static let sidebar: [Screen] = [.photos, .queue, .history, .settings]
 
     public var title: String {
@@ -682,8 +682,7 @@ public final class AppModel: ObservableObject {
             if let source = self.source, source.bsd == bsd {
                 self.readingRound += 1
                 self.source = nil
-                self.rows = []
-                self.clearPlaces()
+                // The list stays until Clear photos or the next card (David, 6 November 2026).
                 self.importPerson = nil
                 if self.ejecting != bsd { self.photosLine = "\(gone?.name ?? "The card") was taken out." }
             }
@@ -726,7 +725,7 @@ public final class AppModel: ObservableObject {
     public func savePhotos() async {
         guard !saving else { return }
         guard let source else {
-            photosLine = "Insert a card."
+            photosLine = rows.isEmpty ? "Insert a card." : Self.cardOut
             return
         }
         guard let personId = importPerson, let person = book.person(personId) else {
@@ -928,7 +927,7 @@ public final class AppModel: ObservableObject {
 
     /// Why the map window has nothing to show, and the way to it; nil when it has.
     public func mapRefusal() -> (line: String, fix: PhotosFix?)? {
-        guard let source else { return ("Insert a card.", nil) }
+        guard let source else { return (rows.isEmpty ? "Insert a card." : Self.cardOut, nil) }
         guard let personId = importPerson else { return ("Choose whose card \(source.name) is.", .chooseWhose) }
         guard !rows.isEmpty else { return ("There are no photos on \(source.name).", nil) }
         guard !alignable.isEmpty else {
@@ -981,6 +980,23 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    static let cardOut = "The card is out. Insert it again to save these photos or see them on the map."
+
+    /// Empties the Photos list once its card is out; the next card does it too.
+    public func clearPhotos() {
+        guard source == nil, !saving else { return }
+        rows = []
+        results = [:]
+        clearPlaces()
+        photosLine = ""
+    }
+
+    /// The picture of a photo: from the card while it is in, else from the
+    /// copy saved on this Mac; nil for a photo not saved once the card is out.
+    public func pictureURL(_ row: ImportRow) -> URL? {
+        source != nil ? row.photo.url : results[row.id]?.url
+    }
+
     /// Stops reading, forces the card off now and says when it can come out.
     /// `done` is said after "can come out" once the card is off, in place of
     /// the usual line, and as a notification.
@@ -993,8 +1009,6 @@ public final class AppModel: ObservableObject {
         ejecting = bsd
         askingWhose = nil
         aligning = false
-        rows = []
-        clearPlaces()
         photosLine = "Ejecting \(card.name)"
         cardGuard.eject(bsd) { [weak self] problem in
             guard let self else { return }

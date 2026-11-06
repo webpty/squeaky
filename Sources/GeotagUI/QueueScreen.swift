@@ -90,10 +90,30 @@ struct QueueRow: Identifiable {
     let entry: QueueEntry
     let person: String
     var id: UUID { entry.id }
+    var name: String { (entry.relativePath as NSString).lastPathComponent }
+    var folder: String { (entry.relativePath as NSString).deletingLastPathComponent }
+    var saved: Date { entry.added }
+    /// Going up, waiting, not sent, on the NAS.
+    var status: Int {
+        switch entry.state {
+        case .sending: return 0
+        case .waiting: return 1
+        case .failed: return 2
+        case .sent: return 3
+        }
+    }
 }
 
 struct QueueScreen: View {
     @EnvironmentObject var model: AppModel
+    /// Empty until a heading is clicked: the usual order. Not kept between launches.
+    @State private var order: [KeyPathComparator<QueueRow>] = []
+
+    static let sorts = SortColumns<QueueRow>(all: [
+        ("name", KeyPathComparator(\QueueRow.name)), ("person", KeyPathComparator(\QueueRow.person)),
+        ("folder", KeyPathComparator(\QueueRow.folder)), ("saved", KeyPathComparator(\QueueRow.saved)),
+        ("status", KeyPathComparator(\QueueRow.status)),
+    ])
 
     /// What is going up, then what goes next, then what was not sent, then
     /// what is on the NAS, newest first.
@@ -167,31 +187,35 @@ struct QueueScreen: View {
             }
             .frame(minHeight: 40)
 
-            Table(rows) {
-                TableColumn("Name") { row in
-                    Text((row.entry.relativePath as NSString).lastPathComponent).lineLimit(1)
+            let by = Self.sorts.id(of: order)
+            Table(order.isEmpty ? rows : rows.sorted(using: order), sortOrder: $order) {
+                TableColumn(Text("Name").sortHeading(by == "name"), value: \QueueRow.name) { row in
+                    Text(row.name).lineLimit(1).sortTint(by == "name")
                 }
                 .width(min: 100, ideal: 140)
-                TableColumn("Person") { row in
-                    Text(row.person).lineLimit(1)
+                TableColumn(Text("Person").sortHeading(by == "person"), value: \QueueRow.person) { row in
+                    Text(row.person).lineLimit(1).sortTint(by == "person")
                 }
                 .width(min: 60, ideal: 80)
-                TableColumn("Folder") { row in
-                    Text((row.entry.relativePath as NSString).deletingLastPathComponent).monospacedDigit().lineLimit(1)
+                TableColumn(Text("Folder").sortHeading(by == "folder"), value: \QueueRow.folder) { row in
+                    Text(row.folder).monospacedDigit().lineLimit(1).sortTint(by == "folder")
                 }
                 .width(min: 80, ideal: 90)
-                TableColumn("Saved") { row in
-                    Text(When.current.dayAndTime(row.entry.added)).lineLimit(1)
+                TableColumn(Text("Saved").sortHeading(by == "saved"), value: \QueueRow.saved) { row in
+                    Text(When.current.dayAndTime(row.saved)).lineLimit(1).sortTint(by == "saved")
                 }
                 .width(min: 150, ideal: 180)
-                TableColumn("Status") { row in
-                    if row.entry.state == .sending {
-                        SendingCell(meter: model.meter, id: row.entry.id)
-                    } else {
-                        Text(QueueText.status(row.entry))
-                            .foregroundStyle(row.entry.state == .sent ? .primary : .secondary)
-                            .lineLimit(1)
+                TableColumn(Text("Status").sortHeading(by == "status"), value: \QueueRow.status) { row in
+                    Group {
+                        if row.entry.state == .sending {
+                            SendingCell(meter: model.meter, id: row.entry.id)
+                        } else {
+                            Text(QueueText.status(row.entry))
+                                .foregroundStyle(row.entry.state == .sent ? .primary : .secondary)
+                                .lineLimit(1)
+                        }
                     }
+                    .sortTint(by == "status")
                 }
                 .width(min: 150, ideal: 220)
             }

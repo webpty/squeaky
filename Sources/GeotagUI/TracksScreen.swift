@@ -204,46 +204,6 @@ public struct TracksWindow: View {
     }
 }
 
-/// The Tracks menu's items.
-public struct TracksMenu: View {
-    @Environment(\.openWindow) private var openWindow
-    let model: AppModel
-
-    public init(model: AppModel) {
-        self.model = model
-    }
-
-    public var body: some View {
-        Button("Show Tracks") {
-            openWindow(id: "tracks")
-        }
-        Divider()
-        Button("Refresh") {
-            Task { await model.refresh(pullStrava: true) }
-        }
-        Button("Import GPX or FIT…") {
-            model.importWithPanel()
-            openWindow(id: "tracks")
-        }
-    }
-}
-
-/// The Download menu's item, next to Tracks in the Mac's menu bar.
-public struct DownloadMenu: View {
-    @ObservedObject var model: AppModel
-
-    public init(model: AppModel) {
-        self.model = model
-    }
-
-    public var body: some View {
-        Button("Save to Downloads") {
-            Task { await model.saveDownload() }
-        }
-        .disabled(model.makingDownload)
-    }
-}
-
 /// The Tracks page on its own, for pictures made off-screen.
 public struct TracksScreenProbe: View {
     public init() {}

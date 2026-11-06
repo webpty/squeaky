@@ -2,17 +2,6 @@ import Charts
 import SwiftUI
 import GeotagCore
 
-/// The "Clock drift" menu: opens the window.
-public struct ClockDriftMenu: View {
-    @Environment(\.openWindow) private var openWindow
-
-    public init() {}
-
-    public var body: some View {
-        Button("Show Clock Drift") { openWindow(id: "clock-drift") }
-    }
-}
-
 /// One stretch between two offset code photos of a camera: how much its
 /// clock drifted, and what it went through meanwhile.
 public struct DriftPeriod: Identifiable, Equatable, Sendable {
