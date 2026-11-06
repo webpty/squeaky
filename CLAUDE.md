@@ -95,7 +95,8 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   counted, else the newest JPEG; no JPEG leaves the last. A small copy,
   `Sidebar.jpg` beside people.json, keeps it through restarts and through
   the Mac copies being removed. Centred, cropped evenly. A band of the
-  window's colour sits behind the menu and the title area and fades out
+  window's colour, 90% opaque so the photo shows faintly through it
+  (0.25.3, David, 6 November 2026), sits behind the menu and the title area and fades out
   over 160 points below it; a short one behind the version line. The words
   follow light and dark. The icon is his `Resources/AppIcon.svg`,
   drawn into the Mac's rounded square by `Tools/makeicon.swift`.

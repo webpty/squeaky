@@ -121,7 +121,7 @@ struct Sidebar: View {
                 .background(alignment: .bottom) {
                     // The version line stays readable over the photo too.
                     if model.sidebarImage != nil {
-                        LinearGradient(colors: [window.opacity(0), window], startPoint: .top, endPoint: .bottom)
+                        LinearGradient(colors: [window.opacity(0), band], startPoint: .top, endPoint: .bottom)
                             .frame(height: 60)
                             .ignoresSafeArea()
                     }
@@ -133,9 +133,10 @@ struct Sidebar: View {
             if model.sidebarImage != nil {
                 // Solid behind the menu and the title area above it, then fading.
                 VStack(spacing: 0) {
-                    window.frame(height: max(0, menuBottom))
-                        .background(alignment: .bottom) { window.ignoresSafeArea(edges: .top) }
-                    LinearGradient(colors: [window, window.opacity(0)], startPoint: .top, endPoint: .bottom)
+                    // Drawn once, up under the title area too: two layers would double it.
+                    Color.clear.frame(height: max(0, menuBottom))
+                        .background(alignment: .bottom) { band.ignoresSafeArea(edges: .top) }
+                    LinearGradient(colors: [band, window.opacity(0)], startPoint: .top, endPoint: .bottom)
                         .frame(height: Self.fade)
                     Spacer(minLength: 0)
                 }
@@ -145,6 +146,8 @@ struct Sidebar: View {
     }
 
     private var window: Color { Color(nsColor: .windowBackgroundColor) }
+    /// The band behind the menu: the photo shows faintly through it (David, 6 November 2026).
+    private var band: Color { window.opacity(0.9) }
 
     private func item(_ title: String, _ symbol: String, chosen: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
