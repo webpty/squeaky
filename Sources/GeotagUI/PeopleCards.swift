@@ -158,16 +158,13 @@ struct PersonEditor: View {
                 .keyboardShortcut(.cancelAction)
                 Button {
                     person.name = person.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !person.name.isEmpty else {
-                        line = "Type a name."
-                        return
-                    }
                     onSave(person)
                     dismiss()
                 } label: {
                     Text("Save").buttonLabel()
                 }
                 .keyboardShortcut(.defaultAction)
+                .disabled(person.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(Style.pad * 1.5)
@@ -275,12 +272,11 @@ struct CamerasCard: View {
                     if let first = model.book.people.first {
                         line = ""
                         editing = Camera(personId: first.id, model: "", zone: .notSet)
-                    } else {
-                        line = "Add a person first, under People."
                     }
                 } label: {
                     Text("Add camera").buttonLabel()
                 }
+                .disabled(model.book.people.isEmpty)
                 Button {
                     model.showingOffsetCode = true
                 } label: {
@@ -547,6 +543,7 @@ struct CameraEditor: View {
                     Text("Save").buttonLabel()
                 }
                 .keyboardShortcut(.defaultAction)
+                .disabled(camera.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(Style.pad * 1.5)

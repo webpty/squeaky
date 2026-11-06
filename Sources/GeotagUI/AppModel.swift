@@ -622,6 +622,14 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    /// The track service is set up, so Strava can be connected through it.
+    public var hasService: Bool { service != nil }
+
+    /// Somebody has a NAS folder and the NAS card an address, so there is something to test.
+    public var canTestNAS: Bool {
+        book.people.contains { NASFolder($0.nasFolder) != nil } && (nasPort != nil || !nasFields.port.addresses.isEmpty)
+    }
+
     public func connectStrava() async {
         guard let service else {
             settingsLine = ServiceError.notSetUp.localizedDescription
@@ -705,8 +713,7 @@ public final class AppModel: ObservableObject {
             if let source = self.source, source.bsd == bsd {
                 self.readingRound += 1
                 self.source = nil
-                // The list stays until Clear photos or the next card (David, 6 November 2026).
-                self.importPerson = nil
+                // The list, and whose it is, stay until Clear photos or the next card (David, 6 November 2026).
                 if self.ejecting != bsd { self.photosLine = "\(gone?.name ?? "The card") was taken out." }
             }
         }
@@ -937,44 +944,40 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    /// "See photos on the map": the map window, or why there is nothing to show on it.
+    /// "See photos on the map": dimmed when there is nothing to show
+    /// (0.26.0, David, 6 November 2026), so it only ever opens the map.
     public func openMap() {
-        if let why = mapRefusal() {
-            say(why.line, fix: why.fix)
-        } else {
-            // What it said was missing is there now: that line goes.
-            if photosFix != nil { photosLine = "" }
-            aligning = true
-        }
+        guard canMap else { return }
+        aligning = true
     }
 
-    /// Why the map window has nothing to show, and the way to it; nil when it has.
-    public func mapRefusal() -> (line: String, fix: PhotosFix?)? {
-        guard let source else { return (rows.isEmpty ? "Insert a card." : Self.cardOut, nil) }
-        guard let personId = importPerson else { return ("Choose whose card \(source.name) is.", .chooseWhose) }
-        guard !rows.isEmpty else { return ("There are no photos on \(source.name).", nil) }
-        guard !alignable.isEmpty else {
-            let fresh = rows.filter(\.ticked)
-            if fresh.isEmpty { return ("Every photo on \(source.name) is already saved.", nil) }
-            let unplaced = fresh.filter { !$0.photo.hasLocation }
-            if unplaced.isEmpty { return ("Every new photo on \(source.name) has its own location.", nil) }
-            let timed = unplaced.filter { $0.photo.taken != nil }
-            if timed.isEmpty { return ("None of the new photos has a time.", nil) }
-            for row in timed {
-                guard let model = row.photo.model else { continue }
-                guard let camera = book.camera(personId: personId, model: model) else {
-                    return ("The \(model) is not on the camera list. Add it in Settings, under Cameras.", .cameras)
-                }
-                if camera.zone == .notSet {
-                    return ("The \(camera.model)'s time zone is not set.", .camera(camera.id))
-                }
-            }
-            return ("None of the new photos names its camera.", nil)
+    /// Something to show on the map: photos in the list, card in or out,
+    /// placed by their own location or by their time along the tracks.
+    public var canMap: Bool {
+        let shown = mappable
+        guard !shown.isEmpty else { return false }
+        return !tracks.isEmpty || shown.contains { $0.photo.hasLocation }
+    }
+
+    /// Why Save photos is dimmed although there are photos to save, and the
+    /// way to fix it: no save folder, or one that can't be found.
+    public var saveBlock: (line: String, fix: PhotosFix)? {
+        guard let personId = importPerson, let person = book.person(personId) else { return nil }
+        guard let folder = person.saveFolder, !folder.isEmpty else {
+            return ("\(person.name) has no save folder yet.", .chooseFolder(personId))
         }
-        guard !tracks.isEmpty else {
-            return ("There are no tracks on this Mac yet. Set up the track service in Settings.", .trackService)
+        var isFolder: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: folder, isDirectory: &isFolder), isFolder.boolValue else {
+            return ("\(person.name)'s save folder can't be found: \(folder). If it is on a drive, plug the drive in, or choose another folder.",
+                    .chooseFolder(personId))
         }
         return nil
+    }
+
+    /// Save photos can do something now: a card in, whose it is known, a
+    /// save folder there, and photos not saved yet.
+    public var canSave: Bool {
+        source != nil && importPerson != nil && exifTool != nil && saveBlock == nil && !readyToSave.isEmpty && !photosBusy && !saving
     }
 
     /// Where a photo is, for naming its folder: the track's position written
@@ -1003,13 +1006,20 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    static let cardOut = "The card is out. Insert it again to save these photos or see them on the map."
+    static let cardOut = "The card is out. Insert it again to save these photos."
+
+    /// The card gone as if taken out, for the self-test: scratch cards have no disk.
+    public func cardOutForTest() {
+        readingRound += 1
+        source = nil
+    }
 
     /// Empties the Photos list once its card is out; the next card does it too.
     public func clearPhotos() {
         guard source == nil, !saving else { return }
         rows = []
         results = [:]
+        importPerson = nil
         clearPlaces()
         photosLine = ""
     }
@@ -1040,7 +1050,7 @@ public final class AppModel: ObservableObject {
                 self.photosLine = "\(card.name) was not ejected. \(problem)"
             } else {
                 self.cards.removeAll { $0.bsd == bsd }
-                if self.source?.bsd == bsd { self.source = nil; self.importPerson = nil }
+                if self.source?.bsd == bsd { self.source = nil }
                 if let done {
                     self.photosLine = "\(card.name) can come out. \(done)"
                     self.notifier.post("\(card.name) can come out.", kind: "card")
@@ -1103,10 +1113,11 @@ public final class AppModel: ObservableObject {
             Task { await noteTemperatures(photos, personId: personId, tool: tool) }
             // Every camera set: nothing to line up, so the photos are saved straight
             // away, and the card comes out once they are on the Mac (David, 1 November 2026).
-            if camerasReady, saveWhenReady {
+            if camerasReady, saveWhenReady, saveBlock == nil {
                 await savePhotos()
-            } else if trackNear(alignable) {
-                aligning = true
+            } else if let block = saveBlock, readyToSave.count > 0 {
+                // Save photos is dimmed until this is fixed: said on its own, with the way to it.
+                say(block.line, fix: block.fix)
             }
         } catch {
             if readingRound == round { photosLine = "The photos could not be read: \(error.localizedDescription)" }
@@ -1507,35 +1518,15 @@ public final class AppModel: ObservableObject {
         photosLine = line
     }
 
-    /// Ticked photos whose camera is known and whose time can be read: the
-    /// ones the alignment window can slide.
-    public var alignable: [ImportRow] {
+    /// The photos the map can show: those with a location of their own, and
+    /// those whose camera is known with its zone, placed by their time.
+    public var mappable: [ImportRow] {
         guard let personId = importPerson else { return [] }
         return rows.filter { row in
-            guard row.ticked, !row.photo.hasLocation, row.photo.taken != nil,
-                  let model = row.photo.model, let camera = book.camera(personId: personId, model: model) else { return false }
+            if row.photo.hasLocation, row.photo.ownLat != nil, row.photo.ownLon != nil { return true }
+            guard row.photo.taken != nil, let model = row.photo.model,
+                  let camera = book.camera(personId: personId, model: model) else { return false }
             return camera.zone != .notSet
-        }
-    }
-
-    /// Whether one of the tracks runs within a day of any of these photos, by
-    /// their cameras' clocks as set. Without one the map has nothing to line
-    /// them up with, so it does not open by itself after a card is read
-    /// (David, 18 October 2026); See photos on the map still opens it.
-    public func trackNear(_ rows: [ImportRow]) -> Bool {
-        guard let personId = importPerson else { return false }
-        var hours = Set<Int>()
-        for row in rows {
-            guard let model = row.photo.model, var camera = book.camera(personId: personId, model: model) else { continue }
-            camera.offsetSeconds = camera.offsetSeconds ?? 0
-            if case .success(let moment) = Moments.moment(row.photo, camera: camera) {
-                hours.insert(Int(moment.timeIntervalSince1970) / 3600)
-            }
-        }
-        let pieces = timeline.pieces
-        return hours.contains { hour in
-            let t = hour * 3600
-            return pieces.contains { $0.start - 86_400 <= t + 3600 && t <= $0.end + 86_400 }
         }
     }
 

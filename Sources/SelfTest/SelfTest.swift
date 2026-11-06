@@ -718,7 +718,7 @@ extension SelfTest {
         let source = scratchCard(scratch.appendingPathComponent("AL-CARD"))
         model.choose(source)
         await model.read(source, for: model.book.people[0].id)
-        print("alignment: \(model.photosLine) | aligning \(model.aligning) | alignable \(model.alignable.count)")
+        print("map: \(model.photosLine) | \(model.mappable.count) to show")
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
         NSApp.appearance = NSAppearance(named: .aqua)
@@ -2452,12 +2452,8 @@ extension SelfTest {
                              exifTool: ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool")),
                              nas: FakeNAS(root: scratch.appendingPathComponent("BS-NAS")), notifier: RecordingNotifier(), places: FakePlaces())
 
-        await model.savePhotos()
-        check("buttons: Save photos with no card says so", model.photosLine == "Insert a card." && model.photosFix == nil, model.photosLine)
-        model.openMap()
-        check("buttons: the map with no card says so", model.photosLine == "Insert a card." && !model.aligning, model.photosLine)
-        model.eject()
-        check("buttons: Eject with no card says so", model.photosLine == "No card is held to eject.", model.photosLine)
+        // A button that can't do anything now is dimmed (0.26.0, David, 6 November 2026).
+        check("buttons: no card, Save photos and the map dimmed", !model.canSave && !model.canMap)
 
         let root = scratch.appendingPathComponent("BS-CARD")
         let folder = root.appendingPathComponent("DCIM/100CANON")
@@ -2470,31 +2466,24 @@ extension SelfTest {
         model.choose(card)
         check("buttons: a new card asks whose it is", model.askingWhose != nil)
         model.askingWhose = nil
-        await model.savePhotos()
-        check("buttons: Save photos for nobody yet offers to choose whose card",
-              model.photosLine == "Choose whose card \(card.name) is." && model.photosFix == .chooseWhose, model.photosLine)
-        model.openMap()
-        check("buttons: the map for nobody yet offers the same", model.photosFix == .chooseWhose && !model.aligning, model.photosLine)
-        model.take(.chooseWhose)
-        check("buttons: the fix asks whose the card is", model.askingWhose?.id == card.id)
-        model.askingWhose = nil
+        check("buttons: nobody chosen yet, Save photos dimmed", !model.canSave)
 
         let david = model.book.people[0]
         await model.read(card, for: david.id)
-        await model.savePhotos()
-        check("buttons: no save folder offers to choose one",
-              model.photosLine == "\(david.name) has no save folder yet." && model.photosFix == .chooseFolder(david.id), model.photosLine)
+        check("buttons: no save folder, Save photos dimmed and the line says so on its own, with the way to it",
+              !model.canSave && model.photosLine == "\(david.name) has no save folder yet." && model.photosFix == .chooseFolder(david.id),
+              model.photosLine)
         model.tell("Something else")
         check("buttons: a new line clears the fix", model.photosFix == nil)
 
         var moved = david
         moved.saveFolder = scratch.appendingPathComponent("BS-GONE").path
         model.save(moved)
-        await model.savePhotos()
-        check("buttons: a save folder not found offers to choose another",
-              model.photosLine.hasPrefix("\(david.name)'s save folder can't be found") && model.photosFix == .chooseFolder(david.id), model.photosLine)
+        check("buttons: a save folder not found, Save photos dimmed",
+              !model.canSave && model.saveBlock?.line.hasPrefix("\(david.name)'s save folder can't be found") == true
+              && model.saveBlock?.fix == .chooseFolder(david.id))
 
-        // The R5 Mark II's zone comes from the photo; with none set, the map names the camera.
+        // The R5 Mark II's zone comes from the photo; with none set, its photos can't be placed.
         guard let camera = model.book.camera(personId: david.id, model: "Canon EOS R5m2") else {
             check("buttons: David's R5 Mark II is on the list", false)
             return
@@ -2502,23 +2491,9 @@ extension SelfTest {
         var unzoned = camera
         unzoned.zone = .notSet
         model.save(unzoned)
-        model.openMap()
-        check("buttons: the map names a camera with no time zone, with the way to it",
-              model.photosLine == "The Canon EOS R5m2's time zone is not set." && model.photosFix == .camera(camera.id) && !model.aligning,
-              model.photosLine)
-        model.take(.camera(camera.id))
-        check("buttons: the fix opens Settings on that camera", model.screen == .settings && model.cameraToEdit == camera.id)
-        model.cameraToEdit = nil
-        model.screen = .photos
+        check("buttons: a camera with no time zone, the map dimmed", !model.canMap)
         model.save(camera)
-
-        model.openMap()
-        check("buttons: the map with no tracks offers the track service",
-              model.photosFix == .trackService && model.photosLine.hasPrefix("There are no tracks on this Mac yet") && !model.aligning,
-              model.photosLine)
-        model.take(.trackService)
-        check("buttons: the fix opens Settings", model.screen == .settings)
-        model.screen = .photos
+        check("buttons: no tracks, the map dimmed", !model.canMap)
 
         let start = 1_792_162_800
         let gpx = scratch.appendingPathComponent("bs-walk.gpx")
@@ -2526,20 +2501,17 @@ extension SelfTest {
         _ = try? await model.library.importFile(gpx, role: .reader)
         await model.showLibrary()
         model.openMap()
-        check("buttons: with a track, the map opens and the old line goes", model.aligning && model.photosFix == nil && model.photosLine.isEmpty,
-              model.photosLine)
+        check("buttons: with a track, the map opens", model.canMap && model.aligning)
         model.aligning = false
 
         // Saved for real, then nothing new is left on the card.
         moved.saveFolder = scratch.appendingPathComponent("BS-SAVED").path
         try? fm.createDirectory(atPath: moved.saveFolder!, withIntermediateDirectories: true)
         model.save(moved)
+        check("buttons: a save folder, Save photos can go", model.canSave)
         await model.savePhotos()
-        await model.savePhotos()
-        check("buttons: Save photos with nothing new says so", model.photosLine == "Every photo on \(card.name) is already saved.", model.photosLine)
-        model.openMap()
-        check("buttons: the map with nothing new says so", model.photosLine == "Every photo on \(card.name) is already saved." && !model.aligning,
-              model.photosLine)
+        check("buttons: nothing new, Save photos dimmed", !model.canSave)
+        check("buttons: saved photos still on the map", model.canMap && model.mappable.count == 3)
     }
 
     /// The setup shows on a new Mac only: one set up before it existed has a
@@ -3298,18 +3270,25 @@ extension SelfTest {
         model.choose(near)
         model.askingWhose = nil
         await model.read(near, for: david)
-        check("map window: opens by itself for photos with a track within a day", model.aligning && !model.alignable.isEmpty,
-              "aligning \(model.aligning), \(model.alignable.count) to line up")
-        model.aligning = false
+        check("map window: never opens by itself, the button has photos to show", !model.aligning && model.canMap,
+              "aligning \(model.aligning), \(model.mappable.count) to show")
 
         // A year before any track: nothing to line up with.
         let far = card("MO-FAR", day: "2025:09:24")
         model.choose(far)
         model.askingWhose = nil
         await model.read(far, for: david)
-        check("map window: stays shut for photos with no track within a day", !model.aligning && !model.alignable.isEmpty,
-              "aligning \(model.aligning), \(model.alignable.count) to line up")
-        check("map window: the button still has photos to show", !model.alignable.isEmpty)
+        check("map window: stays shut for photos with no track within a day", !model.aligning && !model.mappable.isEmpty,
+              "aligning \(model.aligning), \(model.mappable.count) to show")
+
+        // The card out: the list stays, and so does the map (David, 6 November 2026).
+        model.choose(near)
+        model.askingWhose = nil
+        await model.read(near, for: david)
+        model.cardOutForTest()
+        check("map window: the card out, the photos still on the map", model.source == nil && !model.rows.isEmpty && model.canMap && !model.canSave)
+        model.clearPhotos()
+        check("map window: Clear photos empties the list, and the map has nothing", model.rows.isEmpty && !model.canMap)
     }
 }
 

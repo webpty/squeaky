@@ -91,6 +91,7 @@ struct TrackServiceCard: View {
                         } label: {
                             Text("Connect Strava").buttonLabel()
                         }
+                        .disabled(!model.hasService)
                     }
                 }
                 .disabled(model.settingsBusy)

@@ -3,34 +3,30 @@ import QuickLookThumbnailing
 import SwiftUI
 import GeotagCore
 
-/// Slides a camera's photos along the track until they sit where they were
-/// taken, then keeps that as the camera's clock offset.
+/// The photos on the map, card in or out: each where its own location puts
+/// it, or where its time falls along the tracks by its camera's clock
+/// offset. Only to look at (0.26.0, David, 6 November 2026): a camera's
+/// offset comes from photographing the offset code, so there is nothing
+/// to slide or keep here.
 struct AlignmentView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var cameraId: UUID?
-    /// Seconds added to the camera's offset while sliding.
-    @State private var extra: Double = 0
     @State private var mapCamera = MapCamera(lat: 0, lon: 0, zoom: 2)
     @State private var fitted = false
     @State private var selected: String?
     @State private var lines: [[CGPoint]] = []
     @State private var place = ""
-    /// The track the photos belong to, chosen by hand: their camera's clock
-    /// may be too far out for them to fall on any track by its own times.
-    @State private var trackId: String?
-    /// Why "Use this offset" had nothing to keep.
-    @State private var refusal = ""
 
     private var personId: UUID? { model.importPerson }
 
-    /// The cameras with photos to align, in the order they first appear.
+    /// The cameras with photos to show, in the order they first appear.
     private var cameras: [Camera] {
         guard let personId else { return [] }
         var seen: [UUID] = []
         var out: [Camera] = []
-        for row in model.alignable {
+        for row in model.mappable {
             if let c = row.photo.model.flatMap({ model.book.camera(personId: personId, model: $0) }), !seen.contains(c.id) {
                 seen.append(c.id)
                 out.append(c)
@@ -43,47 +39,21 @@ struct AlignmentView: View {
         cameras.first { $0.id == cameraId } ?? cameras.first
     }
 
-    private var chosenTrack: Track? {
-        trackId.flatMap { id in model.tracks.first { $0.id == id } }
-    }
-
-    /// Where the slider starts: the camera's own offset, or with a track
-    /// chosen, the offset that puts its first photo at the track's start
-    /// (David, 18 October 2026: the photos go on the map from there).
-    private var base: Int {
-        guard let camera else { return 0 }
-        guard let track = chosenTrack,
-              let first = photos.min(by: { (Moments.clockReading($0.photo) ?? .distantFuture) < (Moments.clockReading($1.photo) ?? .distantFuture) }),
-              let offset = Moments.offset(placing: first.photo, camera: camera, at: track.start) else { return camera.offsetSeconds ?? 0 }
-        return offset
-    }
-
-    /// How far the photos can slide each way: a quarter of an hour, and with
-    /// a track chosen, as far as its end.
-    private var range: ClosedRange<Double> {
-        guard let track = chosenTrack else { return -900...900 }
-        let times = photos.compactMap { Moments.clockReading($0.photo) }
-        let span = (times.max() ?? .distantPast).timeIntervalSince(times.min() ?? .distantPast)
-        return -max(900, (track.duration - max(span, 0)).rounded())...900
-    }
-
-    /// The camera as it would be with the slider where it is; a camera with no
-    /// offset yet starts from on time.
-    private var trial: Camera? {
-        guard var c = camera else { return nil }
-        c.offsetSeconds = base + Int(extra)
-        return c
-    }
-
     private var photos: [ImportRow] {
-        guard let camera, let personId else { return [] }
-        return model.alignable.filter { $0.photo.model.flatMap { model.book.camera(personId: personId, model: $0)?.id } == camera.id }
+        guard let personId else { return [] }
+        // A photo with its own location but a camera not on the list still shows.
+        guard let camera else { return model.mappable }
+        return model.mappable.filter { $0.photo.model.flatMap { model.book.camera(personId: personId, model: $0)?.id } == camera.id }
     }
 
     private var placed: [(row: ImportRow, position: Position?)] {
-        guard let trial else { return [] }
-        return photos.map { row in
-            if case .success(let moment) = Moments.moment(row.photo, camera: trial) {
+        photos.map { row in
+            if row.photo.hasLocation, let lat = row.photo.ownLat, let lon = row.photo.ownLon {
+                return (row, Position(lat: lat, lon: lon, alt: nil, moment: Moments.clockReading(row.photo) ?? .distantPast, fromPoint: 0))
+            }
+            guard var c = camera else { return (row, nil) }
+            c.offsetSeconds = c.offsetSeconds ?? 0
+            if case .success(let moment) = Moments.moment(row.photo, camera: c) {
                 return (row, model.timeline.position(at: moment, gap: model.maxGapSeconds))
             }
             return (row, nil)
@@ -97,21 +67,12 @@ struct AlignmentView: View {
             HStack(spacing: Style.gap) {
                 Text(place).font(.title2.weight(.semibold)).lineLimit(1)
                 if cameras.count > 1 {
-                    Picker("", selection: Binding(get: { camera?.id }, set: { cameraId = $0; extra = 0; fitted = false })) {
+                    Picker("", selection: Binding(get: { camera?.id }, set: { cameraId = $0; fitted = false })) {
                         ForEach(cameras) { Text($0.model).tag(Optional($0.id)) }
                     }
                     .labelsHidden()
                     .fixedSize()
                 }
-                Picker("", selection: Binding(get: { trackId }, set: { trackId = $0; extra = 0; fitted = false })) {
-                    Text("By the photos' own times").tag(String?.none)
-                    Divider()
-                    ForEach(model.tracks.sorted { $0.start > $1.start }) { track in
-                        Text("\(track.name), \(When.current.dayAndTime(track.start))").tag(Optional(track.id))
-                    }
-                }
-                .labelsHidden()
-                .fixedSize()
                 Spacer()
                 RoundIconButton(symbol: "xmark", label: "Close") { dismiss() }
                     .keyboardShortcut(.cancelAction)
@@ -124,14 +85,13 @@ struct AlignmentView: View {
                             fit(dots, size: geo.size)
                             if selected == nil { selected = dots.first?.id ?? placed.first?.row.id }
                         }
-                        .onChange(of: camera?.id) { _, _ in fit(dots, size: geo.size, again: true) }
-                        .onChange(of: trackId) { _, _ in
+                        .onChange(of: camera?.id) { _, _ in
                             buildLines()
                             fit(self.dotsNow, size: geo.size, again: true)
                         }
                 }
-                PhotoPanel(row: placed.first { $0.row.id == selected }?.row,
-                           position: placed.first { $0.row.id == selected }?.position)
+                let chosen = placed.first { $0.row.id == selected }
+                PhotoPanel(row: chosen?.row, picture: chosen.flatMap { model.pictureURL($0.row) }, position: chosen?.position)
                     .frame(width: 260)
             }
 
@@ -140,46 +100,15 @@ struct AlignmentView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
                 .opacity(model.mapCredit.isEmpty ? 0 : 1)
 
-            VStack(spacing: 6) {
-                HStack {
-                    Text("\(PhotoText.gap(Int(-range.lowerBound))) earlier").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    Spacer()
-                    Text(readout).font(.headline).monospacedDigit().lineLimit(1)
-                    Spacer()
-                    Text("\(PhotoText.gap(Int(range.upperBound))) later").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                // Whole seconds, without the tick marks a step would draw.
-                Slider(value: Binding(get: { extra }, set: { extra = $0.rounded() }), in: range)
-                    .labelsHidden()
-            }
-
             HStack(spacing: Style.gap) {
                 let away = placed.filter { $0.position == nil }.count
-                StatusLine(text: !refusal.isEmpty ? refusal
-                           : away == 0 ? "\(placed.count) photos on the track" : "\(placed.count - away) on the track, \(away) away from any track")
+                StatusLine(text: away == 0 ? "\(placed.count) photos on the map" : "\(placed.count - away) on the map, \(away) away from any track")
                 Spacer()
-                // The arrow keys move the slider a second at a time.
-                Button("") { extra = max(extra - 1, range.lowerBound) }.keyboardShortcut(.leftArrow, modifiers: []).hidden().frame(width: 0)
-                Button("") { extra = min(extra + 1, range.upperBound) }.keyboardShortcut(.rightArrow, modifiers: []).hidden().frame(width: 0)
                 Button {
                     dismiss()
                 } label: {
-                    Text("Cancel").buttonLabel()
+                    Text("Close").buttonLabel()
                 }
-                Button {
-                    guard let trial else {
-                        refusal = "There are no photos without a location to line up on this card."
-                        return
-                    }
-                    model.save(trial)
-                    extra = 0
-                    // Saved: the photos now fall on the track by the camera's offset.
-                    trackId = nil
-                    if cameras.count <= 1 { dismiss() }
-                } label: {
-                    Text("Use this offset").buttonLabel()
-                }
-                .keyboardShortcut(.defaultAction)
             }
         }
         .padding(Style.pad * 1.5)
@@ -188,9 +117,8 @@ struct AlignmentView: View {
         .task(id: camera?.id) { await name(placed) }
     }
 
-    /// The window's title: where the photos were taken, as best as can be
-    /// found. The place name from OpenStreetMap, else the track's name, else
-    /// the day.
+    /// The title: where the photos were taken, as best as can be found. The
+    /// place name from OpenStreetMap, else the track's name, else the day.
     private func name(_ placed: [(row: ImportRow, position: Position?)]) async {
         let found = placed.compactMap(\.position)
         if let lat = found.map(\.lat).sorted().dropFirst(found.count / 2).first,
@@ -208,20 +136,9 @@ struct AlignmentView: View {
         }
     }
 
-    /// "Clock 1 min 12 s ahead", for the offset as it would be saved.
-    private var readout: String {
-        guard let trial else { return "" }
-        return "Clock " + OffsetText.describe(trial.offsetSeconds).lowercased()
-    }
-
-    /// The tracks near the photos' days, as lines at zoom 0; the chosen
-    /// track's day when there is one.
+    /// The tracks near the photos' days, as lines at zoom 0.
     private func buildLines() {
-        let moments = photos.compactMap { row -> Date? in
-            guard let c = trial else { return nil }
-            if case .success(let m) = Moments.moment(row.photo, camera: c) { return m }
-            return nil
-        }
+        let moments = placed.compactMap { $0.position?.moment }
         lines = model.timeline.pieces(near: moments).map { piece in
             let p = piece.points
             return p.t.indices.map { World.point(p.lat[$0], p.lon[$0]) }
@@ -245,6 +162,8 @@ struct AlignmentView: View {
 /// The chosen photo, larger, with when and how near the track it falls.
 struct PhotoPanel: View {
     let row: ImportRow?
+    /// From the card while it is in, else the copy on this Mac; nil for none.
+    let picture: URL?
     let position: Position?
     @State private var image: NSImage?
 
@@ -261,21 +180,21 @@ struct PhotoPanel: View {
             if let row {
                 Text(row.photo.fileName).font(.headline).lineLimit(1)
                 Text(PhotoText.taken(row.photo)).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
-                Text(position.map { "\($0.fromPoint) s from the track" } ?? "Away from any track")
+                Text(row.photo.hasLocation ? "Its own location" : position.map { "\($0.fromPoint) s from the track" } ?? "Away from any track")
                     .foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
         }
         .task(id: row?.id) {
             image = nil
-            guard let url = row?.photo.url else { return }
+            guard let url = picture else { return }
             let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 260, height: 180), scale: 2, representationTypes: .thumbnail)
             image = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request).nsImage
         }
     }
 }
 
-/// The alignment window on its own, for pictures made off-screen.
+/// The map of photos on its own, for pictures made off-screen.
 public struct AlignmentProbe: View {
     public init() {}
     public var body: some View { AlignmentView().background(Color(nsColor: .windowBackgroundColor)) }

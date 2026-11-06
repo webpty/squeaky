@@ -172,11 +172,15 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Review reasons: no track within the gap, offset not set, zone not set, no
   zone in the photo, no time, camera not on the list. A photo in review is
   imported only when "Without location" is ticked for it.
-- The alignment window (`AlignmentView`) slides one camera's photos up to
-  15 minutes either way along the track on a map you drag and zoom
-  (`SlippyMap`, CARTO tiles, six fetched at a time, kept while Geotag runs);
-  "Use this offset" saves it as the camera's offset, and everything is
-  matched again.
+- The map of photos (`AlignmentView`, a sheet) shows the list's photos
+  (`mappable`) on a map you drag and zoom (`SlippyMap`, CARTO tiles, six
+  fetched at a time, kept while Geotag runs): each at its own location, or
+  where its time falls along the tracks by its camera's offset. Only to
+  look at from 0.26.0 (David, 6 November 2026: "only the QR offsets it
+  now"): the slider, the Track choice and "Use this offset" are gone. It
+  works with the card out while the list shows (pictures from the Mac
+  copies) and never opens by itself. A camera's offset comes from the
+  offset code, or typed by hand in Settings, Cameras, as a fallback.
 - Off-screen pictures of the screens: `GEOTAG_VIEWER=1` and `GEOTAG_ALIGN=1`
   with `GEOTAG_MAP_KEY` (the CARTO key from `../tracks/.keys/carto.key`).
   A probe view needs a background of its own or it draws black.
@@ -310,13 +314,10 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 
 ## Wrong camera clocks (0.14.0, 18 October 2026)
 
-- "See photos on the map" has a Track choice: the photos' own times, or a
-  track (newest first). With a track chosen, the camera's photos are laid
-  along it from its start, whatever the clock says
-  (`Moments.offset(placing:camera:at:)`), and the slider fine-tunes from
-  there: 15 minutes later, and earlier by as much as the track outlasts the
-  photos. "Use this offset" saves it, days included. David's example: a
-  photo dated 2024.05.12 13:44 on a track starting 2026.10.17 08:56.
+- Until 0.26.0 the map had a Track choice laying a camera's photos along a
+  chosen track whatever its clock said, and a slider to set the offset;
+  both went with "Use this offset". A clock far out is now set from the
+  offset code.
 - A camera whose offset is an hour or more (the Matching card's "Correct the
   dates when a clock is out by", `clockFixMinutes`) gets corrected dates in
   its copies: the EXIF, XMP and QuickTime dates (`Saver.shiftArguments`) and
@@ -328,12 +329,9 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   stays. The card is never changed.
 - The Photos page names each camera whose clock is out, by how much, and
   points to the menu below (`PhotoText.clockNote`).
-- After a card is read, the map window opens by itself only when one of the
-  tracks runs within a day of the card's photos, by their cameras' clocks
-  as set (`trackNear`; 0.14.6, David, 18 October 2026: a card from September
-  2025 opened it on an empty world map and he could not tell what it
-  wanted). "See photos on the map" still opens it; that is the way in for a
-  camera whose clock is far out, whose photos fall nowhere near a track.
+- The map never opens by itself after a card is read (0.26.0; it used to
+  when a track ran within a day of the photos, with nothing left to line
+  up there now). "See photos on the map" opens it.
 - "Camera clocks", in the sidebar (the menu "Set time and date in camera"
   until 0.24.0), opens on the first camera and has a page per family
   camera (`CameraGuide.all`): steps in the camera's own menu words from the
@@ -646,23 +644,22 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   track service (`../tracks`); Geotag cannot make one.
 - One NAS per Mac.
 
-## No button does nothing (0.15.0, 1 November 2026)
+## Buttons that can't be used are dimmed (0.26.0, David, 6 November 2026)
 
-- David: every button that cannot do its work says why, with the way to the
-  fix. Buttons are greyed out only while Geotag is busy (a spinner shows),
-  when Save has nothing changed, at the ends of Previous and Next, and for
-  Retry failed with nothing failed.
-- The Photos line carries a fix (`PhotosFix`) shown as a button beside it:
-  choose whose card, Choose folder… (keeps the folder for that person, then
-  saves), Open Settings (track service, camera list) or Edit camera (opens
-  that camera's editor in Settings, `cameraToEdit`). Any new line clears it.
-- Save photos: no card, nobody chosen, no save folder, save folder not
-  found, nothing new. See photos on the map (`mapRefusal`): no card, nobody
-  chosen, no photos, nothing new, all with their own location, no times, a
-  camera not on the list or with no zone, no tracks. Name place… with
-  nothing selected, Eject with no card, Use this offset with nothing to
-  line up, Add camera with nobody, Save on a person with no name or a
-  camera with no model: each says so.
+- "Disable any button that cannot be used. they should be dimmed." This
+  replaces the 1 November rule that such a button says why when clicked.
+- Save photos (`canSave`): a card in, whose it is known, a save folder
+  there (`saveBlock`), photos not saved yet, nothing busy. See photos on the
+  map (`canMap`): photos to show and tracks (or photos with their own
+  location). Name place… needs a selection and the card in. Add camera
+  needs somebody; Save in the person and camera editors a name or a model;
+  Connect Strava the track service (`hasService`); Test connection a NAS
+  folder and address (`canTestNAS`). Eject shows only with a card.
+- Lines Geotag says on its own keep their fix (`PhotosFix`) as a button
+  beside them: choose whose card, Choose folder… (keeps the folder for that
+  person, then saves), Open Settings, Edit camera (`cameraToEdit`). A save
+  folder missing or not found is said as soon as a card is read, since Save
+  photos is dimmed for it. Any new line clears the fix.
 
 ## Tracks loading (0.15.0, 1 November 2026)
 

@@ -161,23 +161,19 @@ struct PhotosScreen: View {
         VStack(alignment: .leading, spacing: Style.gap) {
             HStack(spacing: Style.gap) {
                 ScreenTitle(text: "Photos")
-                // Clickable whatever is missing: the line below says what, and how to fix it.
+                // A button that can't do anything now is dimmed (David, 6 November 2026).
                 Button {
                     model.openMap()
                 } label: {
                     Text("See photos on the map").buttonLabel()
                 }
-                .disabled(model.photosBusy || model.saving)
+                .disabled(model.photosBusy || model.saving || !model.canMap)
                 Button {
-                    if selection.isEmpty {
-                        model.tell("Select photos in the list first.")
-                    } else {
-                        naming = true
-                    }
+                    naming = true
                 } label: {
                     Text("Name place…").buttonLabel()
                 }
-                .disabled(model.saving)
+                .disabled(model.saving || selection.isEmpty || model.source == nil)
                 if model.saving {
                     Button {
                         model.stopSaving()
@@ -191,7 +187,7 @@ struct PhotosScreen: View {
                         Text("Save photos").buttonLabel()
                     }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(model.photosBusy)
+                    .disabled(!model.canSave)
                 }
             }
 

@@ -335,6 +335,7 @@ struct NASCard: View {
                 } label: {
                     Text("Test connection").buttonLabel()
                 }
+                .disabled(!model.canTestNAS)
                 StatusLine(text: model.nasLine, lines: 2, busy: model.nasBusy)
             }
             .disabled(model.nasBusy)
