@@ -232,7 +232,6 @@ enum ZoneList {
 
 struct CamerasCard: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.openWindow) private var openWindow
     @State private var editing: Camera?
     @State private var removing: Camera?
     @State private var line = ""
@@ -283,7 +282,7 @@ struct CamerasCard: View {
                     Text("Add camera").buttonLabel()
                 }
                 Button {
-                    openWindow(id: "offset-code")
+                    model.showingOffsetCode = true
                 } label: {
                     Text("Show offset code").buttonLabel()
                 }

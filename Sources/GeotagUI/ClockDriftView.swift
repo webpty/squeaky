@@ -64,8 +64,6 @@ public struct ClockDriftView: View {
             }
             .padding(Style.pad * 1.5)
         }
-        .frame(minWidth: 860, minHeight: 560)
-        .background(Color(nsColor: .windowBackgroundColor))
         .textSelection(.enabled)
     }
 }

@@ -1803,7 +1803,7 @@ extension SelfTest {
             check("download: made", false, error.localizedDescription)
             return
         }
-        check("download: made, named by version", first?.lastPathComponent == "Geotag 9.9.9.dmg", "\(String(describing: first))")
+        check("download: made, named by version and kind of Mac", first?.lastPathComponent == "Geotag 9.9.9 Apple silicon.dmg", "\(String(describing: first))")
         let a = first.flatMap(look)
         check("download: Geotag beside a shortcut to Applications", a?.inside == ["Geotag.app", "Applications"]
               && a?.link == "/Applications" && a?.program == "first", "\(String(describing: a))")
@@ -1812,21 +1812,55 @@ extension SelfTest {
         let second = try? Installer.save(app: bundle, version: "9.9.9", into: folder)
         let names = ((try? fm.contentsOfDirectory(atPath: folder.path)) ?? []).sorted()
         let b = second.flatMap(look)
-        check("download: made again over the one already there", second == first && names == ["Geotag 9.9.9.dmg"]
+        check("download: made again over the one already there", second == first && names == ["Geotag 9.9.9 Apple silicon.dmg"]
               && b?.program == "second", "\(names) \(String(describing: b?.program))")
         let left = ((try? fm.contentsOfDirectory(atPath: fm.temporaryDirectory.path)) ?? []).filter { $0.hasPrefix("geotag-download-") }
         check("download: no working folder left behind", left.isEmpty, "\(left)")
+
+        // A program built for both kinds of Mac keeps only the one asked for,
+        // still signed: the Mac's own ls is built for both.
+        func cpu(_ url: URL) -> (magic: UInt32, cpu: UInt32)? {
+            guard let d = try? Data(contentsOf: url), d.count >= 8 else { return nil }
+            return (d[0..<4].reversed().reduce(0) { $0 << 8 | UInt32($1) }, d[4..<8].reversed().reduce(0) { $0 << 8 | UInt32($1) })
+        }
+        func verified(_ url: URL) -> Bool {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+            p.arguments = ["--verify", "--strict", url.path]
+            p.standardError = FileHandle.nullDevice
+            try? p.run()
+            p.waitUntilExit()
+            return p.terminationStatus == 0
+        }
+        for (chip, wanted) in [(Installer.Chip.intel, UInt32(0x0100_0007)), (.appleSilicon, 0x0100_000C)] {
+            let both = folder.appendingPathComponent("both-\(chip.rawValue)")
+            try? fm.removeItem(at: both)
+            try? fm.copyItem(at: URL(fileURLWithPath: "/bin/ls"), to: both)
+            let thrown = (try? Installer.only(chip, in: both)) == nil
+            let after = cpu(both)
+            check("download: \(chip.title) keeps only its own part, signed and runnable",
+                  !thrown && after?.magic == 0xFEED_FACF && after?.cpu == wanted && verified(both)
+                  && fm.isExecutableFile(atPath: both.path), "\(String(describing: after))")
+        }
+        let armOnly = folder.appendingPathComponent("arm-only")
+        try? fm.removeItem(at: armOnly)
+        try? fm.copyItem(at: URL(fileURLWithPath: "/bin/ls"), to: armOnly)
+        try? Installer.only(.appleSilicon, in: armOnly)
+        var refused = ""
+        do { try Installer.only(.intel, in: armOnly) } catch { refused = error.localizedDescription }
+        check("download: no Intel part, no Intel disk image", refused == "This Geotag has no Intel version.", refused)
 
         // The real thing: the installed Geotag packed exactly as the menu packs
         // it, into the scratch folder, and the copy inside checked.
         guard let real = ProcessInfo.processInfo.environment["GEOTAG_REAL_APP"] else { return }
         let realFolder = scratch.appendingPathComponent("REAL-DOWNLOAD")
         try? fm.createDirectory(at: realFolder, withIntermediateDirectories: true)
-        guard let image = try? Installer.save(app: URL(fileURLWithPath: real), version: appVersion, into: realFolder) else {
-            check("download: the installed Geotag packed", false)
-            return
+        for chip in Installer.Chip.allCases {
+        guard let image = try? Installer.save(app: URL(fileURLWithPath: real), version: appVersion, chip: chip, into: realFolder) else {
+            check("download: the installed Geotag packed for \(chip.title)", false)
+            continue
         }
-        let mount = scratch.appendingPathComponent("real-look")
+        let mount = scratch.appendingPathComponent("real-look-\(chip.rawValue)")
         try? fm.createDirectory(at: mount, withIntermediateDirectories: true)
         guard hdiutil(["attach", "-readonly", "-nobrowse", "-mountpoint", mount.path, image.path]) == 0 else {
             check("download: the installed Geotag's disk image opens", false)
@@ -1843,8 +1877,12 @@ extension SelfTest {
         sign.waitUntilExit()
         let exiftool = fm.fileExists(atPath: copy.appendingPathComponent("Contents/Resources/ExifTool/exiftool").path)
         let size = ((try? fm.attributesOfItem(atPath: image.path))?[.size] as? NSNumber)?.intValue ?? 0
-        check("download: the installed Geotag packed whole", version == appVersion && sign.terminationStatus == 0 && exiftool,
+        let kind = cpu(copy.appendingPathComponent("Contents/MacOS/Geotag"))
+        check("download: the installed Geotag packed whole for \(chip.title), and for it alone",
+              version == appVersion && sign.terminationStatus == 0 && exiftool && kind?.magic == 0xFEED_FACF
+              && kind?.cpu == (chip == .intel ? 0x0100_0007 : 0x0100_000C),
               "\(image.lastPathComponent), \(size / 1_000_000) MB, version \(version ?? "-"), signature \(sign.terminationStatus == 0 ? "valid" : "broken"), ExifTool \(exiftool)")
+        }
     }
 }
 
@@ -3059,10 +3097,10 @@ extension SelfTest {
     @MainActor
     static func shortcuts() {
         let pages = Shortcuts.pages.map { "\($0.title) \(Shortcuts.key($0).map { String($0.character) } ?? "-")" }
-        let tools = Tool.allCases.map { "\($0.title) \(Shortcuts.key($0).map { String($0.character) } ?? "-")" }
         check("shortcuts: Photos 1 to Download 7, Settings none",
-              pages + tools == ["Photos 1", "Queue 2", "History 3", "Tracks 4", "Clock drift 5", "Camera clocks 6", "Download 7"]
-              && Shortcuts.key(.settings) == nil, "\(pages + tools)")
+              pages == ["Photos 1", "Queue 2", "History 3", "Tracks 4", "Clock drift 5", "Camera clocks 6", "Download 7"]
+              && Shortcuts.key(.settings) == nil, "\(pages)")
+        check("pages: every sidebar item is a page of the one window", Set(Screen.sidebar + Screen.tools) == Set(Screen.allCases))
     }
 
     @MainActor

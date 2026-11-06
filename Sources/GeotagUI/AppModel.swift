@@ -9,12 +9,17 @@ public enum Screen: String, CaseIterable, Identifiable {
     case queue
     case history
     case settings
+    case clockDrift
+    case cameraClocks
+    case download
 
     public var id: String { rawValue }
 
-    /// The sidebar's pages. Tracks is not one of them: it opens a window of
-    /// its own, from the sidebar's second group (`Tool`, 6 November 2026).
+    /// The sidebar's pages, then, after a line, what used to be menus at the
+    /// top of the screen (David, 6 November 2026). Every one is a page of the
+    /// one window: no other windows ("i despise apps that have many windows").
     public static let sidebar: [Screen] = [.photos, .queue, .history, .settings]
+    public static let tools: [Screen] = [.tracks, .clockDrift, .cameraClocks, .download]
 
     public var title: String {
         switch self {
@@ -23,6 +28,9 @@ public enum Screen: String, CaseIterable, Identifiable {
         case .queue: return "Queue"
         case .history: return "History"
         case .settings: return "Settings"
+        case .clockDrift: return "Clock drift"
+        case .cameraClocks: return "Camera clocks"
+        case .download: return "Download"
         }
     }
 
@@ -33,6 +41,9 @@ public enum Screen: String, CaseIterable, Identifiable {
         case .queue: return "arrow.up.circle"
         case .history: return "clock.arrow.circlepath"
         case .settings: return "gearshape"
+        case .clockDrift: return "clock.badge.exclamationmark"
+        case .cameraClocks: return "camera"
+        case .download: return "arrow.down.circle"
         }
     }
 }
@@ -69,6 +80,14 @@ public enum PhotosFix: Equatable {
 public final class AppModel: ObservableObject {
     @Published public var appearance = Appearance.system
     @Published public var screen = Screen.photos
+    /// The offset code, laid over the whole window.
+    @Published public var showingOffsetCode = false
+
+    /// A page of the window. Camera clocks opens on the first camera.
+    public func show(_ page: Screen) {
+        if page == .cameraClocks, let first = CameraGuide.all.first { cameraGuide = first.id }
+        screen = page
+    }
 
     // Track service, as set in Settings.
     @Published public var serviceAddress = ""
@@ -147,7 +166,11 @@ public final class AppModel: ObservableObject {
     private var stopAsked = false
 
     /// The Download menu's disk image being made.
-    @Published public private(set) var makingDownload = false
+    /// The kind of Mac a disk image is being made for, while it is.
+    @Published public private(set) var downloading: Installer.Chip?
+    public var makingDownload: Bool { downloading != nil }
+    /// What became of the last disk image, on the Download page.
+    @Published public private(set) var downloadLine = ""
     /// The camera the "Set time and date in camera" window shows.
     @Published public var cameraGuide = "r5m2"
 
@@ -2078,25 +2101,26 @@ public final class AppModel: ObservableObject {
 
     /// The Download menu: a disk image of this Geotag, made now, put in the
     /// Downloads folder over one of the same name, and shown there in Finder.
-    public func saveDownload() async {
+    /// A disk image of this Geotag for that kind of Mac, in Downloads,
+    /// shown in Finder. What became of it is said on the Download page.
+    public func saveDownload(_ chip: Installer.Chip) async {
         guard !makingDownload else { return }
-        makingDownload = true
-        defer { makingDownload = false }
+        downloading = chip
+        defer { downloading = nil }
+        downloadLine = "Making the \(chip.title) disk image"
         let app = Bundle.main.bundleURL
         let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
         let made: Result<URL, Error> = await withCheckedContinuation { done in
             DispatchQueue.global(qos: .userInitiated).async {
-                done.resume(returning: Result { try Installer.save(app: app, version: appVersion, into: downloads) })
+                done.resume(returning: Result { try Installer.save(app: app, version: appVersion, chip: chip, into: downloads) })
             }
         }
         switch made {
         case .success(let url):
+            downloadLine = "\(url.lastPathComponent) is in Downloads."
             NSWorkspace.shared.activateFileViewerSelecting([url])
         case .failure(let error):
-            let alert = NSAlert()
-            alert.messageText = "Geotag was not saved to Downloads."
-            alert.informativeText = error.localizedDescription
-            alert.runModal()
+            downloadLine = "Geotag was not saved to Downloads. \(error.localizedDescription)"
         }
     }
 

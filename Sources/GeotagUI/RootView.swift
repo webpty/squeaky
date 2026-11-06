@@ -19,7 +19,12 @@ public struct RootView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) { CloudMacs() }
         }
-        .task { EscapeCloses.start(model) }
+
+        .overlay {
+            if model.showingOffsetCode {
+                OffsetCodeView().ignoresSafeArea()
+            }
+        }
         .sheet(isPresented: $model.settingUp) {
             SetupView()
                 .textSelection(.enabled)
@@ -68,7 +73,6 @@ struct CloudMacs: View {
 /// 5 November 2026). Orange, with white words, until a card has had a JPEG.
 struct Sidebar: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var scheme
     /// Where the menu ends, from the top of the sidebar.
     @State private var menuBottom: CGFloat = 200
@@ -97,9 +101,9 @@ struct Sidebar: View {
                         .frame(height: 1)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                    ForEach(Tool.allCases) { tool in
-                        item(tool.title, tool.symbol, chosen: false, busy: tool == .download && model.makingDownload) {
-                            tool.run(model, openWindow)
+                    ForEach(Screen.tools) { screen in
+                        item(screen.title, screen.symbol, chosen: model.screen == screen) {
+                            model.show(screen)
                         }
                     }
                 }
@@ -142,7 +146,7 @@ struct Sidebar: View {
 
     private var window: Color { Color(nsColor: .windowBackgroundColor) }
 
-    private func item(_ title: String, _ symbol: String, chosen: Bool, busy: Bool = false, action: @escaping () -> Void) -> some View {
+    private func item(_ title: String, _ symbol: String, chosen: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: symbol)
@@ -150,7 +154,6 @@ struct Sidebar: View {
                 Text(title)
                     .lineLimit(1)
                 Spacer(minLength: 0)
-                if busy { ProgressView().controlSize(.small) }
             }
             .padding(.horizontal, 10)
             .frame(height: 32)
@@ -163,7 +166,6 @@ struct Sidebar: View {
         }
         .buttonStyle(.plain)
         .handCursor()
-        .disabled(busy)
     }
 
     @ViewBuilder private var backdrop: some View {
@@ -183,12 +185,19 @@ struct Sidebar: View {
 }
 
 struct ScreenView: View {
+    @EnvironmentObject var model: AppModel
     let screen: Screen
 
     var body: some View {
         switch screen {
         case .tracks:
             TracksScreen()
+                .overlay {
+                    if let id = model.viewing {
+                        TrackViewer(trackId: id)
+                            .transition(.opacity)
+                    }
+                }
         case .photos:
             PhotosScreen()
         case .queue:
@@ -197,6 +206,12 @@ struct ScreenView: View {
             HistoryScreen()
         case .settings:
             SettingsScreen()
+        case .clockDrift:
+            ClockDriftView()
+        case .cameraClocks:
+            CameraClockWindow()
+        case .download:
+            DownloadScreen()
         }
     }
 }

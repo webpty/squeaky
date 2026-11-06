@@ -49,9 +49,11 @@ public enum MacClock {
 }
 
 /// "Show offset code": the true time, big, with the code a camera photographs
-/// to set its clock offset (David, 1 November 2026). Full screen; Escape closes.
+/// to set its clock offset (David, 1 November 2026). Laid over the main
+/// window, which goes full screen for it and back after (0.25.0: no other
+/// windows); Escape closes.
 public struct OffsetCodeView: View {
-    @Environment(\.dismissWindow) private var dismissWindow
+    @EnvironmentObject var model: AppModel
     @State private var check: MacClock.Check?
     @State private var checked = false
 
@@ -94,7 +96,7 @@ public struct OffsetCodeView: View {
                         .lineLimit(2)
                         .multilineTextAlignment(.center)
                     Button {
-                        dismissWindow(id: "offset-code")
+                        model.showingOffsetCode = false
                     } label: {
                         Text("Close").buttonLabel()
                     }
@@ -169,16 +171,27 @@ public struct OffsetCodeView: View {
     }()
 }
 
-/// Puts the window it sits in into full screen, once it is in one: asked
-/// before, the window was not there yet and it stayed small.
+/// Puts the window it sits in into full screen while it is there, and back
+/// as it was once it goes, unless the window was full screen already.
 struct FullScreen: NSViewRepresentable {
     final class Watcher: NSView {
+        private weak var entered: NSWindow?
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             guard let window else { return }
-            DispatchQueue.main.async {
-                if !window.styleMask.contains(.fullScreen) { window.toggleFullScreen(nil) }
+            DispatchQueue.main.async { [weak self] in
+                guard !window.styleMask.contains(.fullScreen) else { return }
+                window.toggleFullScreen(nil)
+                self?.entered = window
             }
+        }
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            super.viewWillMove(toWindow: newWindow)
+            guard newWindow == nil, let window = entered ?? self.window, entered != nil else { return }
+            entered = nil
+            if window.styleMask.contains(.fullScreen) { window.toggleFullScreen(nil) }
         }
     }
 

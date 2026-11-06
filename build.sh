@@ -1,8 +1,9 @@
 #!/bin/zsh
 # Builds Geotag into build/ and, with "install", copies it to /Applications.
 # With "dmg", also puts it in a disk image for the family's Macs:
-# build/Geotag <version>.dmg. Apple chips only: no Intel Mac needs it
-# (David, 17 October 2026).
+# build/Geotag <version>.dmg. Built for both Apple chips and Intel (David,
+# 6 November 2026, bringing Intel back); the app's Download page makes a
+# disk image for one kind of Mac only.
 # Needs only the command line developer tools, no Xcode.
 #
 #   ./build.sh [install | dmg]
@@ -15,7 +16,9 @@ mkdir -p build
 
 echo "Building $display $version"
 swift build -c release --product "$name" --triple arm64-apple-macosx14.0
-binary=".build/arm64-apple-macosx/release/$name"
+swift build -c release --product "$name" --triple x86_64-apple-macosx14.0
+binary="build/$name-universal"
+lipo -create ".build/arm64-apple-macosx/release/$name" ".build/x86_64-apple-macosx/release/$name" -output "$binary"
 
 app="build/$display.app"
 rm -rf "$app"

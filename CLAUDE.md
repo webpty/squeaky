@@ -213,28 +213,32 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   question a second, identified as Geotag; else the track's name; else the
   day.
 
-## Tracks out of the way (0.10.0, 16 October 2026; sidebar from 0.24.0)
+## One window (0.25.0, David, 6 November 2026)
 
-- Tracks is not a page. It opens a window of its own (`Window` id
-  "tracks") with the tracks as a grid of map cards, Refresh and Import GPX
-  or FIT at the top, and the track viewer opens over that window. Geotag
-  opens on Photos. David's instructions: "when tracks are working I don't
-  need to see them", "they should be a grid", never Geotag's own toolbar.
-  It was a menu in the Mac's menu bar until 0.24.0.
+- Geotag has one window. "Avoid other windows as much as possible. and if
+  you need them, have them inside the main window. i despise apps that have
+  many windows." Anything new is a page, a sheet or a panel laid over the
+  main window, never a `Window` or `WindowGroup` of its own, and never an
+  alert window (say it on the page instead).
+- Tracks is a page (the tracks as a grid of map cards, Refresh and Import
+  GPX or FIT at the top), the track viewer laid over it. Geotag opens on
+  Photos. David's instructions: "when tracks are working I don't need to
+  see them", "they should be a grid", never Geotag's own toolbar. It was a
+  menu in the Mac's menu bar until 0.24.0, then its own window.
 
-## The sidebar's second group (0.24.0, David, 6 November 2026)
+## The sidebar's second group (0.24.0, pages from 0.25.0)
 
 - The menus at the top of the screen moved to the sidebar ("the top is
   getting really crowded"): under the pages, after a thin line, Tracks,
-  Clock drift, Camera clocks and Download (`Tool`). Settings and Set Up
-  This Mac stay in the Geotag menu.
+  Clock drift, Camera clocks and Download (`Screen.tools`), pages of the
+  window like the others. Settings and Set Up This Mac stay in the Geotag
+  menu.
 - Command and a number for every sidebar item in order, Settings keeping
   Command-comma: Photos 1, Queue 2, History 3, Tracks 4, Clock drift 5,
   Camera clocks 6, Download 7 (`Shortcuts`, `GoMenu`, listed in the View
-  menu). The pages bring the main window forward.
-- Escape closes every window or panel over the main window: the three tool
-  windows by `EscapeCloses` (the track viewer first, when open), every sheet
-  by its Cancel or Later button.
+  menu).
+- Escape closes whatever is laid over the window: every sheet by its
+  Cancel or Later button, the track viewer and the offset code by Close.
 
 ## Ordering the tables (0.24.0, David, 6 November 2026)
 
@@ -544,15 +548,20 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   set"); the Without location count and filter keep counting those photos.
 - History shows dates in the format chosen in Settings, under "Date and
   time".
-- The disk image for another Mac comes from Download in the sidebar (a menu
-  in the Mac's menu bar until 0.24.0), which makes it there and then
-  from the running Geotag (`Installer`, `hdiutil`), puts "Geotag
-  <version>.dmg" in Downloads over one of the same name, and shows it in
+- The disk image for another Mac comes from the Download page (a menu in
+  the Mac's menu bar until 0.24.0): "Download for Apple silicon" or
+  "Download for Intel" makes it there and then from the running Geotag
+  (`Installer`, `hdiutil`), with only that kind of Mac's part of the
+  program (`Installer.only`, which keeps the part as signed), puts "Geotag
+  <version> <kind>.dmg" in Downloads over one of the same name, and shows it in
   Finder (David, 17 October 2026: in the app, made on demand so it works on
   every Mac, replacing the copy already there). `./build.sh dmg` still makes
   one in `build/` for development. Each Mac approves the first launch once
-  under Privacy & Security. Apple chips only: David removed the Intel version
-  on 17 October 2026 ("don't need it"); do not bring it back.
+  under Privacy & Security. Intel is back from 0.25.0 (David, 6 November
+  2026: "yes whole new dev"), after he removed it on 17 October: `build.sh`
+  builds both and joins them. No Intel Mac to try it on for a while; the
+  self-test built for Intel passes under Rosetta
+  (`arch -x86_64 .build/x86_64-apple-macosx/release/SelfTest`).
 - Builds name their chip (`--triple arm64-apple-macosx14.0`); run the
   self-test from `.build/arm64-apple-macosx/release/SelfTest`.
 
@@ -694,8 +703,10 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 
 ## Offset code and clock drift (0.17.0, 1 November 2026)
 
-- "Show offset code", in Settings, Cameras, next to Add camera, opens a
-  full-screen window (`OffsetCodeView`, Escape closes): the true time to the
+- "Show offset code", in Settings, Cameras, next to Add camera, lays the
+  code over the whole window and puts the window in full screen, back as
+  it was on Close or Escape (`OffsetCodeView`, `showingOffsetCode`; its own
+  window until 0.25.0): the true time to the
   hundredth, UTC, and a QR code holding it in milliseconds
   (`OffsetCode.payload`, "geotag-clock:<ms>"), redrawn every frame. The
   Mac's clock is checked with `sntp` against the server in /etc/ntp.conf
@@ -729,7 +740,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Camera temperature: Canon's `CameraTemperature`, in the maker notes the
   fast read skips, so read afterwards for one photo per camera per quarter
   hour, with its position, into `temperatures.json` beside people.json.
-- "Clock drift" in the sidebar opens a window: per camera, each stretch
+- "Clock drift", a page from the sidebar, shows per camera, each stretch
   between two readings with its drift, the camera's temperature (average,
   lowest, highest), the outside temperature and up to three places, and a
   chart of drift against temperature. The outside temperature is to come

@@ -183,27 +183,6 @@ struct TrackShape: Shape {
     }
 }
 
-/// The Tracks window, opened from the Tracks menu in the Mac's menu bar.
-/// The track viewer opens over it.
-public struct TracksWindow: View {
-    @EnvironmentObject var model: AppModel
-
-    public init() {}
-
-    public var body: some View {
-        TracksScreen()
-            .textSelection(.enabled)
-            .frame(minWidth: 720, minHeight: 480)
-            .background(Color(nsColor: .windowBackgroundColor))
-            .overlay {
-                if let id = model.viewing {
-                    TrackViewer(trackId: id)
-                        .transition(.opacity)
-                }
-            }
-    }
-}
-
 /// The Tracks page on its own, for pictures made off-screen.
 public struct TracksScreenProbe: View {
     public init() {}
