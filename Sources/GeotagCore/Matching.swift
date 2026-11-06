@@ -1,7 +1,7 @@
 import Foundation
 
 /// Why a photo cannot be placed by itself and waits for a decision.
-public enum ReviewReason: Error, Equatable, Sendable {
+public enum ReviewReason: Error, Codable, Equatable, Sendable {
     case noTrack
     case offsetNotSet
     case zoneNotSet
@@ -10,7 +10,7 @@ public enum ReviewReason: Error, Equatable, Sendable {
     case unknownCamera
 }
 
-public struct Position: Equatable, Sendable {
+public struct Position: Codable, Equatable, Sendable {
     public var lat: Double
     public var lon: Double
     public var alt: Double?
@@ -31,7 +31,7 @@ public struct Position: Equatable, Sendable {
     }
 }
 
-public enum Placement: Equatable, Sendable {
+public enum Placement: Codable, Equatable, Sendable {
     case matched(Position)
     /// The camera wrote a location of its own; it is kept.
     case ownLocation

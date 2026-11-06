@@ -134,8 +134,8 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var source: PhotoSource?
     /// The card waiting for its owner to be chosen.
     @Published public var askingWhose: PhotoSource?
-    @Published public private(set) var importPerson: UUID?
-    @Published public private(set) var rows: [ImportRow] = []
+    @Published public private(set) var importPerson: UUID? { didSet { keepListSoon() } }
+    @Published public private(set) var rows: [ImportRow] = [] { didSet { keepListSoon() } }
     @Published public private(set) var photosBusy = false { didSet { refreshWork() } }
     /// Any new line clears the fix offered with the last one.
     @Published public private(set) var photosLine = "" { didSet { photosFix = nil; refreshWork() } }
@@ -162,7 +162,7 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var saveDone = 0 { didSet { refreshWork() } }
     @Published public private(set) var saveTotal = 0
     /// Each row's outcome, by row id, once saving has reached it.
-    @Published public private(set) var results: [String: SaveResult] = [:]
+    @Published public private(set) var results: [String: SaveResult] = [:] { didSet { keepListSoon() } }
     private var stopAsked = false
 
     /// The Download menu's disk image being made.
@@ -304,6 +304,9 @@ public final class AppModel: ObservableObject {
     private let queue: QueueStorePort
     private let unplaced: UnplacedStorePort
     private let sentLog: SentLogPort
+    /// The Photos list kept through a restart; nil in a test that gives no queue file.
+    private let photoList: PhotoListFile?
+    private var keeping: Task<Void, Never>?
     /// Geotag's folder in iCloud Drive; nil when iCloud Drive is off. A test's
     /// stays in its scratch folder.
     public let cloudFolder: URL?
@@ -358,6 +361,7 @@ public final class AppModel: ObservableObject {
         self.sentLog = sentLog
             ?? (queue as? QueueStoreFile).map { SentLogFile(url: $0.url.deletingLastPathComponent().appendingPathComponent("sent.jsonl")) }
             ?? SentLogFile.standard()
+        self.photoList = (queue as? QueueStoreFile).map { PhotoListFile.beside($0.url) }
         self.sidebarFile = (peopleStore as? PeopleStoreFile)?.url.deletingLastPathComponent().appendingPathComponent("Sidebar.jpg")
         if let sidebarFile, FileManager.default.fileExists(atPath: sidebarFile.path) {
             self.sidebarImage = NSImage(contentsOf: sidebarFile)
@@ -425,6 +429,13 @@ public final class AppModel: ObservableObject {
         queueEntries = entries
         keepOnMac = defaults.string(forKey: "keepOnMac").flatMap(KeepOnMac.init(rawValue:)) ?? .thirtyDays
         sentRecords = (try? self.sentLog.load()) ?? []
+        // The list from before a restart, its card out until it comes back.
+        if let kept = photoList?.load() {
+            rows = kept.rows
+            results = kept.results
+            importPerson = kept.personId.flatMap { book.person($0) != nil ? $0 : nil }
+            photosLine = Self.cardOut
+        }
         // The first time: the photos the queue still lists as sent go into the
         // record. Those sent before that have none, and stay (David, 5 November 2026).
         if sentRecords.isEmpty {
@@ -522,6 +533,7 @@ public final class AppModel: ObservableObject {
         guard !started else { return }
         started = true
         Quitting.cutOff = { [weak self] in self?.quitCutOff() }
+        Quitting.beforeQuit = { [weak self] in self?.keepList() }
         // iCloud first: a new install of David's takes everything from it.
         await syncWithCloud()
         if needsSetup {
@@ -1006,7 +1018,24 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    static let cardOut = "The card is out. Insert it again to save these photos."
+    public static let cardOut = "The card is out. Insert it again to save these photos."
+
+    /// Writes the list a second after it changes, so a save of thousands of
+    /// photos writes it once a second, not once a photo.
+    private func keepListSoon() {
+        guard photoList != nil, keeping == nil else { return }
+        keeping = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            self?.keepList()
+        }
+    }
+
+    /// The list as it stands now, written; an empty one removes the file.
+    public func keepList() {
+        keeping?.cancel()
+        keeping = nil
+        try? photoList?.save(KeptPhotoList(personId: importPerson, rows: rows, results: results))
+    }
 
     /// The card gone as if taken out, for the self-test: scratch cards have no disk.
     public func cardOutForTest() {

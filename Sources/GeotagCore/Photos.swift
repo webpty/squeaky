@@ -10,7 +10,7 @@ public enum PhotoKinds {
 }
 
 /// One photo found on a card, as its camera recorded it.
-public struct ScannedPhoto: Identifiable, Equatable, Sendable {
+public struct ScannedPhoto: Identifiable, Codable, Equatable, Sendable {
     public var id: String { url.path }
     public var url: URL
     public var fileName: String
@@ -210,14 +210,14 @@ public struct HistoryStoreFolder: HistoryStorePort {
 
 // MARK: - The import list
 
-public enum ImportStatus: Equatable, Sendable {
+public enum ImportStatus: Codable, Equatable, Sendable {
     case new
     case alreadyImported
     /// New, but its camera is not on this person's list.
     case unknownCamera
 }
 
-public struct ImportRow: Identifiable, Equatable, Sendable {
+public struct ImportRow: Identifiable, Codable, Equatable, Sendable {
     public var photo: ScannedPhoto
     public var status: ImportStatus
     public var ticked: Bool

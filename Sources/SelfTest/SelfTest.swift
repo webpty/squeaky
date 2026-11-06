@@ -127,7 +127,7 @@ struct SelfTest {
         let fm = FileManager.default
         let folder = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Geotag")
         var out: [String: String] = [:]
-        var paths = ["people.json", "queue.json", "unplaced.json", "temperatures.json"]
+        var paths = ["people.json", "queue.json", "unplaced.json", "temperatures.json", "photos.json"]
         paths += ((try? fm.contentsOfDirectory(atPath: folder.appendingPathComponent("History").path)) ?? []).map { "History/\($0)" }
         for path in paths {
             let attributes = (try? fm.attributesOfItem(atPath: folder.appendingPathComponent(path).path)) ?? [:]
@@ -3287,6 +3287,29 @@ extension SelfTest {
         await model.read(near, for: david)
         model.cardOutForTest()
         check("map window: the card out, the photos still on the map", model.source == nil && !model.rows.isEmpty && model.canMap && !model.canSave)
+
+        // A restart keeps the list too: only Clear photos or the next card empties it (David, 6 November 2026).
+        func reopened() -> AppModel {
+            AppModel(library: lib, peopleStore: PeopleStoreFile(url: scratch.appendingPathComponent("mo-people.json")),
+                     history: HistoryStoreFolder(folder: scratch.appendingPathComponent("mo-history")),
+                     queue: QueueStoreFile(url: scratch.appendingPathComponent("mo-queue.json")),
+                     unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("mo-unplaced.json")),
+                     secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("mo-maps")),
+                     exifTool: ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool")),
+                     nas: FakeNAS(root: scratch.appendingPathComponent("MO-NAS")), notifier: RecordingNotifier(), places: FakePlaces())
+        }
+        model.keepList()
+        let again = reopened()
+        await again.showLibrary()
+        check("photo list: kept through a restart, with whose it is and the card out",
+              again.rows == model.rows && again.results == model.results && again.importPerson == david
+              && again.source == nil && again.photosLine == AppModel.cardOut && again.canMap,
+              "\(again.rows.count) of \(model.rows.count) rows, line \"\(again.photosLine)\"")
+        again.clearPhotos()
+        again.keepList()
+        check("photo list: Clear photos empties it for the next restart too",
+              reopened().rows.isEmpty && !fm.fileExists(atPath: scratch.appendingPathComponent("mo-photos.json").path))
+
         model.clearPhotos()
         check("map window: Clear photos empties the list, and the map has nothing", model.rows.isEmpty && !model.canMap)
     }

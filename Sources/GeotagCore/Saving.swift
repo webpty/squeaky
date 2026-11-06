@@ -28,7 +28,7 @@ public struct SaveItem: Sendable {
     }
 }
 
-public enum SaveResult: Equatable, Sendable {
+public enum SaveResult: Codable, Equatable, Sendable {
     /// Saved at this place.
     case saved(URL)
     /// The same photo was already in the folder under this name.

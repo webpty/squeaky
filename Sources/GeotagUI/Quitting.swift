@@ -5,6 +5,8 @@ public enum Quitting {
     /// What would be cut off by quitting now, said before Command-Q or the
     /// menu's Quit goes ahead; nil when nothing is going on. Set by the app model.
     @MainActor public static var cutOff: (() -> String?)?
+    /// Records still to write, written as Geotag quits. Set by the app model.
+    @MainActor public static var beforeQuit: (() -> Void)?
 
     /// Command-Q and the menu's Quit: asks first while photos are being saved
     /// or are on their way to the NAS (David, 1 November 2026: a Command-Q
@@ -38,6 +40,7 @@ public enum Quitting {
             return
         }
         endSheets()
+        beforeQuit?()
         NSApp.terminate(nil)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             UserDefaults.standard.synchronize()

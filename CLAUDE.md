@@ -260,7 +260,11 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Ejecting a card, or taking it out, leaves the Photos list: "Clear photos"
   (shown once the card is out) or the next card empties it. With the card
   out, pictures come from the Mac copies (`pictureURL`), and Save and the
-  map say the card is out. The list is not kept through a restart.
+  map say the card is out. The list is kept through a restart too (0.26.1,
+  David, 6 November 2026: an update had emptied it): `photos.json` beside
+  `queue.json` (`PhotoListFile`), written a second after any change and
+  as Geotag quits, holds the rows, their outcomes and whose they are; it
+  opens with the card out. Clear photos or the next card removes it.
 
 ## Saving (stage 7, 16 October 2026)
 
