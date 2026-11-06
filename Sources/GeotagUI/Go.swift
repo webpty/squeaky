@@ -38,14 +38,16 @@ public struct GoMenu: View {
 struct DownloadScreen: View {
     @EnvironmentObject var model: AppModel
 
-    // In a scroll view like the other pages: a page that sized itself to its
-    // words was asked its height at no width and grew taller than the
+    // Sized by the page, never by its words: a page that sized itself to
+    // its words was asked its height at no width and grew taller than the
     // window, which pushed the sidebar and the page out of sight (0.25.1).
+    // The buttons sit side by side in the middle (David, 6 November 2026).
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Style.gap) {
-                ScreenTitle(text: "Download")
+        VStack(alignment: .leading, spacing: Style.gap) {
+            ScreenTitle(text: "Download")
+            VStack(spacing: Style.gap) {
                 Text("Makes a disk image that installs Geotag on another Mac. It is saved to Downloads.")
+                    .multilineTextAlignment(.center)
                 HStack(spacing: Style.gap) {
                     ForEach(Installer.Chip.allCases, id: \.self) { chip in
                         Button {
@@ -59,8 +61,9 @@ struct DownloadScreen: View {
                 }
                 StatusLine(text: model.downloadLine, busy: model.makingDownload)
             }
-            .padding(Style.pad * 1.5)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .padding(Style.pad * 1.5)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
