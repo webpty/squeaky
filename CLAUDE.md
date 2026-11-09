@@ -786,3 +786,41 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   (David, 6 November 2026: a push here only saves versions; nothing goes
   live from it). Installing a new build on his Mac still needs his yes.
 - British spelling. No em dashes.
+
+## Notes
+
+### Geotag scope: send and check once
+
+Geotag's job on the NAS ends with the send and its first check (read back and compared on arrival). David, 5 Nov 2026: "we're not building a continued integrity tool". No later look at the NAS to decide anything, e.g. before removing Mac copies.
+
+**Why:** the NAS has RAID plus a nightly remote Hyper Backup, and David plans to sort the photos later, deleting or renaming files and folders, so later checks would misfire.
+
+**How to apply:** decisions about photos already sent rest on Geotag's own record of the send, never on what the NAS holds now. Mac copies are removed 30 days after reaching the NAS (matches the Mac Trash's 30 days; time to use the photos while fresh). Related: [[geotag-state]].
+
+### Geotag other Mac: fresh install
+
+Geotag on David's other Mac will be a fresh install that takes everything from iCloud; its old settings and its list of photos read are dropped on purpose (David, 5 Nov 2026). Only this MacBook Air copies its settings to iCloud.
+
+**Why:** he said "do not mention the other mac again ... we lose all the old stuff. capiche?"
+
+**How to apply:** never raise the other Mac's old data, merging, or what is lost with it. Plan the iCloud work from this Mac's data only. Related: [[geotag-scope-send-and-check-once]].
+
+### Geotag: push without asking
+
+On Geotag, push without asking (David, 6 Nov 2026: "since push does nothing
+more than save versions on this project, dont ask me for push on this
+project only").
+
+**Why:** Geotag is a Mac app; GitHub holds its versions and nothing goes
+live from a push, unlike his Cloudflare sites where a push to main is a
+release.
+
+**How to apply:** after a Geotag commit is built and tested, push it
+without a question. Still ask before installing a new build on his Mac
+(it quits his running Geotag). Every other project keeps the push
+question. Exception to [[david-plan-then-ask-to-push]] and
+[[keep-wine-no-push-without-word]].
+
+### Notes only in cross-project changes
+
+Said 26 Oct 2026: in changes made across all projects, only Geotag's notes are aligned, nothing else, unless David names it.
