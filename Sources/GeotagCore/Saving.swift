@@ -254,7 +254,9 @@ public struct Saver: Sendable {
             "-GPS:GPSProcessingMethod=\(processingMethod)",
         ]
         if let alt = p.alt {
-            args += ["-GPS:GPSAltitude=\(String(format: "%.2f", abs(alt)))", "-GPS:GPSAltitudeRef=\(alt < 0 ? 1 : 0)"]
+            // The flag as a number (#): written plain, ExifTool reads "1" as a
+            // word and leaves the photo above sea level.
+            args += ["-GPS:GPSAltitude=\(String(format: "%.2f", abs(alt)))", "-GPS:GPSAltitudeRef#=\(alt < 0 ? 1 : 0)"]
         }
         return args
     }
@@ -323,7 +325,8 @@ public struct Saver: Sendable {
             if let alt = position.alt {
                 guard let a = number("GPS:GPSAltitude") else { return "The altitude is not in the copy." }
                 let ref = (after["GPS:GPSAltitudeRef"] as? NSNumber)?.intValue ?? 0
-                if abs((ref == 1 ? -a : a) - alt) > 0.01 { return "The altitude in the copy is not the one written." }
+                // Half a metre: the watch is no closer than that.
+                if abs((ref == 1 ? -a : a) - alt) > 0.5 { return "The altitude in the copy is not the one written." }
             }
             guard after["GPS:GPSDateStamp"] != nil, after["GPS:GPSTimeStamp"] != nil else { return "The GPS time is not in the copy." }
             guard (after["GPS:GPSProcessingMethod"] as? String) == Self.processingMethod else {

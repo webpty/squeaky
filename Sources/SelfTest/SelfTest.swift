@@ -54,6 +54,7 @@ struct SelfTest {
         if let samples = ProcessInfo.processInfo.environment["GEOTAG_SAMPLES"] {
             saving(scratch, samples: URL(fileURLWithPath: samples),
                    raws: ProcessInfo.processInfo.environment["GEOTAG_RAWS"].map { URL(fileURLWithPath: $0) })
+            altitude(scratch, samples: URL(fileURLWithPath: samples))
             await savingEdges(scratch, samples: URL(fileURLWithPath: samples))
             await placingLater(scratch, samples: URL(fileURLWithPath: samples), sendFirst: false)
             await placingLater(scratch, samples: URL(fileURLWithPath: samples), sendFirst: true)
@@ -980,7 +981,7 @@ extension SelfTest {
         check("save: no 60th second", args.contains { $0 == "-GPS:GPSTimeStamp=07:59:59.99" }, args.first { $0.hasPrefix("-GPS:GPSTimeStamp") } ?? "")
         let plain = Saver.gpsArguments(Position(lat: 1, lon: 1, alt: -3, moment: ISO8601DateFormatter().date(from: "2027-01-12T15:04:05Z")!, fromPoint: 0))
         check("save: an ordinary time and day", plain.contains("-GPS:GPSTimeStamp=15:04:05.00") && plain.contains("-GPS:GPSDateStamp=2027:01:12"))
-        check("save: below sea level", plain.contains("-GPS:GPSAltitude=3.00") && plain.contains("-GPS:GPSAltitudeRef=1"))
+        check("save: below sea level", plain.contains("-GPS:GPSAltitude=3.00") && plain.contains("-GPS:GPSAltitudeRef#=1"))
 
         // Leftovers: only Geotag's own working copies go.
         let out = scratch.appendingPathComponent("EDGES")
@@ -2012,6 +2013,35 @@ extension SelfTest {
 }
 
 extension SelfTest {
+    /// Altitude above, at and below sea level, and none (10 November 2026).
+    static func altitude(_ scratch: URL, samples: URL) {
+        let fm = FileManager.default
+        let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+        // Altitude above, at, below sea level and none, on JPEG and CR3, read
+        // back with its sign; the card file never changes.
+        let altTo = scratch.appendingPathComponent("ALT-SAVED")
+        let altFiles = ["390A5795.JPG", "DAVL0311.CR3"].map { samples.appendingPathComponent($0) }.filter { fm.fileExists(atPath: $0.path) }
+        check("altitude: JPEG and CR3 samples present", altFiles.count == 2)
+        for photo in (try? PhotoScanner(exifTool: tool).scan(altFiles) { _ in }) ?? [] {
+            let cardHash = Saver.sha256(photo.url)
+            for (n, alt) in ([123.45, 0, -0.1, -0.5, -12.3, nil] as [Double?]).enumerated() {
+                let altSaver = Saver(exifTool: tool, folder: altTo.appendingPathComponent("\(n)"))
+                let spot = Position(lat: 39.6, lon: -9.07, alt: alt, moment: Date(timeIntervalSince1970: 1_794_316_131), fromPoint: 0)
+                let result = altSaver.save(SaveItem(photo: photo, placement: .matched(spot), withoutLocation: false))
+                let label = "altitude: \(photo.fileName) at \(alt.map { "\($0) m" } ?? "none")"
+                guard case .saved(let url) = result else { check(label, false, "\(result)"); continue }
+                let data = try? tool.run(["-j", "-n", "-G1", "-GPS:GPSAltitude", "-GPS:GPSAltitudeRef", url.path])
+                let read = ((data.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [[String: Any]])?.first) ?? [:]
+                let a = (read["GPS:GPSAltitude"] as? NSNumber)?.doubleValue
+                let ref = (read["GPS:GPSAltitudeRef"] as? NSNumber)?.intValue
+                let back = a.map { ref == 1 ? -$0 : $0 }
+                let ok = alt.map { w in back.map { abs($0 - w) < 0.005 } ?? false && ref == (w < 0 ? 1 : 0) } ?? (a == nil && ref == nil)
+                check(label + ", read back with its sign, card unchanged", ok && Saver.sha256(photo.url) == cardHash,
+                      "\(back.map { "\($0)" } ?? "none") ref \(ref.map { "\($0)" } ?? "none")")
+            }
+        }
+    }
+
     /// A camera whose clock is far out (David, 18 October 2026): the offset
     /// set from the start of the track its photos belong to, the copies'
     /// dates corrected on every kind of file, and a photo placed later not
