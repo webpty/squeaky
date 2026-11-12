@@ -845,7 +845,10 @@ release.
 **How to apply:** after a Geotag commit is built and tested, push it
 without a question. Still ask before installing a new build on his Mac
 (it quits his running Geotag). Every other project keeps the push
-question. Exception to [[david-plan-then-ask-to-push]] and
+question. Claude Code's own safety check treats a push as a release, so
+`.claude/settings.json` here allows `git push`, and the Sites folder's
+local settings allow `git -C /Users/david/Sites/geotag push` (12 November
+2026, his yes). Exception to [[david-plan-then-ask-to-push]] and
 [[keep-wine-no-push-without-word]].
 
 ### Notes only in cross-project changes
