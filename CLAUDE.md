@@ -496,9 +496,11 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   there will be sorted, renamed or deleted later. Settings, NAS, "Keep
   photos on this Mac": 30 days after reaching the NAS (default, as the
   Mac's Trash: time to use them while fresh), until on the NAS, or always.
-  Never removed: a copy with a queue entry not yet sent, one waiting for a
-  location (`unplaced.json`), or one changed since it went. An emptied day
-  folder goes too, never the person's save folder. Runs every ten minutes
+  Never removed: a copy with a queue entry not yet sent (held ones
+  included) or one changed since it went. A copy without a location goes
+  after 30 days like the rest and leaves `unplaced.json` (0.27.0, David,
+  12 November 2026: "that's not scalable"; a photo without a location is no
+  big deal). An emptied day folder goes too, never the person's save folder. Runs every ten minutes
   from the send timer. The first run puts what the queue still lists as
   sent into the record; copies sent before that have none and stay.
   The Queue page's "Freed on this Mac" adds up `freed`.
@@ -530,6 +532,31 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   saved or photos placed, not while waiting for the NAS or paused. Clicking
   it opens the Queue page. It posts only from the app itself; the self-test
   records the words instead (`RecordingNotifier`).
+
+## Checking for tracks before saving (0.27.0, David, 12 November 2026)
+
+- He often inserts a card before the latest tracks have loaded. When a card
+  would save itself (every camera set) and any photo has no track within
+  the gap, `checkTracksBeforeSave` lays `TrackCheckPanel` over the window:
+  "Checking for matching tracks" with loader dots while the tracks are
+  loaded again (Strava pulled too); all matched, it closes and the card
+  saves. Else "No matching track for 12 photos." (with "The track service
+  isn't answering." above when it could not be reached) and Don't save,
+  Check tracks again (the default button, blue, Return), Save anyway;
+  Escape is Don't save. Nothing is saved until one is clicked. Taking the
+  card out closes it. Save photos clicked by hand never asks.
+- Save anyway with the service away holds the photos without a track
+  (`QueueEntry.held`): on this Mac, not sent. Asked every minute; once the
+  service answers, they are tried once against the tracks
+  (`releaseHeld`), then let go to the NAS, placed or not.
+- Photos saved earlier are no longer placed by themselves when tracks,
+  cameras or the gap change (until 0.26.2 every rematch tried all of
+  `unplaced.json`). Once on the NAS without a location, a photo stays so
+  unless "Recheck photos for this track" on its track card (cards at least
+  230 points wide so it fits) places those taken during that track: the
+  copy on this Mac gets its location, is checked, and replaces the NAS
+  copy. Copies already removed from this Mac stay without one; never fetch
+  them back from the NAS.
 
 ## Visual polish and the disk image (stage 9, 17 October 2026)
 

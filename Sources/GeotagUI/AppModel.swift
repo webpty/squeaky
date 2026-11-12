@@ -76,6 +76,14 @@ public enum PhotosFix: Equatable {
     }
 }
 
+/// Where the check before saving stands: checking, or the photos still
+/// without a track, the track service answering or not.
+public enum TrackCheck: Equatable, Sendable {
+    case checking
+    case noTrack(Int)
+    case offline(Int)
+}
+
 @MainActor
 public final class AppModel: ObservableObject {
     @Published public var appearance = Appearance.system
@@ -118,6 +126,9 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var tracks: [Track] = []
     @Published public var tracksLine = ""
     @Published public private(set) var tracksBusy = false
+    /// The check before a card is saved by itself, while some of its photos
+    /// have no track (0.27.0, David, 12 November 2026).
+    @Published public private(set) var trackCheck: TrackCheck?
     /// The credit the small maps need, kept for when the Mac is offline.
     @Published public private(set) var mapCredit = ""
     /// Goes up whenever the map source changes, so missing maps are tried again.
@@ -131,7 +142,10 @@ public final class AppModel: ObservableObject {
 
     // Photos: cards, whose they are, and what is on them.
     @Published public private(set) var cards: [PhotoSource] = []
-    @Published public private(set) var source: PhotoSource?
+    @Published public private(set) var source: PhotoSource? {
+        // The check before saving belongs to its card.
+        didSet { if source?.id != oldValue?.id { trackCheck = nil } }
+    }
     /// The card waiting for its owner to be chosen.
     @Published public var askingWhose: PhotoSource?
     @Published public private(set) var importPerson: UUID? { didSet { keepListSoon() } }
@@ -557,7 +571,10 @@ public final class AppModel: ObservableObject {
         await refresh()
         cloudTimer?.invalidate()
         cloudTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.syncWithCloud() }
+            Task { @MainActor in
+                await self?.syncWithCloud()
+                if self?.queueEntries.contains(where: \.held) == true { await self?.refresh() }
+            }
         }
         timer?.invalidate()
         remindClocks()
@@ -570,7 +587,15 @@ public final class AppModel: ObservableObject {
     }
 
     var service: TrackServicePort? {
-        TrackServiceHTTP(address: serviceAddress, key: serviceKey)
+        serviceForTest ?? TrackServiceHTTP(address: serviceAddress, key: serviceKey)
+    }
+
+    /// A stand-in track service, for the self-test: nothing goes online and
+    /// no setting is written.
+    private var serviceForTest: TrackServicePort?
+    public func useServiceForTest(_ service: TrackServicePort, role: KeyRole) {
+        serviceForTest = service
+        self.role = role
     }
 
     // MARK: Settings
@@ -764,7 +789,9 @@ public final class AppModel: ObservableObject {
     /// Copies every ready photo into the person's folder with its location,
     /// one at a time, checking each; records them in History and puts them on
     /// the upload queue. Stop, or Eject, ends it after the current photo.
-    public func savePhotos() async {
+    /// `hold`: the track service could not be reached, so photos without a
+    /// track wait on this Mac until the tracks have been checked again.
+    public func savePhotos(hold: Bool = false) async {
         guard !saving else { return }
         guard let source else {
             photosLine = rows.isEmpty ? "Insert a card." : Self.cardOut
@@ -857,7 +884,8 @@ public final class AppModel: ObservableObject {
                    !later.contains(where: { $0.localPath == url.path }) {
                     later.append(UnplacedEntry(personId: personId, localPath: url.path, photo: row.photo, shifted: named.shift))
                 }
-                changeQueue { $0.append(QueueEntry(personId: personId, localPath: url.path, relativePath: Self.relative(url))) }
+                let held = hold && row.placement == .review(.noTrack)
+                changeQueue { $0.append(QueueEntry(personId: personId, localPath: url.path, relativePath: Self.relative(url), held: held)) }
             case .alreadyThere(let url):
                 savedCount += 1
                 remember(row.photo)
@@ -1143,7 +1171,11 @@ public final class AppModel: ObservableObject {
             // Every camera set: nothing to line up, so the photos are saved straight
             // away, and the card comes out once they are on the Mac (David, 1 November 2026).
             if camerasReady, saveWhenReady, saveBlock == nil {
-                await savePhotos()
+                if noTrackCount > 0 {
+                    await checkTracksBeforeSave()
+                } else {
+                    await savePhotos()
+                }
             } else if let block = saveBlock, readyToSave.count > 0 {
                 // Save photos is dimmed until this is fixed: said on its own, with the way to it.
                 say(block.line, fix: block.fix)
@@ -1331,10 +1363,10 @@ public final class AppModel: ObservableObject {
         timelineIds = ids
     }
 
-    /// Every photo placed again: after a card is read, a camera changes, the
-    /// gap changes, or new tracks arrive.
+    /// Every photo on the card placed again: after a card is read, a camera
+    /// changes, the gap changes, or new tracks arrive. Photos saved earlier
+    /// are not: only held ones, and a track card's Recheck (0.27.0).
     public func rematch() {
-        Task { await placeLater() }
         guard let personId = importPerson, !rows.isEmpty else { return }
         // One change to the list, not one per photo (see savePhotos).
         var placed = rows
@@ -1494,24 +1526,40 @@ public final class AppModel: ObservableObject {
         breaks = Breaks.find(rows.map(\.photo), minutes: breakMinutes)
     }
 
-    /// Photos saved earlier without a location, tried again: a camera's offset
-    /// or zone may have been set, the gap changed, or new tracks arrived. Each
-    /// that can now be placed gets the location written into its copy on this
-    /// Mac, checked like any save, and goes on the upload queue again.
-    public func placeLater() async {
-        guard !placingLater, !saving, let tool = exifTool else { return }
+    /// Photos saved earlier without a location, tried again against the
+    /// tracks: those in `paths`, or those taken `within` a track's time, or
+    /// all. Each that can now be placed gets the location written into its
+    /// copy on this Mac, checked like any save, and goes on the upload queue
+    /// again. Nil when it could not run; else how many were placed of how
+    /// many tried.
+    @discardableResult
+    public func placeLater(paths: Set<String>? = nil, within: ClosedRange<Date>? = nil) async -> (placed: Int, tried: Int)? {
+        guard !placingLater, !saving, let tool = exifTool else { return nil }
         let entries = (try? unplaced.load()) ?? []
-        guard !entries.isEmpty else { return }
+        guard !entries.isEmpty else { return (0, 0) }
         placingLater = true
         defer { placingLater = false }
         await loadTimeline()
         var keep: [UnplacedEntry] = []
-        var placed = 0
+        var placed = 0, tried = 0
         var problems: [String] = []
         for entry in entries {
-            // Moved or removed since by its owner: nothing to place.
+            // Moved or removed since, by its owner or after 30 days on the NAS: nothing to place.
             guard FileManager.default.fileExists(atPath: entry.localPath) else { continue }
             let camera = entry.model.flatMap { book.camera(personId: entry.personId, model: $0) }
+            let wanted: Bool
+            if let paths {
+                wanted = paths.contains(entry.localPath)
+            } else if let within {
+                wanted = (try? Moments.moment(entry.photo, camera: camera).get()).map { within.contains($0) } ?? false
+            } else {
+                wanted = true
+            }
+            guard wanted else {
+                keep.append(entry)
+                continue
+            }
+            tried += 1
             guard case .matched(let position) = Matcher.place(entry.photo, camera: camera, timeline: timeline, gap: maxGapSeconds) else {
                 keep.append(entry)
                 continue
@@ -1541,10 +1589,73 @@ public final class AppModel: ObservableObject {
             }
         }
         try? unplaced.save(keep)
-        guard placed > 0 || !problems.isEmpty, !photosBusy, !saving else { return }
+        guard placed > 0 || !problems.isEmpty, !photosBusy, !saving else { return (placed, tried) }
         var line = placed == 0 ? "" : placed == 1 ? "1 photo saved earlier now has its location." : "\(placed) photos saved earlier now have their location."
         if let first = problems.first { line += (line.isEmpty ? "" : " ") + "Not placed: \(first)" }
         photosLine = line
+        return (placed, tried)
+    }
+
+    // MARK: Checking for tracks before saving (0.27.0, David, 12 November 2026)
+
+    /// Photos on the card that would be saved without a location for want of a track.
+    public var noTrackCount: Int {
+        readyToSave.filter { $0.placement == .review(.noTrack) }.count
+    }
+
+    /// The tracks loaded again from the track service; the card is saved at
+    /// once if every photo then has its track, else the choice is laid over
+    /// the window and nothing is saved until one is made.
+    public func checkTracksBeforeSave() async {
+        trackCheck = .checking
+        while tracksBusy { try? await Task.sleep(for: .milliseconds(200)) }
+        let answered = await refresh(pullStrava: true)
+        guard trackCheck != nil else { return }
+        let missing = noTrackCount
+        if missing == 0 {
+            trackCheck = nil
+            await savePhotos()
+        } else {
+            trackCheck = answered ? .noTrack(missing) : .offline(missing)
+        }
+    }
+
+    public func dontSave() {
+        trackCheck = nil
+    }
+
+    public func checkTracksAgain() {
+        Task { await checkTracksBeforeSave() }
+    }
+
+    /// Saved as they are. With the track service away, those without a track
+    /// stay on this Mac until the tracks can be checked again.
+    public func saveAnyway() {
+        let hold: Bool
+        if case .offline? = trackCheck { hold = true } else { hold = false }
+        trackCheck = nil
+        Task { await savePhotos(hold: hold) }
+    }
+
+    /// Photos held for want of the track service: once it answers, tried
+    /// once against the tracks, then let go to the NAS, placed or not.
+    public func releaseHeld() async {
+        let held = Set(queueEntries.filter(\.held).map(\.localPath))
+        guard !held.isEmpty else { return }
+        while placingLater || saving { try? await Task.sleep(for: .milliseconds(200)) }
+        await placeLater(paths: held)
+        changeQueue { all in
+            for i in all.indices where all[i].held { all[i].held = false }
+        }
+    }
+
+    /// A track card's Recheck: photos saved without a location and taken
+    /// during the track, placed where they now can be.
+    public func recheckPhotos(for track: Track) async {
+        guard !tracksBusy, !saving, !placingLater else { return }
+        guard let done = await placeLater(within: track.start...track.end) else { return }
+        tracksLine = done.tried == 0 ? "No photos without a location from \(track.name)."
+            : "\(done.placed) of \(done.tried) photos from \(track.name) now have their location."
     }
 
     /// The photos the map can show: those with a location of their own, and
@@ -1790,13 +1901,12 @@ public final class AppModel: ObservableObject {
     }
 
     /// Removes the copies on this Mac that have been on the NAS long enough,
-    /// going by the record alone. Never one still to send, still waiting for
-    /// a location, or changed since it went. An emptied day folder goes too.
+    /// going by the record alone, with a location or without (0.27.0). Never
+    /// one still to send or changed since it went. An emptied day folder goes too.
     public func tidyMac(now: Date = Date()) {
         lastTidy = now
         sentSinceTidy = false
-        var busy = Set(queueEntries.filter { $0.state != .sent }.map(\.localPath))
-        busy.formUnion(((try? unplaced.load()) ?? []).map(\.localPath))
+        let busy = Set(queueEntries.filter { $0.state != .sent }.map(\.localPath))
         let plan = MacTidy.plan(sentRecords, keep: keepOnMac, busy: busy, now: now)
         guard !plan.remove.isEmpty || !plan.gone.isEmpty else { return }
         let fm = FileManager.default
@@ -1817,6 +1927,11 @@ public final class AppModel: ObservableObject {
         }
         sentRecords = records
         try? sentLog.save(records)
+        // Removed copies come off the list of photos without a location.
+        if !saving, !placingLater, let list = try? unplaced.load() {
+            let left = list.filter { fm.fileExists(atPath: $0.localPath) }
+            if left.count != list.count { try? unplaced.save(left) }
+        }
     }
 
     public func retryFailed() {
@@ -1844,7 +1959,7 @@ public final class AppModel: ObservableObject {
         let place: (QueueEntry) -> String? = { [book] in book.person($0.personId)?.nasFolder }
         let going = Set(queueEntries.filter { $0.state == .sending }.map { "\(place($0) ?? "")/\($0.relativePath)" })
         return queueEntries
-            .filter { $0.state == .waiting && ($0.notBefore ?? .distantPast) <= now && NASFolder(place($0)) != nil
+            .filter { $0.state == .waiting && !$0.held && ($0.notBefore ?? .distantPast) <= now && NASFolder(place($0)) != nil
                 && !going.contains("\(place($0) ?? "")/\($0.relativePath)") }
             .min { $0.added < $1.added }
     }
@@ -2153,12 +2268,14 @@ public final class AppModel: ObservableObject {
 
     // MARK: Tracks
 
-    public func refresh(pullStrava: Bool = false) async {
-        guard !tracksBusy else { return }
+    /// True when the track service answered.
+    @discardableResult
+    public func refresh(pullStrava: Bool = false) async -> Bool {
+        guard !tracksBusy else { return false }
         guard let service else {
             tracks = await library.listed()
             tracksLine = ServiceError.notSetUp.localizedDescription
-            return
+            return false
         }
         tracksBusy = true
         defer { tracksBusy = false }
@@ -2168,7 +2285,7 @@ public final class AppModel: ObservableObject {
         guard let role else {
             tracks = await library.listed()
             tracksLine = settingsLine
-            return
+            return false
         }
         await loadMaps(service)
         if thumbnails.forgetFailures() { mapsRound += 1 }
@@ -2181,6 +2298,9 @@ public final class AppModel: ObservableObject {
             await loadTimeline()
             rematch()
         }
+        let answered = !report.offline && report.problems.isEmpty
+        if answered { Task { await releaseHeld() } }
+        return answered
     }
 
     /// Where the small maps come from. Without it, rows show the bare line.

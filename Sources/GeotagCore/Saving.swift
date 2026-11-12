@@ -429,8 +429,12 @@ public struct QueueEntry: Codable, Equatable, Identifiable, Sendable {
     /// Tries that broke off, and when to try it again.
     public var tries: Int
     public var notBefore: Date?
+    /// Saved without a track while the track service could not be reached:
+    /// held back until the tracks have been checked again (0.27.0).
+    public var held: Bool
 
-    public init(personId: UUID, localPath: String, relativePath: String, added: Date = Date(), update: Bool = false) {
+    public init(personId: UUID, localPath: String, relativePath: String, added: Date = Date(), update: Bool = false,
+                held: Bool = false) {
         self.id = UUID()
         self.personId = personId
         self.localPath = localPath
@@ -439,10 +443,11 @@ public struct QueueEntry: Codable, Equatable, Identifiable, Sendable {
         self.state = .waiting
         self.update = update
         self.tries = 0
+        self.held = held
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, personId, localPath, relativePath, added, state, update, reason, sent, sentAs, tries, notBefore
+        case id, personId, localPath, relativePath, added, state, update, reason, sent, sentAs, tries, notBefore, held
     }
 
     /// Reads queues written before 0.12.0 too, which had no sending details.
@@ -460,6 +465,7 @@ public struct QueueEntry: Codable, Equatable, Identifiable, Sendable {
         sentAs = try c.decodeIfPresent(String.self, forKey: .sentAs)
         tries = try c.decodeIfPresent(Int.self, forKey: .tries) ?? 0
         notBefore = try c.decodeIfPresent(Date.self, forKey: .notBefore)
+        held = try c.decodeIfPresent(Bool.self, forKey: .held) ?? false
     }
 }
 

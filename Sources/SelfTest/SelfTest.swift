@@ -70,6 +70,7 @@ struct SelfTest {
             await clocks(scratch, samples: URL(fileURLWithPath: samples),
                          raws: ProcessInfo.processInfo.environment["GEOTAG_RAWS"].map { URL(fileURLWithPath: $0) })
         }
+        await trackCheck(scratch)
         await settingsFeedback(scratch)
         await naming(scratch)
         await mapOpens(scratch)
@@ -1130,13 +1131,19 @@ extension SelfTest {
         let before = Saver.sha256(saved)
         let dates = (try? fm.attributesOfItem(atPath: saved.path)) ?? [:]
 
-        // The offset is set: the photo saved earlier is placed.
+        // The offset is set: nothing saved earlier is placed by itself (0.27.0).
         var camera = model.book.camera(personId: david.id, model: "Canon EOS R5m2")!
         camera.offsetSeconds = 0
         model.save(camera)
-        for _ in 0..<200 {
-            try? await Task.sleep(for: .milliseconds(50))
-            if !model.placingLater, ((try? unplacedFile.load()) ?? []).isEmpty { break }
+        try? await Task.sleep(for: .milliseconds(500))
+        check("\(tag): not placed by itself", ((try? unplacedFile.load()) ?? []).count == 1 && Saver.sha256(saved) == before)
+        // The track card's Recheck places it.
+        if let track = model.tracks.first {
+            await model.recheckPhotos(for: track)
+            check("\(tag): the track card says how many it placed", model.tracksLine == "1 of 1 photos from \(track.name) now have their location.",
+                  model.tracksLine)
+        } else {
+            check("\(tag): a track to recheck", false)
         }
         var where_ = "-"
         if let src = CGImageSourceCreateWithURL(saved as CFURL, nil),
@@ -1166,6 +1173,148 @@ extension SelfTest {
         let leftovers = (fm.enumerator(atPath: saveTo.path)?.allObjects as? [String] ?? []).filter { $0.contains(".geotag-") }
         check("\(tag): no working copies left", leftovers.isEmpty, "\(leftovers)")
         check("\(tag): said on the Photos page", model.photosLine.contains("now has its location"), model.photosLine)
+    }
+}
+
+extension SelfTest {
+    /// A track service holding the given tracks, each with a point a minute.
+    struct TracksService: TrackServicePort {
+        let items: [ServiceTrack]
+        init(_ spans: [(String, Int, Int)]) {
+            items = spans.map { id, start, end in
+                let json = #"{"id":"\#(id)","source":"strava","name":"\#(id)","start":\#(start),"end":\#(end),"pointCount":\#((end - start) / 60 + 1),"bounds":{"minLat":8.95,"maxLat":8.96,"minLon":-79.54,"maxLon":-79.53}}"#
+                return try! JSONDecoder().decode(ServiceTrack.self, from: Data(json.utf8))
+            }
+        }
+        func status() async throws -> ServiceStatus { throw ServiceError.offline }
+        func maps() async throws -> MapSource { throw ServiceError.offline }
+        func tracks() async throws -> [ServiceTrack] { items }
+        func points(_ id: String) async throws -> TrackPoints {
+            guard let item = items.first(where: { $0.id == id }) else { throw ServiceError.offline }
+            let t = Array(stride(from: item.start, through: item.end, by: 60))
+            return TrackPoints(t: t, lat: t.map { _ in 8.952 }, lon: t.map { _ in -79.535 }, alt: t.map { _ in -0.4 })
+        }
+        func upload(name: String, fileName: String?, points: TrackPoints) async throws -> UploadAnswer { throw ServiceError.offline }
+        func sync() async throws -> String { "" }
+        func connectLink() async throws -> URL { throw ServiceError.offline }
+        func disconnect() async throws -> String { throw ServiceError.offline }
+    }
+
+    /// The check before a card saves itself, held photos, and a track card's
+    /// Recheck (0.27.0, David, 12 November 2026).
+    @MainActor
+    static func trackCheck(_ scratch: URL) async {
+        let fm = FileManager.default
+        let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+        let saveTo = scratch.appendingPathComponent("TC-SAVED")
+        try? fm.createDirectory(at: saveTo, withIntermediateDirectories: true)
+        let unplacedFile = UnplacedStoreFile(url: scratch.appendingPathComponent("tc-unplaced.json"))
+        let nasRoot = scratch.appendingPathComponent("TC-NAS")
+        let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("tc-lib"))),
+                             peopleStore: familyFile(scratch.appendingPathComponent("tc-people.json")),
+                             history: HistoryStoreFolder(folder: scratch.appendingPathComponent("tc-history")),
+                             queue: QueueStoreFile(url: scratch.appendingPathComponent("tc-queue.json")), unplaced: unplacedFile,
+                             secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("tc-maps")),
+                             exifTool: tool, nas: FakeNAS(root: nasRoot), notifier: RecordingNotifier(), places: FakePlaces())
+        model.saveWhenReady = true
+        var david = model.book.people[0]
+        david.saveFolder = saveTo.path
+        david.nasFolder = "homes/david/Photos"
+        model.save(david)
+        var camera = model.book.camera(personId: david.id, model: "Canon EOS R5m2")!
+        camera.offsetSeconds = 0
+        model.save(camera)
+        let day = 86_400, noon = 1_792_162_800 // 2026-10-16 15:00 UTC, 12:00 at -03:00
+        func track(_ id: String, _ d: Int) -> (String, Int, Int) { (id, noon + d * day - 600, noon + d * day + 600) }
+        func card(_ name: String, _ d: Int) async -> (URL, PhotoSource) {
+            let root = scratch.appendingPathComponent("TC-\(name)")
+            let folder = root.appendingPathComponent("DCIM/100CANON")
+            try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            let photo = folder.appendingPathComponent("\(name).JPG")
+            writePhoto(photo, model: "Canon EOS R5m2", zone: "-03:00", taken: "2026:10:\(16 + d) 12:00:00")
+            let source = scratchCard(root)
+            model.choose(source)
+            model.askingWhose = nil
+            return (photo, source)
+        }
+        func waitWhile(_ busy: () -> Bool) async {
+            for _ in 0..<200 where busy() { try? await Task.sleep(for: .milliseconds(50)) }
+        }
+        func gps(_ url: URL?) -> String? { url.flatMap { try? tool.read(["GPSLatitude"], from: $0)["GPSLatitude"] } }
+
+        // A track on the service but not yet on this Mac: found, and the card saves itself.
+        model.useServiceForTest(TracksService([track("Day one", 0)]), role: .reader)
+        var (photo, source) = await card("ONE", 0)
+        let cardBytes = Saver.sha256(photo)
+        await model.read(source, for: david.id)
+        var saved = model.results.values.compactMap(\.url).first
+        check("track check: a track found on refreshing, the card saved at once with the location",
+              model.trackCheck == nil && saved != nil && gps(saved) != nil, "\(String(describing: model.trackCheck)) \(model.photosLine)")
+        check("track check: the card's photo unchanged", Saver.sha256(photo) == cardBytes)
+
+        // No track anywhere: nothing saved until a button is clicked.
+        (photo, source) = await card("TWO", 1)
+        await model.read(source, for: david.id)
+        check("track check: no track, the choice waits", model.trackCheck == .noTrack(1) && model.results.isEmpty,
+              "\(String(describing: model.trackCheck))")
+        model.dontSave()
+        check("track check: Don't save saves nothing", model.trackCheck == nil && model.results.isEmpty && !model.saving)
+        await model.checkTracksBeforeSave()
+        check("track check: checked again, still none", model.trackCheck == .noTrack(1))
+        model.saveAnyway()
+        await waitWhile { model.results.isEmpty || model.saving }
+        saved = model.results.values.compactMap(\.url).first
+        let two = saved
+        check("track check: Save anyway saves it without a location, for the NAS straight away",
+              saved != nil && gps(saved) == nil && model.queueEntry(for: saved?.path ?? "")?.held == false)
+
+        // Nothing saved earlier is placed by itself when its track arrives.
+        model.useServiceForTest(TracksService([track("Day one", 0), track("Day two", 1)]), role: .reader)
+        await model.refresh()
+        try? await Task.sleep(for: .milliseconds(300))
+        check("track check: a later track places nothing by itself", gps(two) == nil && ((try? unplacedFile.load()) ?? []).count == 1)
+        // The track card's Recheck does.
+        let tracks = model.tracks
+        if let dayOne = tracks.first(where: { $0.name == "Day one" }), let dayTwo = tracks.first(where: { $0.name == "Day two" }) {
+            await model.recheckPhotos(for: dayOne)
+            check("track check: Recheck on another day's track finds nothing to place",
+                  model.tracksLine == "No photos without a location from Day one." && gps(two) == nil, model.tracksLine)
+            await model.recheckPhotos(for: dayTwo)
+            check("track check: Recheck on its track places it and sends it again",
+                  model.tracksLine == "1 of 1 photos from Day two now have their location." && gps(two) != nil
+                  && ((try? unplacedFile.load()) ?? []).isEmpty, model.tracksLine)
+        } else {
+            check("track check: the two tracks are listed", false, "\(tracks.map(\.name))")
+        }
+
+        // The track service away: Save anyway keeps it on this Mac until the tracks are checked.
+        model.useServiceForTest(DeadService(), role: .reader)
+        (photo, source) = await card("THREE", 2)
+        await model.read(source, for: david.id)
+        check("track check: the service away is said", model.trackCheck == .offline(1), "\(String(describing: model.trackCheck))")
+        model.saveAnyway()
+        await waitWhile { model.results.isEmpty || model.saving }
+        saved = model.results.values.compactMap(\.url).first
+        check("track check: saved and held back from the NAS", saved != nil && model.queueEntry(for: saved?.path ?? "")?.held == true)
+        await model.sendWaiting()
+        let three = saved.map { nasRoot.appendingPathComponent("homes/david/Photos/\($0.deletingLastPathComponent().lastPathComponent)/\($0.lastPathComponent)") }
+        check("track check: a held photo is not sent", model.queueEntry(for: saved?.path ?? "")?.state == .waiting
+              && !(three.map { fm.fileExists(atPath: $0.path) } ?? true))
+        // Back online with its track: placed, then let go.
+        model.useServiceForTest(TracksService([track("Day three", 2)]), role: .reader)
+        await model.refresh()
+        await waitWhile { model.queueEntries.contains(where: \.held) || model.placingLater }
+        await model.sendWaiting()
+        check("track check: once the service answers, placed and sent", gps(saved) != nil
+              && model.queueEntry(for: saved?.path ?? "")?.state == .sent && three.map { Saver.sha256($0) == Saver.sha256(saved!) } == true,
+              model.queueLine)
+
+        // Taking the card out closes the choice.
+        model.useServiceForTest(DeadService(), role: .reader)
+        (photo, source) = await card("FOUR", 3)
+        await model.read(source, for: david.id)
+        model.cardOutForTest()
+        check("track check: the card out closes the choice", model.trackCheck == nil)
     }
 }
 
@@ -2783,13 +2932,18 @@ extension SelfTest {
         let peopleFile = PeopleStoreFile(url: scratch.appendingPathComponent("oc-people.json"))
         try? peopleFile.save(book)
         let notes = RecordingNotifier()
-        let model = AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("oc-lib"))),
+        // A track under the photos, so nothing stops the save (0.27.0).
+        let lib = TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("oc-lib")))
+        writeGPX(scratch.appendingPathComponent("oc-walk.gpx"), start: Int(shown.timeIntervalSince1970) - 600, count: 1800, name: "Walk")
+        _ = try? await lib.importFile(scratch.appendingPathComponent("oc-walk.gpx"), role: .reader)
+        let model = AppModel(library: lib,
                              peopleStore: peopleFile, history: HistoryStoreFolder(folder: scratch.appendingPathComponent("oc-history")),
                              queue: QueueStoreFile(url: scratch.appendingPathComponent("oc-queue.json")),
                              unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("oc-unplaced.json")),
                              secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("oc-maps")),
                              exifTool: ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool")),
                              nas: FakeNAS(root: scratch.appendingPathComponent("OC-NAS")), notifier: notes, places: FakePlaces())
+        await model.showLibrary()
         let david = model.book.people[0].id
         guard let before = model.book.camera(personId: david, model: "Canon EOS R7") else {
             check("offset code: David's R7 is on the list", false)
@@ -3061,12 +3215,13 @@ extension SelfTest {
               !fm.fileExists(atPath: gone.deletingLastPathComponent().path) && fm.fileExists(atPath: root.path))
         check("tidy: sent 5 days ago, kept", fm.fileExists(atPath: fresh.path))
         check("tidy: a newer copy still to send, kept", fm.fileExists(atPath: waiting.path))
-        check("tidy: waiting for a location, kept", fm.fileExists(atPath: unplacedOne.path))
+        check("tidy: without a location, removed after 30 days like the rest, and off that list",
+              !fm.fileExists(atPath: unplacedOne.path) && ((try? unplacedFile.load()) ?? []).isEmpty)
         check("tidy: changed since it was sent, kept", fm.fileExists(atPath: changed.path))
-        check("tidy: the space freed counted, a copy already gone not", model.freedOnMac == 5000, "\(model.freedOnMac)")
+        check("tidy: the space freed counted, a copy already gone not", model.freedOnMac == 6000, "\(model.freedOnMac)")
         let onDisk = (try? logFile.load()) ?? []
         check("tidy: the record keeps every photo, the removed marked, written to disk",
-              onDisk.count == 7 && onDisk.filter { $0.removed != nil }.count == 3 && onDisk[0].nasPath == "2026.09.01/A_2.jpg")
+              onDisk.count == 7 && onDisk.filter { $0.removed != nil }.count == 4 && onDisk[0].nasPath == "2026.09.01/A_2.jpg")
         model.setKeepOnMac(.untilOnNAS)
         check("tidy: Until on the NAS, the fresh one removed too", !fm.fileExists(atPath: fresh.path)
               && fm.fileExists(atPath: waiting.path) && fm.fileExists(atPath: changed.path))

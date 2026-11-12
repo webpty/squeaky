@@ -32,7 +32,7 @@ struct TracksScreen: View {
             .frame(height: 18)
 
             ScrollView {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 200, maximum: 260), spacing: Style.gap)],
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 230, maximum: 260), spacing: Style.gap)],
                           alignment: .leading, spacing: Style.gap) {
                     ForEach(model.tracks) { track in
                         TrackCard(track: track)
@@ -84,6 +84,12 @@ struct TrackCard: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+            Button {
+                Task { await model.recheckPhotos(for: track) }
+            } label: {
+                Text("Recheck photos for this track").buttonLabel()
+            }
+            .disabled(model.tracksBusy || model.saving || model.placingLater)
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: Style.radius).fill(Color(nsColor: .controlBackgroundColor)))

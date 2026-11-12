@@ -29,6 +29,9 @@ public struct RootView: View {
             SetupView()
                 .textSelection(.enabled)
         }
+        .sheet(isPresented: Binding(get: { model.trackCheck != nil }, set: { if !$0 { model.dontSave() } })) {
+            if let check = model.trackCheck { TrackCheckPanel(check: check) }
+        }
         // Every word in Geotag can be selected and copied.
         .textSelection(.enabled)
     }
@@ -215,6 +218,77 @@ struct ScreenView: View {
             CameraClockWindow()
         case .download:
             DownloadScreen()
+        }
+    }
+}
+
+/// Laid over the window before a card is saved by itself while some of its
+/// photos have no track (0.27.0, David, 12 November 2026): checking, then,
+/// with tracks still missing, nothing is saved until a button is clicked.
+struct TrackCheckPanel: View {
+    @EnvironmentObject var model: AppModel
+    let check: TrackCheck
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Style.gap) {
+            switch check {
+            case .checking:
+                Text("Checking for matching tracks").font(.headline).lineLimit(1)
+                LoaderDots()
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Style.gap)
+            case .noTrack(let count), .offline(let count):
+                if case .offline = check {
+                    Text("The track service isn't answering.").font(.headline).lineLimit(1)
+                }
+                Text(count == 1 ? "No matching track for 1 photo." : "No matching track for \(count) photos.")
+                    .font(check == .noTrack(count) ? .headline : .body)
+                    .lineLimit(1)
+                HStack(spacing: Style.gap) {
+                    Spacer()
+                    Button {
+                        model.dontSave()
+                    } label: {
+                        Text("Don't save").buttonLabel()
+                    }
+                    .keyboardShortcut(.cancelAction)
+                    Button {
+                        model.checkTracksAgain()
+                    } label: {
+                        Text("Check tracks again").buttonLabel()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    Button {
+                        model.saveAnyway()
+                    } label: {
+                        Text("Save anyway").buttonLabel()
+                    }
+                }
+            }
+        }
+        .padding(Style.pad * 1.5)
+        .frame(width: 460)
+        .interactiveDismissDisabled()
+    }
+}
+
+/// Three dots rising in turn while something is waited for.
+struct LoaderDots: View {
+    var body: some View {
+        TimelineView(.animation) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            HStack(spacing: 6) {
+                ForEach(0..<3) { i in
+                    let phase = (t * 2.4 - Double(i) * 0.35).truncatingRemainder(dividingBy: 2.4)
+                    let lift = phase < 1 ? sin(phase * .pi) : 0
+                    Circle()
+                        .fill(Color.secondary)
+                        .frame(width: 8, height: 8)
+                        .offset(y: -6 * lift)
+                        .opacity(0.4 + 0.6 * lift)
+                }
+            }
+            .frame(height: 20)
         }
     }
 }
