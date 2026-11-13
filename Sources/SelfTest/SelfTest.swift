@@ -1309,6 +1309,15 @@ extension SelfTest {
               && model.queueEntry(for: saved?.path ?? "")?.state == .sent && three.map { Saver.sha256($0) == Saver.sha256(saved!) } == true,
               model.queueLine)
 
+        // An eject that fails (a disk that is not there) stops the spinner and lets Eject be clicked again.
+        let ghost = PhotoSource(id: "tc-ghost", name: "GHOST", url: scratch.appendingPathComponent("TC-GHOST"), isCard: true, bsd: "disk987s1")
+        model.choose(ghost)
+        model.askingWhose = nil
+        model.eject()
+        for _ in 0..<100 where model.ejecting != nil { try? await Task.sleep(for: .milliseconds(50)) }
+        check("eject: a failed eject ends the busy state and says so", model.ejecting == nil && model.photosLine.hasPrefix("GHOST was not ejected."),
+              model.photosLine)
+
         // Taking the card out closes the choice.
         model.useServiceForTest(DeadService(), role: .reader)
         (photo, source) = await card("FOUR", 3)

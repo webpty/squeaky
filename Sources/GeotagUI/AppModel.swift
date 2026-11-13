@@ -344,7 +344,9 @@ public final class AppModel: ObservableObject {
     private let cardGuard = CardGuard()
     /// Bumped whenever reading should stop: a new card chosen, or an eject.
     private var readingRound = 0
-    private var ejecting: String?
+    /// The card being ejected, while the Mac closes it: the Photos line spins
+    /// and Eject is dimmed (0.27.2, David, 13 November 2026).
+    @Published public private(set) var ejecting: String?
     private let secrets: SecretStorePort
     private let defaults = UserDefaults.standard
     private var timer: Timer?

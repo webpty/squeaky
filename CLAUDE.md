@@ -204,7 +204,8 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   each of its own disks and checks none is taken.
 - Eject forces the whole disk closed (`kDADiskUnmountOptionForce |
   kDADiskUnmountOptionWhole`, on the whole disk, never a partition) and
-  ejects it; under a second, open files or not.
+  ejects it; under a second, open files or not. While it ejects, the Photos line spins and
+  Eject is dimmed (0.27.2, David, 13 November 2026).
 - Test the guard only on a disk image named GTTEST with a GEOTAG_TEST
   folder (`GEOTAG_GUARD_TEST=1`), never with a DCIM folder: Geotag on
   David's Mac would take a DCIM test disk for a real card.

@@ -212,6 +212,7 @@ struct PhotosScreen: View {
                         } label: {
                             Text("Eject").buttonLabel()
                         }
+                        .disabled(model.ejecting != nil)
                     }
                 }
                 Tile(label: "Person", value: model.importPerson.flatMap { model.book.person($0)?.name } ?? "Nobody yet") {
@@ -229,7 +230,7 @@ struct PhotosScreen: View {
             HStack(spacing: 8) {
                 // Nothing else to say: a camera whose clock is far out, and where to set it.
                 StatusLine(text: model.photosLine.isEmpty ? PhotoText.clockNote(model.wrongClocks) : model.photosLine, lines: 2,
-                           busy: model.photosBusy,
+                           busy: model.photosBusy || model.ejecting != nil,
                            progress: model.saving ? Double(model.saveDone) / Double(max(model.saveTotal, 1)) : nil)
                 if let fix = model.photosFix {
                     Button {
