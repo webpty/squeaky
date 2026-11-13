@@ -241,7 +241,7 @@ struct TrackCheckPanel: View {
                 if case .offline = check {
                     Text("The track service isn't answering.").font(.headline).lineLimit(1)
                 }
-                Text(count == 1 ? "No matching track for 1 photo." : "No matching track for \(count) photos.")
+                Text("Not all photos have a track. Make sure this is correct.")
                     .font(check == .noTrack(count) ? .headline : .body)
                     .lineLimit(1)
                 HStack(spacing: Style.gap) {

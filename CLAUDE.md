@@ -540,7 +540,8 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   the gap, `checkTracksBeforeSave` lays `TrackCheckPanel` over the window:
   "Checking for matching tracks" with loader dots while the tracks are
   loaded again (Strava pulled too); all matched, it closes and the card
-  saves. Else "No matching track for 12 photos." (with "The track service
+  saves. Else "Not all photos have a track. Make sure this is correct."
+  (David, 13 November 2026; with "The track service
   isn't answering." above when it could not be reached) and Don't save,
   Check tracks again (the default button, blue, Return), Save anyway;
   Escape is Don't save. Nothing is saved until one is clicked. Taking the
