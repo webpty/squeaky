@@ -24,6 +24,12 @@ struct SettingsTab: View {
                 Section("iCloud Drive") {
                     LabeledContent("Geotag folder", value: cloudName ?? "Not chosen")
                     Button(cloudName == nil ? "Choose" : "Change") { choose(.cloud) }
+                    if cloudName != nil {
+                        Button("Remove", role: .destructive) {
+                            model.forgetCloudFolder()
+                            cloudName = nil
+                        }
+                    }
                     if let problem = model.cloudProblem, cloudName != nil {
                         Text(problem).foregroundStyle(.secondary)
                     }
@@ -35,13 +41,21 @@ struct SettingsTab: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                     SecureField("Key", text: $model.serviceKey)
-                    Button("Save") { Task { await model.saveService() } }
-                        .disabled(model.settingsBusy)
+                    if model.serviceUnsaved {
+                        Button("Save") { Task { await model.saveService() } }
+                            .disabled(model.settingsBusy)
+                    }
                     StatusRow(text: model.settingsLine, busy: model.settingsBusy)
                 }
                 Section("NAS") {
                     LabeledContent("Folder", value: nasName ?? "Not chosen")
                     Button(nasName == nil ? "Choose" : "Change") { choose(.nas) }
+                    if nasName != nil {
+                        Button("Remove", role: .destructive) {
+                            nasName = nil
+                            Task { await model.forgetNASFolder() }
+                        }
+                    }
                     StatusRow(text: model.nasLine, busy: model.nasBusy)
                 }
                 Section("People") {

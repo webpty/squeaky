@@ -1995,6 +1995,20 @@ public final class AppModel: ObservableObject {
         await refresh()
     }
 
+    /// No folder in iCloud Drive any more: nothing more is synced.
+    public func forgetCloudFolder() {
+        PhoneFolders.forget(PhoneFolders.cloudKey)
+        cloudFolder = nil
+        cloudProblem = nil
+    }
+
+    /// No NAS folder any more: sending waits until one is chosen.
+    public func forgetNASFolder() async {
+        PhoneFolders.forget(PhoneFolders.nasKey)
+        nasLine = ""
+        await checkNAS()
+    }
+
     /// The NAS folder chosen in Settings on the phone: tried at once.
     public func useNASFolder() async {
         nextTry = nil
