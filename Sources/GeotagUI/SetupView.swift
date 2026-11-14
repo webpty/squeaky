@@ -1,3 +1,4 @@
+#if os(macOS)
 import SwiftUI
 import GeotagCore
 
@@ -252,3 +253,5 @@ struct SetupView: View {
         }
     }
 }
+
+#endif

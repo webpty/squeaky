@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 
 extension CameraGuide {
@@ -99,3 +100,5 @@ extension CameraGuide {
         ],
         source: URL(string: "https://asia.canon/en/support/0300472001")!)
 }
+
+#endif

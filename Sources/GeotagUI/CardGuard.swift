@@ -1,5 +1,8 @@
+#if os(macOS)
 import AppKit
+#if os(macOS)
 import DiskArbitration
+#endif
 import GeotagCore
 import os
 
@@ -321,3 +324,5 @@ public final class CardGuard {
         }
     }
 }
+
+#endif

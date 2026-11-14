@@ -1,3 +1,4 @@
+#if os(macOS)
 import AppKit
 import QuickLook
 import QuickLookThumbnailing
@@ -800,3 +801,5 @@ public struct SheetProbe: View {
         .background(Color(nsColor: .windowBackgroundColor))
     }
 }
+
+#endif

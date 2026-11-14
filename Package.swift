@@ -6,6 +6,7 @@ let package = Package(
     platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
         .library(name: "GeotagCore", targets: ["GeotagCore"]),
+        .library(name: "GeotagUI", targets: ["GeotagUI"]),
         .executable(name: "Geotag", targets: ["GeotagApp"]),
         .executable(name: "SelfTest", targets: ["SelfTest"]),
     ],

@@ -1,5 +1,10 @@
+import Foundation
+#if os(macOS)
 import AppKit
+#endif
+#if os(macOS)
 import ServiceManagement
+#endif
 import GeotagCore
 
 /// Somewhere photos come from: a camera card, or a folder chosen by hand.
@@ -21,6 +26,7 @@ public struct PhotoSource: Identifiable, Equatable, Sendable {
     }
 }
 
+#if os(macOS)
 /// Notices camera cards as they come and go: any disk with a DCIM folder.
 @MainActor
 public final class CardWatcher {
@@ -94,11 +100,14 @@ public enum LoginItem {
     }
 }
 
+#endif
+
 public enum Windows {
 
     /// Geotag to the front, opening its window again if it was closed.
     @MainActor
     public static func bringForward() {
+        #if os(macOS)
         NSApp.activate(ignoringOtherApps: true)
         if let window = NSApp.windows.first(where: { $0.canBecomeMain && $0.isVisible }) {
             window.makeKeyAndOrderFront(nil)
@@ -106,5 +115,6 @@ public enum Windows {
             // Opening the app again makes it reopen its window.
             NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: NSWorkspace.OpenConfiguration())
         }
+        #endif
     }
 }

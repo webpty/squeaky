@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import GeotagCore
 
@@ -56,6 +57,7 @@ public final class SendMeter: ObservableObject {
     }
 }
 
+#if os(macOS)
 enum QueueText {
     static func status(_ entry: QueueEntry) -> String {
         switch entry.state {
@@ -383,3 +385,5 @@ public struct NASCardProbe: View {
             .background(Color(nsColor: .windowBackgroundColor))
     }
 }
+
+#endif

@@ -1,3 +1,4 @@
+#if os(macOS)
 import AppKit
 import QuickLookThumbnailing
 import SwiftUI
@@ -199,3 +200,5 @@ public struct AlignmentProbe: View {
     public init() {}
     public var body: some View { AlignmentView().background(Color(nsColor: .windowBackgroundColor)) }
 }
+
+#endif

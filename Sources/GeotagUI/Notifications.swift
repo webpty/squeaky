@@ -1,4 +1,7 @@
+import Foundation
+#if os(macOS)
 import AppKit
+#endif
 import UserNotifications
 
 /// How Geotag tells you something while you are elsewhere.

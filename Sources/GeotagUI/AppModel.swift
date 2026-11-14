@@ -1,4 +1,8 @@
+#if os(macOS)
 import AppKit
+#else
+import UIKit
+#endif
 import SwiftUI
 import UniformTypeIdentifiers
 import GeotagCore
@@ -93,7 +97,9 @@ public final class AppModel: ObservableObject {
 
     /// A page of the window. Camera clocks opens on the first camera.
     public func show(_ page: Screen) {
+        #if os(macOS)
         if page == .cameraClocks, let first = CameraGuide.all.first { cameraGuide = first.id }
+        #endif
         screen = page
     }
 
@@ -181,8 +187,12 @@ public final class AppModel: ObservableObject {
 
     /// The Download menu's disk image being made.
     /// The kind of Mac a disk image is being made for, while it is.
+    #if os(macOS)
     @Published public private(set) var downloading: Installer.Chip?
     public var makingDownload: Bool { downloading != nil }
+    #else
+    public var makingDownload: Bool { false }
+    #endif
     /// What became of the last disk image, on the Download page.
     @Published public private(set) var downloadLine = ""
     /// The camera the "Set time and date in camera" window shows.
@@ -237,7 +247,11 @@ public final class AppModel: ObservableObject {
             self.password = password
         }
 
+        #if os(macOS)
         var port: NASOverSMB { NASOverSMB(addresses: [address, backup], user: user, password: password) }
+        #else
+        var port: NASThroughFiles { NASThroughFiles() }
+        #endif
     }
 
     private var nasFields: NASFields {
@@ -325,7 +339,7 @@ public final class AppModel: ObservableObject {
     /// stays in its scratch folder.
     public let cloudFolder: URL?
     /// The photo behind the sidebar, from the last card inserted; nil until one has had a JPEG.
-    @Published public private(set) var sidebarImage: NSImage?
+    @Published public private(set) var sidebarImage: PlatformImage?
     /// Its copy, beside the people list; nil when people are not kept in a file.
     let sidebarFile: URL?
     /// The Macs that have copied their settings to iCloud, and why this one could not.
@@ -340,8 +354,13 @@ public final class AppModel: ObservableObject {
         return "cloudSeen-" + file.url.path
     }
     @Published public private(set) var placingLater = false
+    /// What reads and writes the photos: ExifTool on the Mac, Geotag's own
+    /// writer for CR3 and JPG on the iPhone.
+    private let engine: PhotoEngine?
+    #if os(macOS)
     private let exifTool: ExifTool?
     private let cardGuard = CardGuard()
+    #endif
     /// Bumped whenever reading should stop: a new card chosen, or an eject.
     private var readingRound = 0
     /// The card being ejected, while the Mac closes it: the Photos line spins
@@ -362,7 +381,7 @@ public final class AppModel: ObservableObject {
                 unplaced: UnplacedStorePort = UnplacedStoreFile.standard(),
                 secrets: SecretStorePort = Keychain(),
                 thumbnails: MapThumbnails? = nil,
-                exifTool: ExifTool? = nil,
+                exifTool: Any? = nil,
                 nas: NASPort? = nil,
                 notifier: NotifierPort? = nil,
                 places: PlaceNaming? = nil,
@@ -380,8 +399,11 @@ public final class AppModel: ObservableObject {
         self.photoList = (queue as? QueueStoreFile).map { PhotoListFile.beside($0.url) }
         self.sidebarFile = (peopleStore as? PeopleStoreFile)?.url.deletingLastPathComponent().appendingPathComponent("Sidebar.jpg")
         if let sidebarFile, FileManager.default.fileExists(atPath: sidebarFile.path) {
-            self.sidebarImage = NSImage(contentsOf: sidebarFile)
+            self.sidebarImage = PlatformImage.load(sidebarFile)
         }
+        #if os(iOS)
+        self.cloudFolder = cloudFolder ?? PhoneFolders.cloud()
+        #else
         if let cloudFolder {
             self.cloudFolder = cloudFolder
         } else if let file = peopleStore as? PeopleStoreFile {
@@ -391,10 +413,16 @@ public final class AppModel: ObservableObject {
         } else {
             self.cloudFolder = nil
         }
+        #endif
         self.notifier = notifier ?? MacNotifier.shared
         self.power = power ?? MacPower()
         self.places = places ?? PlaceNames.shared
-        self.exifTool = exifTool ?? ExifTool.bundled()
+        #if os(macOS)
+        self.exifTool = (exifTool as? ExifTool) ?? ExifTool.bundled()
+        self.engine = self.exifTool.map { .exifTool($0) }
+        #else
+        self.engine = .native
+        #endif
         self.library = library
         self.thumbnails = thumbnails ?? MapThumbnails()
         self.peopleStore = peopleStore
@@ -464,7 +492,12 @@ public final class AppModel: ObservableObject {
             sentRecords = seeded
         }
 
-        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+        #if os(macOS)
+        let active = NSApplication.didBecomeActiveNotification
+        #else
+        let active = UIApplication.didBecomeActiveNotification
+        #endif
+        NotificationCenter.default.addObserver(forName: active, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.cameBack() }
         }
     }
@@ -478,11 +511,13 @@ public final class AppModel: ObservableObject {
     /// Light, dark or the Mac's own, for every window. Set on the application
     /// itself: SwiftUI's colour scheme alone left the Mac's own colours behind.
     public func applyAppearance() {
+        #if os(macOS)
         switch appearance {
         case .system: NSApp.appearance = nil
         case .light: NSApp.appearance = NSAppearance(named: .aqua)
         case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
         }
+        #endif
     }
 
     /// As Geotag opens: photos waiting and no answer from the NAS at either
@@ -548,8 +583,10 @@ public final class AppModel: ObservableObject {
         // A window opened again runs this again; the rest is once per launch.
         guard !started else { return }
         started = true
+        #if os(macOS)
         Quitting.cutOff = { [weak self] in self?.quitCutOff() }
         Quitting.beforeQuit = { [weak self] in self?.keepList() }
+        #endif
         // iCloud first: a new install of David's takes everything from it.
         await syncWithCloud()
         if needsSetup {
@@ -679,7 +716,11 @@ public final class AppModel: ObservableObject {
         do {
             let url = try await service.connectLink()
             awaitingStrava = true
+            #if os(macOS)
             NSWorkspace.shared.open(url)
+            #else
+            await UIApplication.shared.open(url)
+            #endif
             settingsLine = "Approve on Strava in the browser."
         } catch {
             settingsLine = error.localizedDescription
@@ -736,6 +777,7 @@ public final class AppModel: ObservableObject {
     // MARK: Photos
 
     private func startCards() {
+        #if os(macOS)
         cardGuard.onHeld = { [weak self] card in
             guard let self else { return }
             self.cards.removeAll { $0.bsd == card.bsd }
@@ -768,9 +810,13 @@ public final class AppModel: ObservableObject {
         cardGuard.start()
         // On by default: the first time, Geotag joins the Login Items.
         if defaults.object(forKey: "openOnCard") == nil { setOpenOnCard(true) }
+        #endif
     }
 
     public func setOpenOnCard(_ on: Bool) {
+        #if os(iOS)
+        openOnCard = false
+        #else
         do {
             try LoginItem.set(on)
             openOnCard = on
@@ -780,6 +826,7 @@ public final class AppModel: ObservableObject {
             openOnCard = LoginItem.isOn
             cardsLine = "The Mac refused: \(error.localizedDescription)"
         }
+        #endif
     }
 
     /// A card picked: first, whose is it.
@@ -803,11 +850,11 @@ public final class AppModel: ObservableObject {
             say("Choose whose card \(source.name) is.", fix: .chooseWhose)
             return
         }
-        guard let folder = person.saveFolder, !folder.isEmpty else {
+        guard let folder = saveFolder(of: person), !folder.isEmpty else {
             say("\(person.name) has no save folder yet.", fix: .chooseFolder(personId))
             return
         }
-        guard let tool = exifTool else {
+        guard let engine else {
             photosLine = "ExifTool is missing from Geotag. Install Geotag again."
             return
         }
@@ -825,7 +872,7 @@ public final class AppModel: ObservableObject {
         // Earlier photos being placed write the same records: wait for them.
         while placingLater { try? await Task.sleep(for: .milliseconds(200)) }
         var later = (try? unplaced.load()) ?? []
-        let saver = Saver(exifTool: tool, folder: URL(fileURLWithPath: folder, isDirectory: true))
+        let saver = Saver(engine: engine, folder: URL(fileURLWithPath: folder, isDirectory: true))
         await Task.detached { saver.clearLeftovers() }.value
         let round = readingRound
         saving = true
@@ -929,10 +976,18 @@ public final class AppModel: ObservableObject {
         photosLine = line
         // Every photo is on this Mac: the NAS copies go from there, so the
         // card is not needed any more (David, 1 November 2026).
+        #if os(iOS)
+        // No eject on the phone: the card is let go of, and can come out.
+        if !stopped, failedCount == 0, savedCount > 0, source.isCard, self.source?.id == source.id {
+            let onPhone = "\(savedCount.formatted()) \(savedCount == 1 ? "photo is" : "photos are") on this iPhone; the NAS copies go from there."
+            letGo(done: onPhone)
+        }
+        #else
         if !stopped, failedCount == 0, savedCount > 0, source.bsd != nil, self.source?.id == source.id {
             let onMac = "\(savedCount.formatted()) \(savedCount == 1 ? "photo is" : "photos are") on this Mac; the NAS copies go from there."
             eject(done: onMac)
         }
+        #endif
     }
 
     /// "Saving 341 of 3,630, about 12 min left", and the warning to connect
@@ -970,12 +1025,16 @@ public final class AppModel: ObservableObject {
         case .chooseWhose:
             if let source { askingWhose = source }
         case .chooseFolder(let id):
+            #if os(macOS)
             guard var person = book.person(id),
                   let url = Folders.choose(startingAt: person.saveFolder) else { return }
             person.saveFolder = url.path
             save(person)
             photosLine = "\(person.name)'s photos are saved in \(Folders.shown(url.path))."
             Task { await savePhotos() }
+            #else
+            _ = id
+            #endif
         case .trackService, .cameras:
             screen = .settings
         case .camera(let id):
@@ -1005,7 +1064,7 @@ public final class AppModel: ObservableObject {
     /// way to fix it: no save folder, or one that can't be found.
     public var saveBlock: (line: String, fix: PhotosFix)? {
         guard let personId = importPerson, let person = book.person(personId) else { return nil }
-        guard let folder = person.saveFolder, !folder.isEmpty else {
+        guard let folder = saveFolder(of: person), !folder.isEmpty else {
             return ("\(person.name) has no save folder yet.", .chooseFolder(personId))
         }
         var isFolder: ObjCBool = false
@@ -1019,7 +1078,7 @@ public final class AppModel: ObservableObject {
     /// Save photos can do something now: a card in, whose it is known, a
     /// save folder there, and photos not saved yet.
     public var canSave: Bool {
-        source != nil && importPerson != nil && exifTool != nil && saveBlock == nil && !readyToSave.isEmpty && !photosBusy && !saving
+        source != nil && importPerson != nil && engine != nil && saveBlock == nil && !readyToSave.isEmpty && !photosBusy && !saving
     }
 
     /// Where a photo is, for naming its folder: the track's position written
@@ -1092,6 +1151,20 @@ public final class AppModel: ObservableObject {
     /// Stops reading, forces the card off now and says when it can come out.
     /// `done` is said after "can come out" once the card is off, in place of
     /// the usual line, and as a notification.
+    #if os(iOS)
+    /// The phone holds nothing to eject: the card is let go of and can come out.
+    public func letGo(done: String? = nil) {
+        guard let card = source else { return }
+        readingRound += 1
+        askingWhose = nil
+        aligning = false
+        PhoneFolders.release(card.url)
+        source = nil
+        photosLine = "\(card.name) can come out." + (done.map { " \($0)" } ?? "")
+    }
+
+    public func eject(done: String? = nil) { letGo(done: done) }
+    #else
     public func eject(done: String? = nil) {
         guard let card = source, let bsd = card.bsd else {
             photosLine = "No card is held to eject."
@@ -1119,6 +1192,17 @@ public final class AppModel: ObservableObject {
             }
         }
     }
+    #endif
+
+    /// Where a person's copies are saved: the folder chosen in People on the
+    /// Mac; on the iPhone, Geotag's own folder for them, made when needed.
+    public func saveFolder(of person: Person) -> String? {
+        #if os(iOS)
+        return PhoneFolders.saveFolder(for: person).path
+        #else
+        return person.saveFolder
+        #endif
+    }
 
     /// Whoever this card belonged to last time.
     public func lastPerson(for source: PhotoSource) -> UUID? {
@@ -1132,7 +1216,7 @@ public final class AppModel: ObservableObject {
         defaults.set(saved, forKey: "cardPeople")
         askingWhose = nil
         importPerson = personId
-        guard let tool = exifTool else {
+        guard let engine else {
             photosLine = "ExifTool is missing from Geotag."
             return
         }
@@ -1149,12 +1233,18 @@ public final class AppModel: ObservableObject {
         photosLine = "Reading 0 of \(total)"
         do {
             let photos = try await Task.detached {
-                try PhotoScanner(exifTool: tool).scan(files) { done in
+                let progress: @Sendable (Int) -> Void = { done in
                     Task { @MainActor [weak self] in
                         guard let self, self.readingRound == round else { return }
                         self.readProgress = (done, total)
                         self.photosLine = "Reading \(done) of \(total)"
                     }
+                }
+                switch engine {
+                #if os(macOS)
+                case .exifTool(let tool): return try PhotoScanner(exifTool: tool).scan(files, progress: progress)
+                #endif
+                case .native: return NativeMetadata.scan(files, progress: progress)
                 }
             }.value
             let past = (try? history.load(personId)) ?? []
@@ -1164,12 +1254,14 @@ public final class AppModel: ObservableObject {
             Task { await chooseSidebarPhoto(photos) }
             noteFirmware(photos, personId: personId)
             noteLenses(photos, personId: personId)
-            let codes = await readOffsetCodes(photos, personId: personId, tool: tool)
+            let codes = await readOffsetCodes(photos, personId: personId)
             guard readingRound == round, self.source?.id == source.id else { return }
             await loadTimeline()
             rematch()
             photosLine = rows.isEmpty ? "No photos on \(source.name)." : codes
-            Task { await noteTemperatures(photos, personId: personId, tool: tool) }
+            #if os(macOS)
+            if case .exifTool(let tool) = engine { Task { await noteTemperatures(photos, personId: personId, tool: tool) } }
+            #endif
             // Every camera set: nothing to line up, so the photos are saved straight
             // away, and the card comes out once they are on the Mac (David, 1 November 2026).
             if camerasReady, saveWhenReady, saveBlock == nil {
@@ -1195,7 +1287,7 @@ public final class AppModel: ObservableObject {
             guard let photo = SidebarPhoto.choose(photos) else { return false }
             return (try? SidebarPhoto.keep(photo, at: file)) != nil
         }.value
-        if kept, let image = NSImage(contentsOf: file) { sidebarImage = image }
+        if kept, let image = PlatformImage.load(file) { sidebarImage = image }
     }
 
     /// A card whose cameras are all set is saved as soon as it is read. Off
@@ -1218,7 +1310,7 @@ public final class AppModel: ObservableObject {
     /// Offset codes among the first and last photos of each camera on the
     /// card: each sets its camera's offset, to the hundredth, and adds a
     /// reading to its drift. Says what was set; empty when nothing was.
-    func readOffsetCodes(_ photos: [ScannedPhoto], personId: UUID, tool: ExifTool) async -> String {
+    func readOffsetCodes(_ photos: [ScannedPhoto], personId: UUID) async -> String {
         var byModel: [String: [ScannedPhoto]] = [:]
         for photo in photos where photo.taken != nil {
             if let model = photo.model { byModel[model, default: []].append(photo) }
@@ -1244,6 +1336,7 @@ public final class AppModel: ObservableObject {
 
     /// The temperature each camera recorded, a photo every quarter of an hour
     /// or so, with where it was taken when known.
+    #if os(macOS)
     func noteTemperatures(_ photos: [ScannedPhoto], personId: UUID, tool: ExifTool) async {
         var picked: [(photo: ScannedPhoto, camera: Camera, at: Date)] = []
         var last: [UUID: Date] = [:]
@@ -1275,6 +1368,7 @@ public final class AppModel: ObservableObject {
         temperatures = next
         try? temperatureStore.save(next)
     }
+    #endif
 
     /// A week after a camera's last offset code photo, and each week after,
     /// one notification to take another (David, 1 November 2026).
@@ -1536,7 +1630,7 @@ public final class AppModel: ObservableObject {
     /// many tried.
     @discardableResult
     public func placeLater(paths: Set<String>? = nil, within: ClosedRange<Date>? = nil) async -> (placed: Int, tried: Int)? {
-        guard !placingLater, !saving, let tool = exifTool else { return nil }
+        guard !placingLater, !saving, let engine else { return nil }
         let entries = (try? unplaced.load()) ?? []
         guard !entries.isEmpty else { return (0, 0) }
         placingLater = true
@@ -1567,7 +1661,7 @@ public final class AppModel: ObservableObject {
                 continue
             }
             let url = URL(fileURLWithPath: entry.localPath)
-            let saver = Saver(exifTool: tool, folder: url.deletingLastPathComponent().deletingLastPathComponent())
+            let saver = Saver(engine: engine, folder: url.deletingLastPathComponent().deletingLastPathComponent())
             // Dates still to correct: what the camera's error now calls for, less what was done at saving.
             let shift = dateShift(entry.photo, personId: entry.personId) - entry.shifted
             if let problem = await Task.detached(operation: { saver.addLocation(to: url, position, shift: shift) }).value {
@@ -1746,7 +1840,7 @@ public final class AppModel: ObservableObject {
                 if connection.ours { ourMounts[connection.folder.path] = connection }
                 nasReach = .through(connection.address)
                 answered = true
-                let host = NASOverSMB.host(connection.address) ?? connection.address
+                let host = Self.host(connection.address)
                 lines.append(shares.count == 1 ? "Connected through \(host)." : "\(share): connected through \(host).")
             } catch {
                 nasReach = .unreachable
@@ -1842,7 +1936,7 @@ public final class AppModel: ObservableObject {
         nonisolated(unsafe) let shared = settings
         let seen = defaults.data(forKey: cloudSeenKey).flatMap { try? JSONDecoder().decode(CloudSync.Seen.self, from: $0) } ?? CloudSync.Seen()
         let local = CloudSync.Local(people: people.url, temperatures: temperatures.url, history: history.folder,
-                                    macName: Host.current().localizedName ?? "This Mac")
+                                    macName: Self.deviceName)
         let outcome: Result<CloudSync.Outcome, Error> = await Task.detached {
             Result { try CloudSync.sync(local, settings: shared, seen: seen, into: folder) }
         }.value
@@ -1862,6 +1956,14 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    static var deviceName: String {
+        #if os(macOS)
+        return Host.current().localizedName ?? "This Mac"
+        #else
+        return UIDevice.current.name
+        #endif
+    }
+
     /// iCloud's settings in place of this Mac's, and shown at once.
     private func takeSettings(_ taken: [String: Any]) {
         for key in CloudCopy.sharedKeys {
@@ -1875,7 +1977,9 @@ public final class AppModel: ObservableObject {
         clock24 = defaults.object(forKey: "clock24") as? Bool
         When.current = When(order: dateOrder, clock24: clock24)
         if let raw = defaults.string(forKey: "appearance"), let mode = Appearance(rawValue: raw) { appearance = mode }
+        #if os(macOS)
         if NSApp != nil { applyAppearance() }
+        #endif
         serviceAddress = defaults.string(forKey: "trackServiceAddress") ?? ""
         savedService = ServiceFields(address: serviceAddress, key: serviceKey)
         mapCredit = defaults.string(forKey: "mapCredit") ?? ""
@@ -1912,7 +2016,7 @@ public final class AppModel: ObservableObject {
         let plan = MacTidy.plan(sentRecords, keep: keepOnMac, busy: busy, now: now)
         guard !plan.remove.isEmpty || !plan.gone.isEmpty else { return }
         let fm = FileManager.default
-        let roots = Set(book.people.compactMap { $0.saveFolder.map { URL(fileURLWithPath: $0).standardizedFileURL.path } })
+        let roots = Set(book.people.compactMap { saveFolder(of: $0).map { URL(fileURLWithPath: $0).standardizedFileURL.path } })
         var records = sentRecords
         var folders: Set<String> = []
         for i in plan.remove {
@@ -2057,11 +2161,20 @@ public final class AppModel: ObservableObject {
     /// the queue changes, so it never goes stale.
     private func sayGoing() {
         guard let address = sendingThrough, meter.count > 0, !sendPaused else { return }
-        let host = NASOverSMB.host(address) ?? address
+        let host = Self.host(address)
         let going = meter.only.map { "\($0.name) to \(host)" } ?? "\(meter.count) photos to \(host) at once"
         var line = going + (sendingLeft().map { ", \($0) left." } ?? ".")
         if let word = sendingSpeed() { line += " \(word.rawValue)." }
         say(line)
+    }
+
+    /// "10.0.10.10" from "smb://10.0.10.10"; on the phone, the NAS folder's name.
+    static func host(_ address: String) -> String {
+        #if os(macOS)
+        return NASOverSMB.host(address) ?? address
+        #else
+        return address
+        #endif
     }
 
     private func size(of entry: QueueEntry) -> Int64 {
@@ -2086,7 +2199,7 @@ public final class AppModel: ObservableObject {
         if !day.isEmpty { folder.appendPathComponent(day, isDirectory: true) }
         let clean = cleanedFolders.insert(folder.path).inserted
         let local = URL(fileURLWithPath: entry.localPath)
-        let tool = exifTool, update = entry.update, meter = self.meter, id = entry.id
+        let engine = self.engine, update = entry.update, meter = self.meter, id = entry.id
         let clock = StepClock()
         let before = SentRecord.stamp(entry.localPath)
         // On a thread of its own: a connection that hangs must not hold up
@@ -2095,7 +2208,7 @@ public final class AppModel: ObservableObject {
             DispatchQueue.global(qos: .utility).async {
                 do {
                     done.resume(returning: .success(try NASSender.send(local, as: name, into: folder, update: update,
-                                                                       clean: clean, exifTool: tool) { step in
+                                                                       clean: clean, engine: engine) { step in
                         clock.saw(step)
                         Task { @MainActor [weak self] in
                             meter.show(step, for: id)
@@ -2240,6 +2353,7 @@ public final class AppModel: ObservableObject {
     /// Downloads folder over one of the same name, and shown there in Finder.
     /// A disk image of this Geotag for that kind of Mac, in Downloads,
     /// shown in Finder. What became of it is said on the Download page.
+    #if os(macOS)
     public func saveDownload(_ chip: Installer.Chip) async {
         guard !makingDownload else { return }
         downloading = chip
@@ -2260,6 +2374,7 @@ public final class AppModel: ObservableObject {
             downloadLine = "Geotag was not saved to Downloads. \(error.localizedDescription)"
         }
     }
+    #endif
 
     // MARK: History
 
@@ -2326,6 +2441,7 @@ public final class AppModel: ObservableObject {
     }
 
     /// Import from the Tracks menu: the Mac's own file window, GPX and FIT only.
+    #if os(macOS)
     public func importWithPanel() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
@@ -2336,6 +2452,7 @@ public final class AppModel: ObservableObject {
         let urls = panel.urls
         Task { await importFiles(urls) }
     }
+    #endif
 
     public func importFiles(_ urls: [URL]) async {
         var added = 0

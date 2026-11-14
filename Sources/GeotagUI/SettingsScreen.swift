@@ -1,3 +1,4 @@
+#if os(macOS)
 import SwiftUI
 import GeotagCore
 
@@ -116,3 +117,5 @@ struct TrackServiceCard: View {
         return "Strava: not connected"
     }
 }
+
+#endif

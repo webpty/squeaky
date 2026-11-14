@@ -1,4 +1,7 @@
+#if os(macOS)
+#if os(macOS)
 import AppKit
+#endif
 
 /// Command-Q always quits, whatever is open (David, 16 October 2026).
 public enum Quitting {
@@ -76,3 +79,5 @@ final class QuitEvents: NSObject {
         MainActor.assumeIsolated { Quitting.now() }
     }
 }
+
+#endif

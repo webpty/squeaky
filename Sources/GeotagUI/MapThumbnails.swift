@@ -1,4 +1,7 @@
+#if os(macOS)
+#if os(macOS)
 import AppKit
+#endif
 import GeotagCore
 
 /// Small map pictures of each track: OpenStreetMap tiles with no words, as the
@@ -215,3 +218,15 @@ actor Gate {
         }
     }
 }
+
+#else
+import GeotagCore
+
+/// The phone shows no map pictures yet: only where they come from is kept.
+@MainActor
+public final class MapThumbnails {
+    public var source: MapSource?
+    public init() {}
+    public func forgetFailures() -> Bool { false }
+}
+#endif

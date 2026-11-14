@@ -1,3 +1,4 @@
+#if os(macOS)
 import SwiftUI
 import UniformTypeIdentifiers
 import GeotagCore
@@ -194,3 +195,5 @@ public struct TracksScreenProbe: View {
     public init() {}
     public var body: some View { TracksScreen().background(Color(nsColor: .windowBackgroundColor)) }
 }
+
+#endif

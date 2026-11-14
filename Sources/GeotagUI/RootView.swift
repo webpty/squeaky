@@ -1,3 +1,4 @@
+#if os(macOS)
 import SwiftUI
 import GeotagCore
 
@@ -292,3 +293,5 @@ struct LoaderDots: View {
         }
     }
 }
+
+#endif

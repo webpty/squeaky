@@ -1,3 +1,4 @@
+#if os(macOS)
 import SwiftUI
 
 /// Ordering a table by any column (David, 6 November 2026): a click sorts
@@ -38,3 +39,5 @@ extension View {
             }
     }
 }
+
+#endif

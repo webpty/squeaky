@@ -1,4 +1,7 @@
+import Foundation
+#if os(macOS)
 import AppKit
+#endif
 import Combine
 
 /// What Geotag is busy with, for the icon in the menu bar: one line for each
@@ -23,6 +26,7 @@ public final class WorkStatus: ObservableObject {
     }
 }
 
+#if os(macOS)
 /// The menu bar's icon: a pin in a ring that fills as the work goes, drawn
 /// as a template so it takes the menu bar's own colour, light or dark.
 public enum WorkIcon {
@@ -116,3 +120,5 @@ public final class MenuBarIcon: NSObject {
         Windows.bringForward()
     }
 }
+
+#endif

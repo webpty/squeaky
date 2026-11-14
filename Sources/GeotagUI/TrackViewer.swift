@@ -1,3 +1,4 @@
+#if os(macOS)
 import SwiftUI
 import GeotagCore
 
@@ -191,3 +192,5 @@ struct LargeTrackMap: View {
         }
     }
 }
+
+#endif

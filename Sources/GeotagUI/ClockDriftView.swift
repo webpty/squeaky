@@ -1,3 +1,4 @@
+#if os(macOS)
 import Charts
 import SwiftUI
 import GeotagCore
@@ -147,3 +148,5 @@ struct CameraDrift: View {
         return names.joined(separator: ", ")
     }
 }
+
+#endif

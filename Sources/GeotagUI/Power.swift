@@ -1,5 +1,10 @@
+import Foundation
+#if os(macOS)
 import AppKit
+#endif
+#if os(macOS)
 import IOKit.ps
+#endif
 
 /// How long the battery has left, as the Mac reckons it.
 public protocol PowerPort: Sendable {
@@ -13,9 +18,13 @@ public struct MacPower: PowerPort {
     public init() {}
 
     public func batteryLeft() -> TimeInterval? {
+        #if os(iOS)
+        return nil
+        #else
         let left = IOPSGetTimeRemainingEstimate()
         guard left != kIOPSTimeRemainingUnlimited, left != kIOPSTimeRemainingUnknown, left > 0 else { return nil }
         return left
+        #endif
     }
 }
 
@@ -42,15 +51,21 @@ public enum Tailscale {
     /// Where it is on this Mac, from the Mac App Store or Tailscale's own download.
     @MainActor
     public static var app: URL? {
+        #if os(iOS)
+        return nil
+        #else
         for id in ["io.tailscale.ipn.macos", "io.tailscale.ipn.macsys"] {
             if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) { return url }
         }
         return nil
+        #endif
     }
 
     @MainActor
     public static func open() {
+        #if os(macOS)
         guard let app else { return }
         NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration())
+        #endif
     }
 }

@@ -1,3 +1,4 @@
+#if os(macOS)
 import AppKit
 import SwiftUI
 import GeotagCore
@@ -107,3 +108,5 @@ public struct CameraClockProbe: View {
     public init() {}
     public var body: some View { CameraClockWindow() }
 }
+
+#endif

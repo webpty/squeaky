@@ -1,7 +1,11 @@
+import Foundation
+#if os(macOS)
 import AppKit
+#endif
 import SwiftUI
 
 /// One corner radius, one padding, used everywhere.
+#if os(macOS)
 public enum Style {
     public static let radius: CGFloat = 10
     public static let pad: CGFloat = 16
@@ -128,6 +132,8 @@ struct HandCursor: ViewModifier {
         }
     }
 }
+
+#endif
 
 public enum Appearance: String, CaseIterable, Identifiable {
     case system

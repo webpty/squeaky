@@ -1,3 +1,4 @@
+#if os(macOS)
 import AppKit
 import SwiftUI
 import GeotagCore
@@ -218,3 +219,5 @@ struct SlippyMap: View {
         return best?.0
     }
 }
+
+#endif
