@@ -337,7 +337,7 @@ public final class AppModel: ObservableObject {
     private var keeping: Task<Void, Never>?
     /// Geotag's folder in iCloud Drive; nil when iCloud Drive is off. A test's
     /// stays in its scratch folder.
-    public let cloudFolder: URL?
+    public private(set) var cloudFolder: URL?
     /// The photo behind the sidebar, from the last card inserted; nil until one has had a JPEG.
     @Published public private(set) var sidebarImage: PlatformImage?
     /// Its copy, beside the people list; nil when people are not kept in a file.
@@ -470,9 +470,27 @@ public final class AppModel: ObservableObject {
         // A send cut off by a crash or a shutdown starts again from the beginning.
         var entries = (try? queue.load()) ?? []
         for i in entries.indices where entries[i].state == .sending { entries[i].state = .waiting }
+        #if os(iOS)
+        // Reinstalled since (every week with a free Apple ID): the copies are
+        // where they were, under this install's folder.
+        if entries.contains(where: { PhoneFolders.current($0.localPath) != $0.localPath }) {
+            for i in entries.indices { entries[i].localPath = PhoneFolders.current(entries[i].localPath) }
+            try? queue.save(entries)
+        }
+        if var list = try? unplaced.load(), list.contains(where: { PhoneFolders.current($0.localPath) != $0.localPath }) {
+            for i in list.indices { list[i].localPath = PhoneFolders.current(list[i].localPath) }
+            try? unplaced.save(list)
+        }
+        #endif
         queueEntries = entries
         keepOnMac = defaults.string(forKey: "keepOnMac").flatMap(KeepOnMac.init(rawValue:)) ?? .thirtyDays
         sentRecords = (try? self.sentLog.load()) ?? []
+        #if os(iOS)
+        if sentRecords.contains(where: { PhoneFolders.current($0.localPath) != $0.localPath }) {
+            for i in sentRecords.indices { sentRecords[i].localPath = PhoneFolders.current(sentRecords[i].localPath) }
+            try? self.sentLog.save(sentRecords)
+        }
+        #endif
         // The list from before a restart, its card out until it comes back.
         if let kept = photoList?.load() {
             rows = kept.rows
@@ -1930,6 +1948,10 @@ public final class AppModel: ObservableObject {
             cloudProblem = "iCloud Drive is off on this Mac."
             return
         }
+        #if os(iOS)
+        // Files in iCloud Drive may be only in iCloud: brought onto the phone first.
+        await Task.detached { PhoneFolders.bringDown(folder) }.value
+        #endif
         let all = defaults.dictionaryRepresentation()
         var settings: [String: Any] = [:]
         for key in CloudCopy.sharedKeys { if let value = all[key] { settings[key] = value } }
@@ -1963,6 +1985,23 @@ public final class AppModel: ObservableObject {
         return UIDevice.current.name
         #endif
     }
+
+    #if os(iOS)
+    /// Geotag's folder in iCloud Drive, chosen in Settings on the phone: the
+    /// people, cameras, settings and photos read come from the Macs.
+    public func useCloudFolder(_ url: URL) async {
+        cloudFolder = url
+        await syncWithCloud()
+        await refresh()
+    }
+
+    /// The NAS folder chosen in Settings on the phone: tried at once.
+    public func useNASFolder() async {
+        nextTry = nil
+        await testNAS()
+        await checkNAS()
+    }
+    #endif
 
     /// iCloud's settings in place of this Mac's, and shown at once.
     private func takeSettings(_ taken: [String: Any]) {
@@ -2169,7 +2208,7 @@ public final class AppModel: ObservableObject {
     }
 
     /// "10.0.10.10" from "smb://10.0.10.10"; on the phone, the NAS folder's name.
-    static func host(_ address: String) -> String {
+    nonisolated public static func host(_ address: String) -> String {
         #if os(macOS)
         return NASOverSMB.host(address) ?? address
         #else

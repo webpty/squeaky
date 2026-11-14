@@ -79,6 +79,35 @@ public enum PhoneFolders {
     /// Geotag's folder in iCloud Drive, as chosen in Settings.
     public static func cloud() -> URL? { folder(cloudKey) }
 
+    /// Every file in a folder in iCloud Drive brought onto the phone, so it
+    /// can be read; waits up to a minute for those still coming.
+    public static func bringDown(_ folder: URL) {
+        let fm = FileManager.default
+        let keys: [URLResourceKey] = [.isRegularFileKey, .ubiquitousItemDownloadingStatusKey]
+        guard let walker = fm.enumerator(at: folder, includingPropertiesForKeys: keys) else { return }
+        var files: [URL] = []
+        for case let url as URL in walker {
+            var file = url
+            // An older iCloud Drive shows a file not on the phone as ".name.icloud".
+            let name = url.lastPathComponent
+            if name.hasPrefix("."), name.hasSuffix(".icloud") {
+                file = url.deletingLastPathComponent().appendingPathComponent(String(name.dropFirst().dropLast(7)))
+            } else if (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) != true {
+                continue
+            }
+            try? fm.startDownloadingUbiquitousItem(at: file)
+            files.append(file)
+        }
+        let coordinator = NSFileCoordinator()
+        let until = Date().addingTimeInterval(60)
+        for file in files {
+            // A coordinated read waits for the file to arrive.
+            var error: NSError?
+            coordinator.coordinate(readingItemAt: file, options: [], error: &error) { _ in }
+            while Date() < until, !fm.fileExists(atPath: file.path) { Thread.sleep(forTimeInterval: 0.2) }
+        }
+    }
+
     /// A card let go of: Geotag stops reading it.
     public static func release(_ url: URL) {
         url.stopAccessingSecurityScopedResource()

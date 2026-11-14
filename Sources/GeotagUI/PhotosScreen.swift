@@ -5,68 +5,6 @@ import QuickLookThumbnailing
 import SwiftUI
 import GeotagCore
 
-enum PhotoText {
-    /// The camera's own clock reading, shown as it was, with its zone.
-    static func taken(_ photo: ScannedPhoto) -> String {
-        taken(raw: photo.taken, zone: photo.zone)
-    }
-
-    /// "2026:10:16 12:00:00" as the camera writes it, in the format chosen in Settings.
-    static func taken(raw: String?, zone: String?) -> String {
-        guard let raw else { return "No time" }
-        let parser = DateFormatter()
-        parser.locale = Locale(identifier: "en_US_POSIX")
-        parser.timeZone = TimeZone(secondsFromGMT: 0)
-        parser.dateFormat = "yyyy:MM:dd HH:mm:ss"
-        guard let date = parser.date(from: raw) else { return raw }
-        return When.current.dayAndTime(date, zone: TimeZone(secondsFromGMT: 0)!, seconds: true) + (zone.map { " (\($0))" } ?? "")
-    }
-
-    static func size(_ bytes: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
-    }
-
-    /// "The Canon EOS R7's clock is 520 d 20 h 5 min behind. Set it in the
-    /// camera: Set time and date in camera, in the menu bar."
-    static func clockNote(_ wrong: [(camera: Camera, offset: Int)]) -> String {
-        guard !wrong.isEmpty else { return "" }
-        let each = wrong.map { "The \($0.camera.model)'s clock is \(OffsetText.describe($0.offset))." }
-        return each.joined(separator: " ") + " Set it in the camera: Set time and date in camera, in the menu bar."
-    }
-
-    /// "1 h 25 min", "45 min", "2 d 3 h": a break between two photos.
-    static func gap(_ seconds: Int) -> String {
-        let minutes = seconds / 60, hours = minutes / 60, days = hours / 24
-        if days > 0 { return hours % 24 == 0 ? "\(days) d" : "\(days) d \(hours % 24) h" }
-        if hours > 0 { return minutes % 60 == 0 ? "\(hours) h" : "\(hours) h \(minutes % 60) min" }
-        return "\(minutes) min"
-    }
-
-    static func location(_ row: ImportRow, gap: Int) -> String {
-        guard let placement = row.placement else { return "" }
-        switch placement {
-        case .matched(let p): return p.fromPoint == 0 ? "Location matched" : "Location matched, \(p.fromPoint) s from the track"
-        case .ownLocation: return "Own location"
-        case .review(let reason):
-            switch reason {
-            case .noTrack: return "No track within \(gap / 60) min"
-            case .offsetNotSet: return "Camera time offset not set"
-            case .zoneNotSet: return "Camera time zone not set"
-            case .noZoneInPhoto: return "No time zone in the photo"
-            case .noTime: return "No time in the photo"
-            case .unknownCamera: return "Camera not registered"
-            }
-        }
-    }
-
-    static func status(_ status: ImportStatus) -> String {
-        switch status {
-        case .new: return "New"
-        case .alreadyImported: return "Already imported"
-        case .unknownCamera: return "Camera not registered"
-        }
-    }
-}
 
 /// A row of the Photos table with what each column is ordered by.
 struct PhotoLine: Identifiable {

@@ -795,6 +795,45 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   `people.json`, `queue.json`, `unplaced.json`, `temperatures.json` and History
   are as they were.
 
+## The iPhone (0.28.0, David, 14 November 2026)
+
+- Same approach as Countries: built on this Mac with Xcode, signed with
+  David's free Apple ID, installed over the cable with
+  `Phone/install_phone.sh`; it runs for 7 days, then is installed again.
+  His phone only. No iCloud entitlement.
+- CR3 and JPG only, never HEIC (David: "the app never handles heic"). CR3
+  first. A .HIF on a card is left there. The Mac is unchanged.
+- ExifTool cannot run on the phone: `NativeMetadata` reads and writes CR3
+  and JPG itself. Canon leaves fixed room for the location (a JPG's GPS block
+  is followed by zeros up to the thumbnail; a CR3's CMT4 box is padded), so
+  the location is written into that room and nothing else moves: the copy
+  has the card's size, and the check proves every other byte is the card's.
+  A file without that room (one ExifTool already rewrote) is refused. The
+  dates, when corrected, are rewritten in place too (EXIF and the CR3's
+  container dates).
+- Proved on the Mac against ExifTool and `Saver.check` with
+  `GEOTAG_ORIGINALS=<folder of camera originals>` (the Savoie R5 Mark II
+  CR3 and JPG): it reads what ExifTool reads on every file, finds room in
+  every one, and every copy passes the Mac's own check. In the simulator,
+  `--write-test` and `--flow-test` (debug builds only) run the phone's own
+  writer and the whole flow: card, track, save, NAS.
+- `GeotagCore` and `GeotagUI` build for both. Mac-only files are wrapped in
+  `#if os(macOS)`; the app model is shared, so the track check, held
+  photos, the queue and the 30-day tidy behave as on the Mac. The phone's
+  screens are its own (`Phone/Geotag`), four tabs: Photos, Tracks, Queue,
+  Settings. No map pictures on the phone yet.
+- The card: chosen in the Files list (a USB-C card reader); no eject, the
+  card is let go of once saved. Copies go in Geotag's folder on the phone
+  (On My iPhone, Geotag, one folder per person). Paths kept in the queue and
+  records are moved to the new install's folder after each reinstall.
+- The NAS: its shared folder, connected in the Files app and chosen once in
+  Settings (`NASThroughFiles`). Sending runs only while Geotag is open; the
+  screen stays on while saving or sending.
+- People, cameras, settings and photos read come from Geotag's folder in
+  iCloud Drive, chosen in Settings, through the same sync as the Macs. A
+  phone joining takes iCloud's settings, never the other way round. The
+  track service key is typed on the phone.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

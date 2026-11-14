@@ -150,7 +150,13 @@ public enum CloudSync {
                 .flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [String: Any] }
             let l = settings.isEmpty ? nil : fingerprint(try plist(settings))
             let c = theirs.flatMap { $0.isEmpty ? nil : try? fingerprint(plist($0)) }
-            switch way(local: l, cloud: c, seen: seen.settings, localNewer: true) {
+            #if os(iOS)
+            // A phone joining takes iCloud's: it never overwrites the Macs' settings with its few.
+            let mineWin = seen.settings != nil
+            #else
+            let mineWin = true
+            #endif
+            switch way(local: l, cloud: c, seen: seen.settings, localNewer: mineWin) {
             case .push:
                 try plist(settings).write(to: cloudSettings, options: .atomic)
                 out.wrote = true

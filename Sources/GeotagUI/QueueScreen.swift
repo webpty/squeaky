@@ -58,35 +58,6 @@ public final class SendMeter: ObservableObject {
 }
 
 #if os(macOS)
-enum QueueText {
-    static func status(_ entry: QueueEntry) -> String {
-        switch entry.state {
-        case .waiting: return "Waiting"
-        case .sending: return "Sending"
-        case .sent: return entry.sentAs.map { "On the NAS as \($0)" } ?? "On the NAS"
-        case .failed: return "Not sent: \(entry.reason ?? "")"
-        }
-    }
-
-    /// A photo on the Photos page, once saved on this Mac.
-    static func photo(_ entry: QueueEntry) -> String {
-        switch entry.state {
-        case .waiting: return "Waiting for the NAS"
-        case .sending: return "Sending to the NAS"
-        case .sent: return "On the NAS"
-        case .failed: return "Not on the NAS: \(entry.reason ?? "")"
-        }
-    }
-
-    static func reach(_ reach: NASReach) -> String {
-        switch reach {
-        case .checking: return "Checking"
-        case .through(let address): return NASOverSMB.host(address) ?? address
-        case .unreachable: return "Not reachable"
-        case .notSetUp: return "Not set up"
-        }
-    }
-}
 
 struct QueueRow: Identifiable {
     let entry: QueueEntry
