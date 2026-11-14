@@ -1,6 +1,8 @@
 import CryptoKit
 import Foundation
+#if os(macOS)
 import NetFS
+#endif
 
 // MARK: - Sending one photo
 
@@ -88,8 +90,15 @@ public enum NASSender {
     /// compared with the Mac's copy, gets the Mac copy's dates, and only then
     /// takes its name. Nothing on the NAS is overwritten, except Geotag's own
     /// earlier copy of the same photo when `update` is set.
+    #if os(macOS)
     public static func send(_ local: URL, as name: String, into folder: URL, update: Bool, clean: Bool,
                             exifTool: ExifTool?, progress: @escaping @Sendable (SendStep) -> Void) throws -> SendOutcome {
+        try send(local, as: name, into: folder, update: update, clean: clean, engine: exifTool.map { .exifTool($0) }, progress: progress)
+    }
+    #endif
+
+    public static func send(_ local: URL, as name: String, into folder: URL, update: Bool, clean: Bool,
+                            engine: PhotoEngine?, progress: @escaping @Sendable (SendStep) -> Void) throws -> SendOutcome {
         let fm = FileManager.default
         progress(.looking)
         guard fm.fileExists(atPath: local.path) else { throw NASError.failed("The copy on this Mac is no longer there.") }
@@ -126,10 +135,10 @@ public enum NASSender {
 
         // Its name: its own, unless another photo has it.
         let samePhoto: (URL, URL) -> Bool = { a, b in
-            exifTool.map { Saver(exifTool: $0, folder: folder).samePhoto(a, b) } ?? false
+            engine.map { Saver(engine: $0, folder: folder).samePhoto(a, b) } ?? false
         }
         let sameLocation: (URL, URL) -> Bool = { a, b in
-            exifTool.map { Saver(exifTool: $0, folder: folder).sameLocation(a, b) } ?? false
+            engine.map { Saver(engine: $0, folder: folder).sameLocation(a, b) } ?? false
         }
         var n = 1
         var target = folder.appendingPathComponent(name)
@@ -373,6 +382,7 @@ public protocol NASPort: Sendable {
     func disconnect(_ connection: NASConnection) async
 }
 
+#if os(macOS)
 /// The real NAS, over the Mac's own file sharing. A shared folder already open
 /// (by Finder, or earlier by Geotag) is used where it is. Geotag opens one
 /// hidden from Finder, and so that a lost connection gives up instead of
@@ -507,6 +517,7 @@ public struct NASOverSMB: NASPort {
 private final class RequestBox: @unchecked Sendable {
     var id: AsyncRequestID?
 }
+#endif
 
 /// Questions still waiting for an answer, by folder.
 final class InFlight: @unchecked Sendable {

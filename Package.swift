@@ -3,8 +3,9 @@ import PackageDescription
 
 let package = Package(
     name: "Geotag",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
+        .library(name: "GeotagCore", targets: ["GeotagCore"]),
         .executable(name: "Geotag", targets: ["GeotagApp"]),
         .executable(name: "SelfTest", targets: ["SelfTest"]),
     ],

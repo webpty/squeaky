@@ -1,5 +1,7 @@
 import Foundation
 
+#if os(macOS)
+
 /// The disk image that puts Geotag on another Mac: the Geotag that is
 /// running, beside a shortcut to Applications, made when asked for, so it
 /// works the same on every Mac (David, 17 October 2026).
@@ -108,3 +110,5 @@ public enum Installer {
         }
     }
 }
+
+#endif

@@ -2,6 +2,15 @@ import CryptoKit
 import Foundation
 import ImageIO
 
+/// What writes and reads the photos' details: ExifTool on the Mac, Geotag's
+/// own reader and writer for CR3 and JPG on the iPhone.
+public enum PhotoEngine: Sendable {
+    #if os(macOS)
+    case exifTool(ExifTool)
+    #endif
+    case native
+}
+
 /// One photo to save, and where it goes.
 public struct SaveItem: Sendable {
     public var photo: ScannedPhoto
@@ -50,12 +59,19 @@ public enum SaveResult: Codable, Equatable, Sendable {
 /// a check is removed (it is Geotag's own copy, never the original), and an
 /// existing file is never overwritten.
 public struct Saver: Sendable {
-    let exifTool: ExifTool
+    let engine: PhotoEngine
     /// The person's save folder.
     public let folder: URL
 
+    #if os(macOS)
     public init(exifTool: ExifTool, folder: URL) {
-        self.exifTool = exifTool
+        self.engine = .exifTool(exifTool)
+        self.folder = folder
+    }
+    #endif
+
+    public init(engine: PhotoEngine, folder: URL) {
+        self.engine = engine
         self.folder = folder
     }
 
@@ -155,9 +171,8 @@ public struct Saver: Sendable {
 
         // The location, and the dates moved, in one go.
         if item.position != nil || item.shift != 0 {
-            let arguments = item.position.map(Self.gpsArguments) ?? ["-q", "-q", "-m", "-overwrite_original", "-P"]
             do {
-                _ = try exifTool.run(arguments + Self.shiftArguments(item.shift) + [work.path])
+                try write(work, original: source, position: item.position, shift: item.shift)
             } catch {
                 return fail(item.position == nil ? "The dates could not be corrected: \(error.localizedDescription)"
                                                  : "The location could not be written: \(error.localizedDescription)")
@@ -206,6 +221,20 @@ public struct Saver: Sendable {
     }
 
     public static let diskFull = "Destination full"
+
+    /// Writes the location and the corrected dates into `work`, a copy of
+    /// `original`: through ExifTool on the Mac, Geotag's own writer on the phone.
+    func write(_ work: URL, original: URL, position: Position?, shift: Int) throws {
+        switch engine {
+        #if os(macOS)
+        case .exifTool(let exifTool):
+            let arguments = position.map(Self.gpsArguments) ?? ["-q", "-q", "-m", "-overwrite_original", "-P"]
+            _ = try exifTool.run(arguments + Self.shiftArguments(shift) + [work.path])
+        #endif
+        case .native:
+            _ = try NativeMetadata.write(into: work, original: original, position: position, shift: shift)
+        }
+    }
 
     /// Geotag's own working copies left by a save that was cut off (a crash, a
     /// Mac switched off): hidden files named ".<photo>.geotag-<id>.<ext>" in
@@ -274,7 +303,11 @@ public struct Saver: Sendable {
     /// The copy opens, its picture is the card's, the location reads back,
     /// its dates moved by exactly `shift` when they were to be corrected, and
     /// no other detail moved. Nil when all is well; else what failed.
-    func check(copy: URL, original: URL, position: Position?, shift: Int = 0) -> String? {
+    public func check(copy: URL, original: URL, position: Position?, shift: Int = 0) -> String? {
+        #if os(macOS)
+        guard case .exifTool(let exifTool) = engine else {
+            return NativeMetadata.check(copy: copy, original: original, position: position, shift: shift)
+        }
         // It opens, the way Finder and Photos open it.
         guard let src = CGImageSourceCreateWithURL(copy as CFURL, nil), CGImageSourceGetCount(src) > 0,
               CGImageSourceCopyPropertiesAtIndex(src, 0, nil) != nil,
@@ -349,6 +382,9 @@ public struct Saver: Sendable {
         let changed = Self.otherDetailsChanged(before, after, datesMoved: shift != 0)
         if !changed.isEmpty { return "Other details changed in the copy: \(changed.prefix(3).joined(separator: ", "))." }
         return nil
+        #else
+        return NativeMetadata.check(copy: copy, original: original, position: position, shift: shift)
+        #endif
     }
 
     /// Tags that differ, leaving out the location itself, the file system's
@@ -375,6 +411,8 @@ public struct Saver: Sendable {
 
     /// Two files carry the same GPS position, or neither has one.
     func sameLocation(_ a: URL, _ b: URL) -> Bool {
+        #if os(macOS)
+        guard case .exifTool(let exifTool) = engine else { return NativeMetadata.sameLocation(a, b) }
         guard let data = try? exifTool.run(["-j", "-n", "-q", "-q", "-GPS:GPSLatitude", "-GPS:GPSLatitudeRef",
                                             "-GPS:GPSLongitude", "-GPS:GPSLongitudeRef", a.path, b.path]),
               let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]], rows.count == 2 else { return false }
@@ -384,10 +422,15 @@ public struct Saver: Sendable {
             return "\(lat)\(r["GPSLatitudeRef"] ?? "") \(lon)\(r["GPSLongitudeRef"] ?? "")"
         }
         return spot(rows[0]) == spot(rows[1])
+        #else
+        return NativeMetadata.sameLocation(a, b)
+        #endif
     }
 
     /// Two files hold the same photo: the same picture and the same moment.
     func samePhoto(_ a: URL, _ b: URL) -> Bool {
+        #if os(macOS)
+        guard case .exifTool(let exifTool) = engine else { return NativeMetadata.samePhoto(a, b) }
         guard let data = try? exifTool.run(["-j", "-q", "-q", "-api", "ImageHashType=SHA256", "-ImageDataHash",
                                             "-DateTimeOriginal", "-SubSecTimeOriginal", a.path, b.path]),
               let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]], rows.count == 2 else {
@@ -398,6 +441,9 @@ public struct Saver: Sendable {
         }
         guard rows[0]["ImageDataHash"] != nil else { return Self.sha256(a) == Self.sha256(b) }
         return id(rows[0]) == id(rows[1])
+        #else
+        return NativeMetadata.samePhoto(a, b)
+        #endif
     }
 }
 
@@ -613,7 +659,7 @@ extension Saver {
         }
         do {
             try fm.copyItem(at: copy, to: work)
-            _ = try exifTool.run(Self.gpsArguments(position) + Self.shiftArguments(shift) + [work.path])
+            try write(work, original: copy, position: position, shift: shift)
             var dates: [FileAttributeKey: Any] = [:]
             if let created { dates[.creationDate] = created }
             if let modified { dates[.modificationDate] = modified }

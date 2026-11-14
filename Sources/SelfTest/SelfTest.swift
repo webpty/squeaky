@@ -50,6 +50,13 @@ struct SelfTest {
             exit(failures == 0 ? 0 : 1)
         }
 
+        if let originals = ProcessInfo.processInfo.environment["GEOTAG_ORIGINALS"] {
+            nativeWriting(scratch, originals: URL(fileURLWithPath: originals))
+            if ProcessInfo.processInfo.environment["GEOTAG_NATIVE_ONLY"] != nil {
+                print(failures == 0 ? "all passed" : "\(failures) failed")
+                exit(failures == 0 ? 0 : 1)
+            }
+        }
         people(scratch)
         if let samples = ProcessInfo.processInfo.environment["GEOTAG_SAMPLES"] {
             saving(scratch, samples: URL(fileURLWithPath: samples),
@@ -2172,6 +2179,128 @@ extension SelfTest {
 
 extension SelfTest {
     /// Altitude above, at and below sea level, and none (10 November 2026).
+    /// Geotag's own writer for the phone, on camera originals (CR3 and JPG
+    /// straight from the card), with ExifTool and the Mac's own check as the
+    /// judge: it reads what ExifTool reads, it finds room in every photo, and
+    /// every copy it writes passes the Mac's check. The originals only read.
+    static func nativeWriting(_ scratch: URL, originals: URL) {
+        let fm = FileManager.default
+        let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+        let files = PhotoScanner.files(in: originals).filter { NativeMetadata.kind($0) != nil }
+        let cr3 = files.filter { $0.pathExtension.lowercased() == "cr3" }, jpg = files.filter { $0.pathExtension.lowercased() != "cr3" }
+        check("native: originals found", !cr3.isEmpty && !jpg.isEmpty, "\(cr3.count) CR3, \(jpg.count) JPG")
+        let hashes = Dictionary(uniqueKeysWithValues: files.map { ($0.path, try? fm.attributesOfItem(atPath: $0.path)[.modificationDate] as? Date) })
+
+        // Reading: the same as ExifTool, for every photo.
+        let byTool = (try? PhotoScanner(exifTool: tool).scan(files) { _ in }) ?? []
+        let mine = NativeMetadata.scan(files) { _ in }
+        var differ: [String] = []
+        for (a, b) in zip(byTool, mine) {
+            var x = a, y = b
+            x.firmware = nil; y.firmware = nil // ExifTool reads it for the newest photo only
+            if let p = x.ownLat, let q = y.ownLat, abs(p - q) < 1e-7 { y.ownLat = p }
+            if let p = x.ownLon, let q = y.ownLon, abs(p - q) < 1e-7 { y.ownLon = p }
+            if x != y { differ.append("\(a.fileName): \(a) vs \(b)") }
+        }
+        check("native: reads what ExifTool reads, on every photo", byTool.count == files.count && differ.isEmpty,
+              "\(differ.count) differ \(differ.prefix(2))")
+        let firmware = Set(mine.compactMap(\.firmware)), toolFirmware = Set(byTool.compactMap(\.firmware))
+        check("native: reads the camera's firmware", !firmware.isEmpty && toolFirmware.isSubset(of: firmware), "\(firmware) \(toolFirmware)")
+
+        // Room for the location in every photo.
+        let spot = Position(lat: -54.8019123, lon: -68.3029456, alt: -3.2, moment: Date(timeIntervalSince1970: 1_794_316_131.456), fromPoint: 0)
+        var refused: [String] = []
+        for url in files {
+            do { _ = try NativeMetadata.patches(for: url, position: spot, shift: 0) } catch { refused.append("\(url.lastPathComponent): \(error.localizedDescription)") }
+        }
+        check("native: finds room for the location in every photo", refused.isEmpty, "\(refused.count) \(refused.prefix(3))")
+
+        // Writing, judged by the Mac's own check.
+        let judge = Saver(exifTool: tool, folder: scratch)
+        let alts: [Double?] = [123.45, 0, -0.1, -0.5, -12.3, nil]
+        let picks = Array(cr3.prefix(6)) + Array(jpg.prefix(6))
+        let photos = NativeMetadata.scan(picks) { _ in }
+        for (i, photo) in photos.enumerated() {
+            let alt = alts[i % alts.count]
+            let where_ = Position(lat: i % 2 == 0 ? -54.8019123 : 38.7128, lon: i % 3 == 0 ? -68.3029456 : 9.1395, alt: alt,
+                                  moment: Date(timeIntervalSince1970: 1_794_316_131.996 + Double(i) * 3600), fromPoint: 0)
+            let saver = Saver(engine: .native, folder: scratch.appendingPathComponent("NATIVE-\(i)"))
+            let result = saver.save(SaveItem(photo: photo, placement: .matched(where_), withoutLocation: false))
+            let label = "native: \(photo.fileName) at \(alt.map { "\($0) m" } ?? "no altitude")"
+            guard case .saved(let url) = result else { check(label + " saved", false, "\(result)"); continue }
+            let size = { (u: URL) in (try? fm.attributesOfItem(atPath: u.path)[.size] as? NSNumber)?.intValue }
+            let verdict = judge.check(copy: url, original: photo.url, position: where_)
+            check(label + ", passes the Mac's check, same size", verdict == nil && size(url) == size(photo.url), verdict ?? "")
+            // ExifTool finds nothing wrong in it.
+            let warn = (try? tool.run(["-q", "-q", "-validate", "-warning", "-a", "-s3", url.path])).map { String(decoding: $0, as: UTF8.self) } ?? "?"
+            let warnBefore = (try? tool.run(["-q", "-q", "-validate", "-warning", "-a", "-s3", photo.url.path])).map { String(decoding: $0, as: UTF8.self) } ?? "?"
+            // Geotag's note is not one of the four words the standard lists;
+            // the Mac's own copies carry the same warning.
+            func lines(_ text: String) -> Set<String> {
+                Set(text.split(separator: "\n").map(String.init).filter {
+                    $0 != "OK" && !$0.hasSuffix(" Warning") && !$0.hasSuffix(" Warnings") && !$0.contains("GPSProcessingMethod")
+                })
+            }
+            check(label + ", no new warnings", lines(warn).isSubset(of: lines(warnBefore)), warn)
+        }
+
+        // The dates corrected along with the location, and with none.
+        let shift = 78_000_000
+        for (n, url) in [cr3.first, jpg.first].compactMap({ $0 }).enumerated() {
+            guard let photo = NativeMetadata.scan([url], progress: { _ in }).first else { continue }
+            for (m, position) in [spot, nil].enumerated() {
+                let saver = Saver(engine: .native, folder: scratch.appendingPathComponent("NATIVE-SHIFT-\(n)-\(m)"))
+                let result = saver.save(SaveItem(photo: photo, placement: .matched(spot), withoutLocation: position == nil, shift: shift))
+                guard case .saved(let copy) = result else { check("native: dates corrected, \(photo.fileName)", false, "\(result)"); continue }
+                let verdict = judge.check(copy: copy, original: photo.url, position: position, shift: shift)
+                let read = (try? tool.read(["QuickTime:CreateDate", "DateTimeOriginal"], from: copy)) ?? [:]
+                check("native: dates corrected \(position == nil ? "without" : "with") a location, \(photo.fileName), passes the Mac's check",
+                      verdict == nil, verdict ?? "\(read)")
+            }
+        }
+
+        // Saved without a location, placed later on the phone.
+        if let url = cr3.last, let photo = NativeMetadata.scan([url], progress: { _ in }).first {
+            let saver = Saver(engine: .native, folder: scratch.appendingPathComponent("NATIVE-LATER"))
+            if case .saved(let copy) = saver.save(SaveItem(photo: photo, placement: .review(.noTrack), withoutLocation: true)) {
+                let unchanged = Saver.sha256(copy) == Saver.sha256(url)
+                let problem = saver.addLocation(to: copy, spot)
+                let verdict = judge.check(copy: copy, original: url, position: spot)
+                check("native: a copy saved without a location gets one later and passes the Mac's check",
+                      unchanged && problem == nil && verdict == nil, "\(problem ?? "") \(verdict ?? "")")
+            } else {
+                check("native: saved without a location", false)
+            }
+        }
+
+        // A copy ExifTool already rewrote has no room left: refused, nothing left behind.
+        if let url = jpg.dropFirst(7).first, let photo = NativeMetadata.scan([url], progress: { _ in }).first {
+            let toolCopy = scratch.appendingPathComponent("NATIVE-REWRITTEN")
+            if case .saved(let rewritten) = Saver(exifTool: tool, folder: toolCopy).save(SaveItem(photo: photo, placement: .matched(spot), withoutLocation: false)),
+               let again = NativeMetadata.scan([rewritten], progress: { _ in }).first {
+                let folder = scratch.appendingPathComponent("NATIVE-ON-REWRITTEN")
+                let result = Saver(engine: .native, folder: folder).save(SaveItem(photo: again, placement: .matched(spot), withoutLocation: false))
+                var ok = false
+                switch result {
+                case .saved(let u): ok = judge.check(copy: u, original: rewritten, position: spot) == nil
+                case .failed: ok = ((try? fm.contentsOfDirectory(atPath: folder.appendingPathComponent(Saver.folderName(again, place: nil)).path)) ?? []).isEmpty
+                default: ok = false
+                }
+                check("native: a file ExifTool rewrote is written correctly or refused cleanly", ok, "\(result)")
+                // The same photo saved by either writer counts as the same photo.
+                if case .saved(let mineCopy) = Saver(engine: .native, folder: scratch.appendingPathComponent("NATIVE-SAME")).save(
+                    SaveItem(photo: photo, placement: .matched(spot), withoutLocation: false)) {
+                    check("native: the same photo saved by ExifTool and by the phone is the same photo",
+                          NativeMetadata.samePhoto(mineCopy, url) && NativeMetadata.sameLocation(mineCopy, rewritten)
+                          && !NativeMetadata.sameLocation(mineCopy, url))
+                }
+            }
+        }
+
+        let after = Dictionary(uniqueKeysWithValues: files.map { ($0.path, try? fm.attributesOfItem(atPath: $0.path)[.modificationDate] as? Date) })
+        check("native: the originals were not changed", after == hashes)
+    }
+
     static func altitude(_ scratch: URL, samples: URL) {
         let fm = FileManager.default
         let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))

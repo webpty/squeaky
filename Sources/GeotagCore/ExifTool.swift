@@ -1,5 +1,7 @@
 import Foundation
 
+#if os(macOS)
+
 /// The ExifTool inside the app, run on the Mac's own Perl.
 public struct ExifTool: Sendable {
     public let script: URL
@@ -47,3 +49,5 @@ public struct ExifTool: Sendable {
         return out
     }
 }
+
+#endif

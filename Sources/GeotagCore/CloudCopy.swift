@@ -21,19 +21,27 @@ public enum CloudCopy {
 
     /// Geotag's folder in iCloud Drive; nil when iCloud Drive is off on this Mac.
     public static var standardFolder: URL? {
+        #if os(iOS)
+        return nil
+        #else
         let drive = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
         var folder: ObjCBool = false
         guard FileManager.default.fileExists(atPath: drive.path, isDirectory: &folder), folder.boolValue else { return nil }
         return drive.appendingPathComponent("Geotag", isDirectory: true)
+        #endif
     }
 
     /// This Mac, the same after every restart and rename.
     public static var macId: String {
+        #if os(iOS)
+        return "iphone"
+        #else
         var uuid: uuid_t = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         var wait = timespec(tv_sec: 0, tv_nsec: 0)
         guard gethostuuid(&uuid, &wait) == 0 else { return "unknown" }
         return UUID(uuid: uuid).uuidString
+        #endif
     }
 
     public struct Mac: Codable, Equatable, Sendable {

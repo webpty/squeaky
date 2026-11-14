@@ -221,6 +221,7 @@ public struct CameraReading: Equatable, Sendable {
 public enum CameraReader {
     /// Reads the model and the time zone from a photo. ExifTool when there is
     /// one: the Mac's own reading misses the zone in Canon raw files.
+    #if os(macOS)
     public static func read(_ url: URL, exifTool: ExifTool? = .bundled()) -> CameraReading? {
         if let exifTool, let tags = try? exifTool.read(["Model", "OffsetTimeOriginal", "OffsetTime"], from: url),
            let model = tags["Model"]?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty {
@@ -229,6 +230,12 @@ public enum CameraReader {
         }
         return readWithImageIO(url)
     }
+    #else
+    public static func read(_ url: URL) -> CameraReading? {
+        if let d = try? NativeMetadata.read(url), let model = d.model { return CameraReading(model: model, zone: d.zone) }
+        return readWithImageIO(url)
+    }
+    #endif
 
     static func readWithImageIO(_ url: URL) -> CameraReading? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),

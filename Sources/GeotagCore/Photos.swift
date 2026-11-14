@@ -60,7 +60,9 @@ public struct ScannedPhoto: Identifiable, Codable, Equatable, Sendable {
 /// Reads every photo in a folder and below, through ExifTool. Reading only:
 /// nothing on the card is ever written.
 public struct PhotoScanner: Sendable {
+    #if os(macOS)
     let exifTool: ExifTool
+    #endif
 
     /// A real position: both numbers there, and not the 0, 0 some cameras write.
     static func hasLocation(_ row: [String: Any]) -> Bool {
@@ -69,9 +71,11 @@ public struct PhotoScanner: Sendable {
         return !(lat == 0 && lon == 0)
     }
 
+    #if os(macOS)
     public init(exifTool: ExifTool) {
         self.exifTool = exifTool
     }
+    #endif
 
     /// Every photo file, in name order, hidden folders left out.
     public static func files(in folder: URL) -> [URL] {
@@ -84,6 +88,7 @@ public struct PhotoScanner: Sendable {
         return out.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }
 
+    #if os(macOS)
     /// The photos' details, a batch at a time; `progress` hears how many are read.
     public func scan(_ files: [URL], progress: @Sendable (Int) -> Void) throws -> [ScannedPhoto] {
         var out: [ScannedPhoto] = []
@@ -144,6 +149,7 @@ public struct PhotoScanner: Sendable {
             photos[i].firmware = Firmware.version(["CanonFirmwareVersion", "FirmwareVersion", "Software"].map { row[$0].map { "\($0)" } })
         }
     }
+    #endif
 }
 
 // MARK: - History
