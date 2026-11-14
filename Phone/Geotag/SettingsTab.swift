@@ -7,7 +7,9 @@ import UniformTypeIdentifiers
 /// iCloud Drive (people, cameras and settings from the Macs) and the NAS.
 struct SettingsTab: View {
     @ObservedObject var model: AppModel
-    @State private var choosing: Choice?
+    @State private var choosing = false
+    @State private var choice = Choice.cloud
+    @State private var problem: String?
     @State private var cloudName = PhoneFolders.name(PhoneFolders.cloudKey)
     @State private var nasName = PhoneFolders.name(PhoneFolders.nasKey)
 
@@ -21,7 +23,7 @@ struct SettingsTab: View {
             Form {
                 Section("iCloud Drive") {
                     LabeledContent("Geotag folder", value: cloudName ?? "Not chosen")
-                    Button("Choose") { choosing = .cloud }
+                    Button("Choose") { choose(.cloud) }
                     if let problem = model.cloudProblem, cloudName != nil {
                         Text(problem).foregroundStyle(.secondary)
                     }
@@ -39,7 +41,7 @@ struct SettingsTab: View {
                 }
                 Section("NAS") {
                     LabeledContent("Folder", value: nasName ?? "Not chosen")
-                    Button("Choose") { choosing = .nas }
+                    Button("Choose") { choose(.nas) }
                     StatusRow(text: model.nasLine, busy: model.nasBusy)
                 }
                 Section("People") {
@@ -56,29 +58,46 @@ struct SettingsTab: View {
                         }
                     }
                 }
+                if let problem {
+                    Section { Text(problem).foregroundStyle(.secondary) }
+                }
                 Section {
                     LabeledContent("Version", value: appVersion)
                 }
             }
             .navigationTitle("Settings")
-            .fileImporter(isPresented: Binding(get: { choosing != nil }, set: { if !$0 { choosing = nil } }),
-                          allowedContentTypes: [.folder]) { result in
-                let which = choosing
-                choosing = nil
-                guard case .success(let url) = result, let which else { return }
-                switch which {
-                case .cloud:
-                    PhoneFolders.forget(PhoneFolders.cloudKey)
-                    try? PhoneFolders.remember(url, as: PhoneFolders.cloudKey)
-                    cloudName = PhoneFolders.name(PhoneFolders.cloudKey)
-                    if let folder = PhoneFolders.cloud() { Task { await model.useCloudFolder(folder) } }
-                case .nas:
-                    PhoneFolders.forget(PhoneFolders.nasKey)
-                    try? PhoneFolders.remember(url, as: PhoneFolders.nasKey)
-                    nasName = PhoneFolders.name(PhoneFolders.nasKey)
-                    Task { await model.useNASFolder() }
+            .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
+                switch result {
+                case .success(let url): keep(url, as: choice)
+                case .failure(let error): problem = error.localizedDescription
                 }
             }
+        }
+    }
+
+    func choose(_ which: Choice) {
+        choice = which
+        problem = nil
+        choosing = true
+    }
+
+    /// The folder kept for next time, and put to use at once.
+    func keep(_ url: URL, as which: Choice) {
+        let key = which == .cloud ? PhoneFolders.cloudKey : PhoneFolders.nasKey
+        PhoneFolders.forget(key)
+        do {
+            try PhoneFolders.remember(url, as: key)
+        } catch {
+            problem = "\(url.lastPathComponent) could not be kept: \(error.localizedDescription)"
+            return
+        }
+        switch which {
+        case .cloud:
+            cloudName = PhoneFolders.name(key)
+            if let folder = PhoneFolders.cloud() { Task { await model.useCloudFolder(folder) } }
+        case .nas:
+            nasName = PhoneFolders.name(key)
+            Task { await model.useNASFolder() }
         }
     }
 }
