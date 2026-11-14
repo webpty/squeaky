@@ -23,7 +23,7 @@ struct SettingsTab: View {
             Form {
                 Section("iCloud Drive") {
                     LabeledContent("Geotag folder", value: cloudName ?? "Not chosen")
-                    Button("Choose") { choose(.cloud) }
+                    Button(cloudName == nil ? "Choose" : "Change") { choose(.cloud) }
                     if let problem = model.cloudProblem, cloudName != nil {
                         Text(problem).foregroundStyle(.secondary)
                     }
@@ -41,7 +41,7 @@ struct SettingsTab: View {
                 }
                 Section("NAS") {
                     LabeledContent("Folder", value: nasName ?? "Not chosen")
-                    Button("Choose") { choose(.nas) }
+                    Button(nasName == nil ? "Choose" : "Change") { choose(.nas) }
                     StatusRow(text: model.nasLine, busy: model.nasBusy)
                 }
                 Section("People") {
