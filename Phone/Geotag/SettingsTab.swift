@@ -58,17 +58,19 @@ struct SettingsTab: View {
                     }
                     StatusRow(text: model.nasLine, busy: model.nasBusy)
                 }
-                Section("People") {
-                    ForEach(model.book.people) { person in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(person.name)
-                            if let nas = person.nasFolder {
-                                Text(nas).font(.caption).foregroundStyle(.secondary)
-                            }
-                            ForEach(model.book.cameras(of: person.id)) { camera in
-                                Text("\(camera.model): \(OffsetText.describe(camera.offsetSeconds))")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
+                Section {
+                    Picker("Person", selection: Binding(get: { model.macOwner }, set: { model.setMacOwner($0) })) {
+                        if model.macOwner == nil { Text("Not chosen").tag(UUID?.none) }
+                        ForEach(model.book.people) { person in
+                            Text(person.name).tag(Optional(person.id))
+                        }
+                    }
+                    if let owner = model.macOwner.flatMap({ model.book.person($0) }) {
+                        if let nas = owner.nasFolder {
+                            LabeledContent("NAS folder", value: nas)
+                        }
+                        ForEach(model.book.cameras(of: owner.id)) { camera in
+                            LabeledContent(camera.model, value: OffsetText.describe(camera.offsetSeconds))
                         }
                     }
                 }

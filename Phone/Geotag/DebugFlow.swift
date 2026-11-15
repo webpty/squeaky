@@ -15,13 +15,15 @@ extension DebugHooks {
         let person = Person(name: "Flow", nasFolder: "share/Geotag")
         model.save(person)
         model.save(Camera(personId: person.id, model: "Canon EOS R5m2", zone: .fromPhoto, offsetSeconds: 0))
+        model.setMacOwner(person.id)
         try? PhoneFolders.remember(nas, as: PhoneFolders.nasKey)
         await model.start()
         await model.importFiles([gpx])
         print("tracks: \(model.tracks.count) \(model.tracksLine)")
         let source = PhotoSource(id: "flow-card", name: "FLOWCARD", url: card, isCard: true)
         model.choose(source)
-        await model.read(source, for: person.id)
+        if model.askingWhose != nil { print("flow: FAILED, asked whose card it is"); return true }
+        try? await Task.sleep(for: .seconds(1))
         while model.saving || model.photosBusy { try? await Task.sleep(for: .milliseconds(200)) }
         print("photos line: \(model.photosLine)")
         for row in model.rows {
@@ -43,6 +45,10 @@ extension DebugHooks {
             if d?.lat == nil { ok = false }
         }
         if landed.count != model.rows.count { ok = false }
+        model.tidyMac(now: Date().addingTimeInterval(90 * 86_400))
+        let kept = model.queueEntries.filter { FileManager.default.fileExists(atPath: $0.localPath) }.count
+        print("  kept on the phone 90 days on: \(kept) of \(model.queueEntries.count)")
+        if kept != model.queueEntries.count { ok = false }
         print(ok ? "flow: all passed" : "flow: FAILED")
         return true
     }

@@ -819,7 +819,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   writer and the whole flow: card, track, save, NAS.
 - `GeotagCore` and `GeotagUI` build for both. Mac-only files are wrapped in
   `#if os(macOS)`; the app model is shared, so the track check, held
-  photos, the queue and the 30-day tidy behave as on the Mac. The phone's
+  photos and the queue behave as on the Mac. The phone's
   screens are its own (`Phone/Geotag`), four tabs: Photos, Tracks, Queue,
   Settings. No map pictures on the phone yet.
 - The card: chosen in the Files list (a USB-C card reader); no eject, the
@@ -827,8 +827,16 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   (On My iPhone, Geotag, one folder per person). Paths kept in the queue and
   records are moved to the new install's folder after each reinstall.
 - The NAS: its shared folder, connected in the Files app and chosen once in
-  Settings (`NASThroughFiles`). Sending runs only while Geotag is open; the
-  screen stays on while saving or sending.
+  Settings (`NASThroughFiles`), matched by the name the Files app shows (a
+  shared folder's own name is internal, "Nm3Lvwhomes" for homes). Sending
+  runs only while Geotag is open; the screen stays on while saving or
+  sending.
+- Copies are never removed from the phone (David, 15 November 2026: each
+  person manages their own photos): `keepOnMac` is always `.always` there.
+- One person per phone (David, 15 November 2026): chosen in Settings
+  (`macOwner`); every card is theirs and nobody is asked; Settings shows
+  only that person's NAS folder and cameras. Choose card is dimmed until a
+  person is chosen.
 - People, cameras, settings and photos read come from Geotag's folder in
   iCloud Drive, chosen in Settings, through the same sync as the Macs. A
   phone joining takes iCloud's settings, never the other way round. The

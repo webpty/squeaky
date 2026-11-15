@@ -484,6 +484,10 @@ public final class AppModel: ObservableObject {
         #endif
         queueEntries = entries
         keepOnMac = defaults.string(forKey: "keepOnMac").flatMap(KeepOnMac.init(rawValue:)) ?? .thirtyDays
+        #if os(iOS)
+        // Each person manages their own photos: the phone never removes a copy (David, 15 November 2026).
+        keepOnMac = .always
+        #endif
         sentRecords = (try? self.sentLog.load()) ?? []
         #if os(iOS)
         if sentRecords.contains(where: { PhoneFolders.current($0.localPath) != $0.localPath }) {
@@ -1117,6 +1121,14 @@ public final class AppModel: ObservableObject {
         results = [:]
         clearPlaces()
         photosLine = ""
+        #if os(iOS)
+        // One person per phone (David, 15 November 2026): every card is theirs.
+        if let owner = macOwner {
+            askingWhose = nil
+            Task { await read(source, for: owner) }
+            return
+        }
+        #endif
         if let person = lastPerson(for: source) {
             askingWhose = nil
             Task { await read(source, for: person) }

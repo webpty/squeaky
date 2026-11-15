@@ -25,7 +25,7 @@ struct PhotosTab: View {
                         Button("Stop") { model.stopSaving() }
                     } else {
                         Button("Choose card") { choosing = true }
-                            .disabled(model.photosBusy)
+                            .disabled(model.photosBusy || model.macOwner == nil)
                         if model.source != nil {
                             Button("Save photos") { Task { await model.savePhotos() } }
                                 .disabled(!model.canSave)
