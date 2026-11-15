@@ -611,8 +611,9 @@ public final class AppModel: ObservableObject {
         guard !started else { return }
         started = true
         #if os(iOS)
-        // Anyone else left on the phone from before is removed.
-        if let owner = macOwner.flatMap({ book.person($0) }), book.people.count > 1 {
+        // Anyone else left on the phone from before is removed, and a NAS
+        // folder kept from before gives way to the server chosen in Settings.
+        if let owner = macOwner.flatMap({ book.person($0) }), book.people.count > 1 || owner.nasFolder != NASThroughFiles.share {
             setPhonePerson(name: owner.name)
         }
         #endif
