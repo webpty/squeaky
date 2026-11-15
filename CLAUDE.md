@@ -833,14 +833,16 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   sending.
 - Copies are never removed from the phone (David, 15 November 2026: each
   person manages their own photos): `keepOnMac` is always `.always` there.
-- One person per phone (David, 15 November 2026): chosen in Settings
-  (`macOwner`); every card is theirs and nobody is asked; Settings shows
-  only that person's NAS folder and cameras. Choose card is dimmed until a
-  person is chosen.
-- People, cameras, settings and photos read come from Geotag's folder in
-  iCloud Drive, chosen in Settings, through the same sync as the Macs. A
-  phone joining takes iCloud's settings, never the other way round. The
-  track service key is typed on the phone.
+- One person per phone (David, 15 November 2026), kept as `macOwner`;
+  every card is theirs and nobody is asked. Choose card is dimmed until the
+  person is saved.
+- Each phone is on its own (David, 15 November 2026): no iCloud, nothing
+  shared with the Macs or other phones except the track service. Settings
+  holds its one person (name and NAS folder; anyone else on the phone is
+  removed), the cameras, added by themselves from the first card (zone from
+  the photo; offset from the offset code or typed in seconds), the track
+  service (address filled with https://geotrac.cc, key typed) and the NAS.
+  Until a camera has an offset its photos are not saved by themselves.
 
 ## Architecture
 

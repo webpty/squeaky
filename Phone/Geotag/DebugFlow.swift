@@ -12,10 +12,8 @@ extension DebugHooks {
         let args = CommandLine.arguments
         guard let i = args.firstIndex(of: "--flow-test"), args.count > i + 3 else { return false }
         let card = URL(fileURLWithPath: args[i + 1]), gpx = URL(fileURLWithPath: args[i + 2]), nas = URL(fileURLWithPath: args[i + 3])
-        let person = Person(name: "Flow", nasFolder: "share/Geotag")
-        model.save(person)
-        model.save(Camera(personId: person.id, model: "Canon EOS R5m2", zone: .fromPhoto, offsetSeconds: 0))
-        model.setMacOwner(person.id)
+        model.setPhonePerson(name: "Flow", nasFolder: "share/Geotag")
+        guard let owner = model.macOwner, model.book.people.count == 1 else { print("flow: FAILED, no person"); return true }
         try? PhoneFolders.remember(nas, as: PhoneFolders.nasKey)
         await model.start()
         await model.importFiles([gpx])
@@ -24,6 +22,14 @@ extension DebugHooks {
         model.choose(source)
         if model.askingWhose != nil { print("flow: FAILED, asked whose card it is"); return true }
         try? await Task.sleep(for: .seconds(1))
+        while model.saving || model.photosBusy { try? await Task.sleep(for: .milliseconds(200)) }
+        // The camera came from the card, with no offset yet: nothing saved by itself.
+        guard var camera = model.book.camera(personId: owner, model: "Canon EOS R5m2"), camera.offsetSeconds == nil,
+              model.results.isEmpty else { print("flow: FAILED, camera not added from the card, or saved without an offset"); return true }
+        print("camera added from the card: \(camera.model), \(model.photosLine)")
+        camera.offsetSeconds = 0
+        model.save(camera)
+        await model.savePhotos()
         while model.saving || model.photosBusy { try? await Task.sleep(for: .milliseconds(200)) }
         print("photos line: \(model.photosLine)")
         for row in model.rows {

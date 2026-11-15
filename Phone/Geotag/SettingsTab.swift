@@ -3,44 +3,63 @@ import GeotagUI
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// What the phone needs of its own: the track service key, Geotag's folder in
-/// iCloud Drive (people, cameras and settings from the Macs) and the NAS.
+/// The phone's own settings: its one person, their cameras, the track
+/// service and the NAS. Each phone is on its own (David, 15 November 2026).
 struct SettingsTab: View {
     @ObservedObject var model: AppModel
     @State private var choosing = false
-    @State private var choice = Choice.cloud
     @State private var problem: String?
-    @State private var cloudName = PhoneFolders.name(PhoneFolders.cloudKey)
     @State private var nasName = PhoneFolders.name(PhoneFolders.nasKey)
+    @State private var name = ""
+    @State private var nasFolder = ""
 
-    enum Choice: Identifiable {
-        case cloud, nas
-        var id: Self { self }
+    var owner: Person? { model.macOwner.flatMap { model.book.person($0) } }
+
+    var personUnsaved: Bool {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines), f = nasFolder.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty else { return false }
+        return n != owner?.name || f != (owner?.nasFolder ?? "")
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("iCloud Drive") {
-                    LabeledContent("Geotag folder", value: cloudName ?? "Not chosen")
-                    Button(cloudName == nil ? "Choose" : "Change") { choose(.cloud) }
-                    if cloudName != nil {
-                        Button("Remove", role: .destructive) {
-                            model.forgetCloudFolder()
-                            cloudName = nil
-                        }
+                Section("Person") {
+                    LabeledContent("Name") {
+                        TextField("", text: $name)
+                            .textContentType(.name)
+                            .multilineTextAlignment(.trailing)
                     }
-                    if let problem = model.cloudProblem, cloudName != nil {
-                        Text(problem).foregroundStyle(.secondary)
+                    LabeledContent("NAS folder") {
+                        TextField("", text: $nasFolder)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .multilineTextAlignment(.trailing)
+                    }
+                    if personUnsaved {
+                        Button("Save") { model.setPhonePerson(name: name, nasFolder: nasFolder) }
+                    }
+                }
+                if let owner, !model.book.cameras(of: owner.id).isEmpty {
+                    Section("Cameras") {
+                        ForEach(model.book.cameras(of: owner.id)) { camera in
+                            CameraRow(model: model, camera: camera)
+                        }
                     }
                 }
                 Section("Track service") {
-                    TextField("Address", text: $model.serviceAddress)
-                        .textContentType(.URL)
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    SecureField("Key", text: $model.serviceKey)
+                    LabeledContent("Address") {
+                        TextField("", text: $model.serviceAddress)
+                            .textContentType(.URL)
+                            .keyboardType(.URL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .multilineTextAlignment(.trailing)
+                    }
+                    LabeledContent("Key") {
+                        SecureField("", text: $model.serviceKey)
+                            .multilineTextAlignment(.trailing)
+                    }
                     if model.serviceUnsaved {
                         Button("Save") { Task { await model.saveService() } }
                             .disabled(model.settingsBusy)
@@ -49,7 +68,10 @@ struct SettingsTab: View {
                 }
                 Section("NAS") {
                     LabeledContent("Folder", value: nasName ?? "Not chosen")
-                    Button(nasName == nil ? "Choose" : "Change") { choose(.nas) }
+                    Button(nasName == nil ? "Choose" : "Change") {
+                        problem = nil
+                        choosing = true
+                    }
                     if nasName != nil {
                         Button("Remove", role: .destructive) {
                             nasName = nil
@@ -57,22 +79,6 @@ struct SettingsTab: View {
                         }
                     }
                     StatusRow(text: model.nasLine, busy: model.nasBusy)
-                }
-                Section {
-                    Picker("Person", selection: Binding(get: { model.macOwner }, set: { model.setMacOwner($0) })) {
-                        if model.macOwner == nil { Text("Not chosen").tag(UUID?.none) }
-                        ForEach(model.book.people) { person in
-                            Text(person.name).tag(Optional(person.id))
-                        }
-                    }
-                    if let owner = model.macOwner.flatMap({ model.book.person($0) }) {
-                        if let nas = owner.nasFolder {
-                            LabeledContent("NAS folder", value: nas)
-                        }
-                        ForEach(model.book.cameras(of: owner.id)) { camera in
-                            LabeledContent(camera.model, value: OffsetText.describe(camera.offsetSeconds))
-                        }
-                    }
                 }
                 if let problem {
                     Section { Text(problem).foregroundStyle(.secondary) }
@@ -82,24 +88,22 @@ struct SettingsTab: View {
                 }
             }
             .navigationTitle("Settings")
+            .onAppear {
+                name = owner?.name ?? ""
+                nasFolder = owner?.nasFolder ?? ""
+            }
             .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
                 switch result {
-                case .success(let url): keep(url, as: choice)
+                case .success(let url): keepNAS(url)
                 case .failure(let error): problem = error.localizedDescription
                 }
             }
         }
     }
 
-    func choose(_ which: Choice) {
-        choice = which
-        problem = nil
-        choosing = true
-    }
-
-    /// The folder kept for next time, and put to use at once.
-    func keep(_ url: URL, as which: Choice) {
-        let key = which == .cloud ? PhoneFolders.cloudKey : PhoneFolders.nasKey
+    /// The NAS folder kept for next time, and tried at once.
+    func keepNAS(_ url: URL) {
+        let key = PhoneFolders.nasKey
         PhoneFolders.forget(key)
         do {
             try PhoneFolders.remember(url, as: key)
@@ -107,13 +111,43 @@ struct SettingsTab: View {
             problem = "\(url.lastPathComponent) could not be kept: \(error.localizedDescription)"
             return
         }
-        switch which {
-        case .cloud:
-            cloudName = PhoneFolders.name(key)
-            if let folder = PhoneFolders.cloud() { Task { await model.useCloudFolder(folder) } }
-        case .nas:
-            nasName = PhoneFolders.name(key)
-            Task { await model.useNASFolder() }
+        nasName = PhoneFolders.name(key)
+        Task { await model.useNASFolder() }
+    }
+}
+
+/// A camera and its clock offset, in seconds ahead (negative behind), set
+/// by the offset code or typed here.
+struct CameraRow: View {
+    @ObservedObject var model: AppModel
+    let camera: Camera
+    @State private var text = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(camera.model)
+            HStack {
+                Text("Offset").foregroundStyle(.secondary)
+                TextField("Seconds", text: $text)
+                    .keyboardType(.numbersAndPunctuation)
+                    .multilineTextAlignment(.trailing)
+                    .onSubmit(save)
+            }
+            Text(OffsetText.describe(camera.offsetSeconds)).font(.caption).foregroundStyle(.secondary)
+            if typed != camera.offsetSeconds, typed != nil {
+                Button("Save", action: save)
+            }
         }
+        .onAppear { text = camera.offsetSeconds.map(String.init) ?? "" }
+        .onChange(of: camera.offsetSeconds) { _, now in text = now.map(String.init) ?? "" }
+    }
+
+    var typed: Int? { Int(text.trimmingCharacters(in: .whitespaces)) }
+
+    func save() {
+        guard let typed else { return }
+        var changed = camera
+        changed.offsetSeconds = typed
+        model.save(changed)
     }
 }

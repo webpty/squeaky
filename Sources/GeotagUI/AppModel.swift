@@ -402,7 +402,9 @@ public final class AppModel: ObservableObject {
             self.sidebarImage = PlatformImage.load(sidebarFile)
         }
         #if os(iOS)
-        self.cloudFolder = cloudFolder ?? PhoneFolders.cloud()
+        // Each phone is on its own (David, 15 November 2026): nothing goes through iCloud.
+        PhoneFolders.forget(PhoneFolders.cloudKey)
+        self.cloudFolder = cloudFolder
         #else
         if let cloudFolder {
             self.cloudFolder = cloudFolder
@@ -455,6 +457,9 @@ public final class AppModel: ObservableObject {
         }
         macOwner = defaults.string(forKey: "macOwner").flatMap(UUID.init(uuidString:)).flatMap { id in book.person(id) != nil ? id : nil }
         serviceAddress = defaults.string(forKey: "trackServiceAddress") ?? ""
+        #if os(iOS)
+        if serviceAddress.isEmpty { serviceAddress = "https://geotrac.cc" }
+        #endif
         role = defaults.string(forKey: "trackServiceRole").flatMap(KeyRole.init(rawValue:))
         readSecrets()
         savedService = ServiceFields(address: serviceAddress, key: serviceKey)
@@ -605,6 +610,12 @@ public final class AppModel: ObservableObject {
         // A window opened again runs this again; the rest is once per launch.
         guard !started else { return }
         started = true
+        #if os(iOS)
+        // Anyone else left on the phone from before is removed.
+        if let owner = macOwner.flatMap({ book.person($0) }), book.people.count > 1 {
+            setPhonePerson(name: owner.name, nasFolder: owner.nasFolder ?? "")
+        }
+        #endif
         #if os(macOS)
         Quitting.cutOff = { [weak self] in self?.quitCutOff() }
         Quitting.beforeQuit = { [weak self] in self?.keepList() }
@@ -1279,6 +1290,9 @@ public final class AppModel: ObservableObject {
             }.value
             let past = (try? history.load(personId)) ?? []
             guard readingRound == round, self.source?.id == source.id else { return }
+            #if os(iOS)
+            addCameras(photos, personId: personId)
+            #endif
             rows = ImportList.rows(photos, history: past, book: book, personId: personId)
             refreshBreaks()
             Task { await chooseSidebarPhoto(photos) }
@@ -1999,19 +2013,31 @@ public final class AppModel: ObservableObject {
     }
 
     #if os(iOS)
-    /// Geotag's folder in iCloud Drive, chosen in Settings on the phone: the
-    /// people, cameras, settings and photos read come from the Macs.
-    public func useCloudFolder(_ url: URL) async {
-        cloudFolder = url
-        await syncWithCloud()
-        await refresh()
+    /// The phone's one person (David, 15 November 2026): made the first time,
+    /// changed after; anyone else on the phone, and their cameras, removed.
+    public func setPhonePerson(name: String, nasFolder: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nas = nasFolder.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        var person = macOwner.flatMap { book.person($0) } ?? Person(name: name)
+        person.name = name
+        person.nasFolder = nas.isEmpty ? nil : nas
+        let keep = person
+        store { book in
+            for other in book.people where other.id != keep.id { book.remove(person: other.id) }
+            book.save(keep)
+        }
+        setMacOwner(person.id)
+        rematch()
     }
 
-    /// No folder in iCloud Drive any more: nothing more is synced.
-    public func forgetCloudFolder() {
-        PhoneFolders.forget(PhoneFolders.cloudKey)
-        cloudFolder = nil
-        cloudProblem = nil
+    /// Each camera on a card the phone has not seen, added for its person,
+    /// its zone from the photos; its offset comes from the offset code.
+    func addCameras(_ photos: [ScannedPhoto], personId: UUID) {
+        let models = Set(photos.compactMap(\.model)).sorted()
+        for model in models where book.camera(personId: personId, model: model) == nil {
+            save(Camera(personId: personId, model: model, zone: .fromPhoto))
+        }
     }
 
     /// No NAS folder any more: sending waits until one is chosen.
