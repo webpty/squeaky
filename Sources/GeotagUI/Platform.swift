@@ -74,7 +74,13 @@ public enum PhoneFolders {
     }
 
     /// The name of the folder kept under `key`, for Settings.
-    public static func name(_ key: String) -> String? { folder(key)?.lastPathComponent }
+    public static func name(_ key: String) -> String? { folder(key).map(shownName) }
+
+    /// A folder's name as the Files app shows it: a shared folder on the NAS
+    /// comes with an internal name of its own ("Nm3Lvwhomes" for homes).
+    public static func shownName(_ url: URL) -> String {
+        (try? url.resourceValues(forKeys: [.localizedNameKey]).localizedName) ?? url.lastPathComponent
+    }
 
     /// Geotag's folder in iCloud Drive, as chosen in Settings.
     public static func cloud() -> URL? { folder(cloudKey) }
@@ -133,25 +139,32 @@ public struct NASThroughFiles: NASPort {
     /// The chosen folder's name stands for the address; none chosen, none.
     public var addresses: [String] { PhoneFolders.name(PhoneFolders.nasKey).map { [$0] } ?? [] }
 
+    /// The folder in `parent` that the Files app shows as `name`.
+    static func child(_ name: String, of parent: URL) -> URL? {
+        let direct = parent.appendingPathComponent(name, isDirectory: true)
+        if FileManager.default.fileExists(atPath: direct.path) { return direct }
+        let inside = (try? FileManager.default.contentsOfDirectory(at: parent, includingPropertiesForKeys: [.localizedNameKey])) ?? []
+        return inside.first { PhoneFolders.shownName($0).caseInsensitiveCompare(name) == .orderedSame }
+    }
+
     public func connect(share: String) async throws -> NASConnection {
         guard let chosen = PhoneFolders.folder(PhoneFolders.nasKey) else {
             throw NASError.failed("Choose the NAS in Settings.")
         }
         // The shared folder itself was chosen, or the NAS above it.
-        let folder = chosen.lastPathComponent.caseInsensitiveCompare(share) == .orderedSame
-            ? chosen : chosen.appendingPathComponent(share, isDirectory: true)
-        let answers = await Task.detached { () -> Bool in
-            var isFolder: ObjCBool = false
-            return FileManager.default.fileExists(atPath: folder.path, isDirectory: &isFolder) && isFolder.boolValue
-                && (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) != nil
+        let found = await Task.detached { () -> URL? in
+            let folder = PhoneFolders.shownName(chosen).caseInsensitiveCompare(share) == .orderedSame
+                ? chosen : NASThroughFiles.child(share, of: chosen)
+            guard let folder, (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) != nil else { return nil }
+            return folder
         }.value
-        guard answers else {
+        guard let folder = found else {
             if (try? FileManager.default.contentsOfDirectory(atPath: chosen.path)) == nil {
                 throw NASError.offline("The NAS isn't answering.")
             }
-            throw NASError.failed("The NAS folder chosen in Settings has no shared folder called \(share).")
+            throw NASError.failed("No shared folder called \(share) was found.")
         }
-        return NASConnection(folder: folder, address: chosen.lastPathComponent, ours: false)
+        return NASConnection(folder: folder, address: PhoneFolders.shownName(chosen), ours: false)
     }
 
     public func disconnect(_ connection: NASConnection) async {}
