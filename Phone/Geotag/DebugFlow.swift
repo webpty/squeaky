@@ -13,15 +13,15 @@ extension DebugHooks {
         guard let i = args.firstIndex(of: "--flow-test"), args.count > i + 3 else { return false }
         let card = URL(fileURLWithPath: args[i + 1]), gpx = URL(fileURLWithPath: args[i + 2]), nas = URL(fileURLWithPath: args[i + 3])
         model.setPhonePerson(name: "Flow")
-        guard let owner = model.macOwner, model.book.people.count == 1 else { print("flow: FAILED, no person"); return true }
+        guard let owner = model.macOwner, model.book.people.filter({ $0.id != PhoneFolders.othersId }).count == 1 else { print("flow: FAILED, no person"); return true }
         try? PhoneFolders.remember(nas, as: PhoneFolders.nasKey)
         await model.start()
         await model.importFiles([gpx])
         print("tracks: \(model.tracks.count) \(model.tracksLine)")
         let source = PhotoSource(id: "flow-card", name: "FLOWCARD", url: card, isCard: true)
         model.choose(source)
-        if model.askingWhose != nil { print("flow: FAILED, asked whose card it is"); return true }
-        try? await Task.sleep(for: .seconds(1))
+        guard model.askingWhose != nil else { print("flow: FAILED, a new card was not asked about"); return true }
+        await model.read(source, for: owner)
         while model.saving || model.photosBusy { try? await Task.sleep(for: .milliseconds(200)) }
         // The camera came from the card, with no offset yet: nothing saved by itself.
         guard var camera = model.book.camera(personId: owner, model: "Canon EOS R5m2"), camera.offsetSeconds == nil,
@@ -55,6 +55,24 @@ extension DebugHooks {
         let kept = model.queueEntries.filter { FileManager.default.fileExists(atPath: $0.localPath) }.count
         print("  kept on the phone 90 days on: \(kept) of \(model.queueEntries.count)")
         if kept != model.queueEntries.count { ok = false }
+        // Someone else's card: saved with locations on the phone, never sent.
+        let before = model.queueEntries.count
+        let theirs = PhotoSource(id: "flow-card-theirs", name: "THEIRCARD", url: card, isCard: true)
+        model.choose(theirs)
+        await model.read(theirs, for: PhoneFolders.othersId)
+        if var camera = model.book.camera(personId: PhoneFolders.othersId, model: "Canon EOS R5m2") {
+            camera.offsetSeconds = 0
+            model.save(camera)
+        }
+        await model.savePhotos()
+        while model.saving || model.photosBusy { try? await Task.sleep(for: .milliseconds(200)) }
+        let others = PhotoScanner.files(in: PhoneFolders.documents.appendingPathComponent("Others"))
+        let placedThere = others.filter { (try? NativeMetadata.read($0))?.lat != nil }.count
+        print("  someone else's card: \(placedThere) of \(others.count) with a location in Others, queue \(before) then \(model.queueEntries.count)")
+        if others.count != model.rows.count || placedThere != others.count || model.queueEntries.count != before { ok = false }
+        // Remembered: the same card again is not asked about.
+        model.choose(theirs)
+        if model.askingWhose != nil { ok = false; print("  asked again about a card it knows") }
         print(ok ? "flow: all passed" : "flow: FAILED")
         return true
     }

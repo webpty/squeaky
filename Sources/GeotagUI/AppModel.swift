@@ -613,7 +613,9 @@ public final class AppModel: ObservableObject {
         #if os(iOS)
         // Anyone else left on the phone from before is removed, and a NAS
         // folder kept from before gives way to the server chosen in Settings.
-        if let owner = macOwner.flatMap({ book.person($0) }), book.people.count > 1 || owner.nasFolder != NASThroughFiles.share {
+        if let owner = macOwner.flatMap({ book.person($0) }),
+           book.people.contains(where: { $0.id != owner.id && $0.id != PhoneFolders.othersId })
+            || owner.nasFolder != NASThroughFiles.share || book.person(PhoneFolders.othersId) == nil {
             setPhonePerson(name: owner.name)
         }
         #endif
@@ -968,12 +970,14 @@ public final class AppModel: ObservableObject {
                     later.append(UnplacedEntry(personId: personId, localPath: url.path, photo: row.photo, shifted: named.shift))
                 }
                 let held = hold && row.placement == .review(.noTrack)
-                changeQueue { $0.append(QueueEntry(personId: personId, localPath: url.path, relativePath: Self.relative(url), held: held)) }
+                if goesToServer(personId) {
+                    changeQueue { $0.append(QueueEntry(personId: personId, localPath: url.path, relativePath: Self.relative(url), held: held)) }
+                }
             case .alreadyThere(let url):
                 savedCount += 1
                 remember(row.photo)
                 // Its first save put it on the queue; should that be lost, it goes on again.
-                if queueIndex[url.path] == nil {
+                if queueIndex[url.path] == nil, goesToServer(personId) {
                     changeQueue { $0.append(QueueEntry(personId: personId, localPath: url.path, relativePath: Self.relative(url))) }
                 }
             case .failed(let why):
@@ -1133,14 +1137,6 @@ public final class AppModel: ObservableObject {
         results = [:]
         clearPlaces()
         photosLine = ""
-        #if os(iOS)
-        // One person per phone (David, 15 November 2026): every card is theirs.
-        if let owner = macOwner {
-            askingWhose = nil
-            Task { await read(source, for: owner) }
-            return
-        }
-        #endif
         if let person = lastPerson(for: source) {
             askingWhose = nil
             Task { await read(source, for: person) }
@@ -1235,6 +1231,16 @@ public final class AppModel: ObservableObject {
         }
     }
     #endif
+
+    /// Whether a person's copies go to the server. On the phone, the photos
+    /// from someone else's card stay on the phone (David, 15 November 2026).
+    func goesToServer(_ personId: UUID) -> Bool {
+        #if os(iOS)
+        return personId != PhoneFolders.othersId
+        #else
+        return true
+        #endif
+    }
 
     /// Where a person's copies are saved: the folder chosen in People on the
     /// Mac; on the iPhone, Geotag's own folder for them, made when needed.
@@ -1715,6 +1721,7 @@ public final class AppModel: ObservableObject {
                 continue
             }
             placed += 1
+            guard goesToServer(entry.personId) else { continue }
             changeQueue { all in
                 // Not sent yet: what goes is the copy as it is now. Sent, or on
                 // its way: it goes again and replaces Geotag's earlier copy.
@@ -2026,8 +2033,10 @@ public final class AppModel: ObservableObject {
         person.nasFolder = NASThroughFiles.share
         let keep = person
         store { book in
-            for other in book.people where other.id != keep.id { book.remove(person: other.id) }
+            for other in book.people where other.id != keep.id && other.id != PhoneFolders.othersId { book.remove(person: other.id) }
             book.save(keep)
+            // Someone else's cards, saved on the phone and never sent.
+            if book.person(PhoneFolders.othersId) == nil { book.save(Person(id: PhoneFolders.othersId, name: "Others")) }
         }
         setMacOwner(person.id)
         rematch()

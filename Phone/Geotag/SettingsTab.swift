@@ -39,6 +39,13 @@ struct SettingsTab: View {
                         }
                     }
                 }
+                if !model.book.cameras(of: PhoneFolders.othersId).isEmpty {
+                    Section(Words.t("Other cameras")) {
+                        ForEach(model.book.cameras(of: PhoneFolders.othersId)) { camera in
+                            CameraRow(model: model, camera: camera)
+                        }
+                    }
+                }
                 Section(Words.t("Track service")) {
                     LabeledContent(Words.t("Address")) {
                         TextField("", text: $model.serviceAddress)

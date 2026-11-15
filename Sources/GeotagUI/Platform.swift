@@ -37,6 +37,10 @@ public enum PhoneFolders {
         return url
     }
 
+    /// Someone else's cards (David, 15 November 2026): their photos are
+    /// saved on the phone under this person, never sent to the server.
+    public static let othersId = UUID(uuidString: "0BE5A1D0-0000-4000-8000-000000000001")!
+
     public static let nasKey = "nasBookmark"
     public static let cloudKey = "cloudBookmark"
 

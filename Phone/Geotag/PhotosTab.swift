@@ -13,8 +13,16 @@ struct PhotosTab: View {
             List {
                 Section {
                     StatusRow(text: model.photosLine, busy: model.photosBusy || model.saving)
-                    if let id = model.importPerson, let person = model.book.person(id) {
-                        LabeledContent(Words.t("Person"), value: person.name)
+                    if let id = model.importPerson, model.book.person(id) != nil {
+                        // Tapped: the card is the other side's, and is read again for it.
+                        Button {
+                            guard let source = model.source, !model.saving else { return }
+                            let other = id == PhoneFolders.othersId ? model.macOwner : PhoneFolders.othersId
+                            if let other { Task { await model.read(source, for: other) } }
+                        } label: {
+                            LabeledContent(Words.t("Card"), value: id == PhoneFolders.othersId ? Words.t("Someone else's") : Words.t("Mine"))
+                        }
+                        .disabled(model.source == nil || model.saving || model.photosBusy)
                     }
                     if !model.rows.isEmpty {
                         LabeledContent(Words.t("Photos"), value: counts)
@@ -52,8 +60,17 @@ struct PhotosTab: View {
                 }
             }
             #if DEBUG
-            .onAppear { if CommandLine.arguments.contains("--choose-card") { choosing = true } }
+            .onAppear {
+                if CommandLine.arguments.contains("--choose-card") { choosing = true }
+                if CommandLine.arguments.contains("--ask-whose") {
+                    model.askingWhose = PhotoSource(id: "debug", name: "EOS_DIGITAL", url: URL(fileURLWithPath: "/"), isCard: true)
+                }
+            }
             #endif
+        }
+        // Apart from the Files list above: two on one view and neither opens.
+        .sheet(isPresented: Binding(get: { model.askingWhose != nil }, set: { if !$0 { model.askingWhose = nil } })) {
+            WhoseCard(model: model)
         }
     }
 
@@ -101,5 +118,30 @@ struct PhotoRow: View {
             }
         }
         return row.status == .alreadyImported ? PhotoText.status(row.status) : PhotoText.location(row, gap: model.maxGapSeconds)
+    }
+}
+
+/// Whose card it is, asked the first time a card is chosen and remembered.
+struct WhoseCard: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(Words.t("Whose card is this?")).font(.headline)
+            VStack(spacing: 10) {
+                Button { pick(model.macOwner) } label: { Text(Words.t("Mine")).frame(maxWidth: .infinity) }
+                    .buttonStyle(.borderedProminent)
+                Button { pick(PhoneFolders.othersId) } label: { Text(Words.t("Someone else's")).frame(maxWidth: .infinity) }
+                    .buttonStyle(.bordered)
+            }
+            .controlSize(.large)
+        }
+        .padding(24)
+        .presentationDetents([.height(200)])
+    }
+
+    func pick(_ id: UUID?) {
+        guard let id, let source = model.askingWhose else { return }
+        Task { await model.read(source, for: id) }
     }
 }

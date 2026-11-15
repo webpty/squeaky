@@ -821,7 +821,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   `#if os(macOS)`; the app model is shared, so the track check, held
   photos and the queue behave as on the Mac. The phone's
   screens are its own (`Phone/Geotag`), four tabs: Photos, Tracks, Queue,
-  Settings. No map pictures on the phone yet.
+  Settings. No map pictures on the phone.
 - The card: chosen in the Files list (a USB-C card reader); no eject, the
   card is let go of once saved. Copies go in Geotag's folder on the phone
   (On My iPhone, Geotag, one folder per person). Paths kept in the queue and
@@ -833,9 +833,17 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   sending.
 - Copies are never removed from the phone (David, 15 November 2026: each
   person manages their own photos): `keepOnMac` is always `.always` there.
-- One person per phone (David, 15 November 2026), kept as `macOwner`;
-  every card is theirs and nobody is asked. Choose card is dimmed until the
-  person is saved.
+- One person per phone (David, 15 November 2026), kept as `macOwner`.
+  Choose card is dimmed until the person is saved.
+- Not every card is the phone's person's (David, 15 November 2026: his
+  partner copies his photos from his card). The first time a card is
+  chosen, Geotag asks "Whose card is this?", Mine or Someone else's,
+  remembered per card; the Card row on the Photos tab changes it. Someone
+  else's photos are tagged as usual and saved under the person "Others"
+  (`PhoneFolders.othersId`, folder Others), never put on the queue, never
+  sent. Their cameras are kept apart, under Other cameras in Settings.
+- Tracks on the phone show their route as a blue line drawn from their own
+  points (David: nothing in Geotag is orange; blue on the phone).
 - The server (David, 15 November 2026): "NAS" is "server" on the phone,
   and the server is any folder the Files app reaches (a file server such as
   the NAS, a USB drive, a storage app). The day folders go straight into the
