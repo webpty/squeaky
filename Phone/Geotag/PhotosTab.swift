@@ -46,12 +46,14 @@ struct PhotosTab: View {
             }
             .navigationTitle(Words.t("Photos"))
             .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
-                guard case .success(let url) = result else { return }
-                model.choose(Self.source(url))
+                switch result {
+                case .success(let url): model.choose(Self.source(url))
+                case .failure(let error): model.tell(error.localizedDescription)
+                }
             }
-            .sheet(isPresented: Binding(get: { model.askingWhose != nil }, set: { if !$0 { model.askingWhose = nil } })) {
-                WhoseCard(model: model)
-            }
+            #if DEBUG
+            .onAppear { if CommandLine.arguments.contains("--choose-card") { choosing = true } }
+            #endif
         }
     }
 
@@ -69,26 +71,6 @@ struct PhotosTab: View {
         let name = values?.volumeName ?? (url.lastPathComponent == "DCIM" ? url.deletingLastPathComponent().lastPathComponent : url.lastPathComponent)
         let id = values?.volumeUUIDString ?? values?.volumeName ?? url.path
         return PhotoSource(id: id, name: name, url: url, isCard: true)
-    }
-}
-
-/// Whose card it is, asked the first time a card is seen.
-struct WhoseCard: View {
-    @ObservedObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            List(model.book.people) { person in
-                Button(person.name) {
-                    guard let source = model.askingWhose else { return }
-                    Task { await model.read(source, for: person.id) }
-                }
-            }
-            .navigationTitle(Words.t("Whose card is {0}?", model.askingWhose?.name ?? ""))
-            .navigationBarTitleDisplayMode(.inline)
-        }
-        .presentationDetents([.medium])
     }
 }
 
