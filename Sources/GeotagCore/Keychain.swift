@@ -11,8 +11,8 @@ public struct KeychainError: Error, LocalizedError {
     let status: OSStatus
 
     public var errorDescription: String? {
-        let text = SecCopyErrorMessageString(status, nil) as String? ?? "error \(status)"
-        return "The keychain refused: \(text)."
+        let text = SecCopyErrorMessageString(status, nil) as String? ?? Words.t("error {0}", status)
+        return Words.t("The keychain refused: {0}.", text)
     }
 }
 

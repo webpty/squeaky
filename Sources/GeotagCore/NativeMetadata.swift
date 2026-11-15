@@ -151,36 +151,36 @@ public enum NativeMetadata {
         guard let src = CGImageSourceCreateWithURL(copy as CFURL, nil), CGImageSourceGetCount(src) > 0,
               CGImageSourceCreateThumbnailAtIndex(src, 0, [kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                                                            kCGImageSourceThumbnailMaxPixelSize: 256] as CFDictionary) != nil else {
-            return "The copy does not open."
+            return Words.t("The copy does not open.")
         }
         let expected: [Patch]
         do {
             expected = try patches(for: original, position: position, shift: shift)
         } catch {
-            return "The copy could not be checked: \(error.localizedDescription)"
+            return Words.t("The copy could not be checked: {0}", error.localizedDescription)
         }
         // Only the expected bytes differ, and they hold what was meant.
         if let problem = compare(copy: copy, original: original, patches: expected) { return problem }
 
         let after: Details
-        do { after = try read(copy) } catch { return "The copy could not be read back: \(error.localizedDescription)" }
+        do { after = try read(copy) } catch { return Words.t("The copy could not be read back: {0}", error.localizedDescription) }
         if let position {
-            guard let lat = after.lat, let lon = after.lon else { return "The location is not in the copy." }
+            guard let lat = after.lat, let lon = after.lon else { return Words.t("The location is not in the copy.") }
             if abs(lat - position.lat) > 1e-6 || abs(lon - position.lon) > 1e-6 {
-                return "The location in the copy is not the one written."
+                return Words.t("The location in the copy is not the one written.")
             }
             if let alt = position.alt {
-                guard let a = after.alt else { return "The altitude is not in the copy." }
-                if abs(a - alt) > 0.5 { return "The altitude in the copy is not the one written." }
+                guard let a = after.alt else { return Words.t("The altitude is not in the copy.") }
+                if abs(a - alt) > 0.5 { return Words.t("The altitude in the copy is not the one written.") }
             }
-            guard after.gpsDate != nil, after.gpsTime?.count == 3 else { return "The GPS time is not in the copy." }
+            guard after.gpsDate != nil, after.gpsTime?.count == 3 else { return Words.t("The GPS time is not in the copy.") }
             guard after.processingMethod == Saver.processingMethod else {
-                return "The note that Geotag added the location is not in the copy."
+                return Words.t("The note that Geotag added the location is not in the copy.")
             }
         }
         if shift != 0, let was = (try? read(original))?.taken {
             guard let want = Saver.shiftedProbe(was, by: shift), after.taken == want else {
-                return "The date in the copy was not corrected."
+                return Words.t("The date in the copy was not corrected.")
             }
         }
         return nil
@@ -189,7 +189,7 @@ public enum NativeMetadata {
     /// Byte for byte: the copy is the original with `patches` applied.
     static func compare(copy: URL, original: URL, patches: [Patch]) -> String? {
         guard let a = try? FileHandle(forReadingFrom: original), let b = try? FileHandle(forReadingFrom: copy) else {
-            return "The copy could not be read back."
+            return Words.t("The copy could not be read back.")
         }
         defer { try? a.close(); try? b.close() }
         let sorted = patches.sorted { $0.offset < $1.offset }
@@ -197,10 +197,10 @@ public enum NativeMetadata {
         while true {
             // The end of a file reads as nothing at all.
             guard let x = try? (a.read(upToCount: 4 << 20) ?? Data()), let y = try? (b.read(upToCount: 4 << 20) ?? Data()) else {
-                return "The copy could not be read back."
+                return Words.t("The copy could not be read back.")
             }
             if x.isEmpty && y.isEmpty { return nil }
-            guard x.count == y.count else { return "The copy is not the size of the card's file." }
+            guard x.count == y.count else { return Words.t("The copy is not the size of the card's file.") }
             let chunk = at..<(at + x.count)
             var want = x
             var touched = false
@@ -210,7 +210,7 @@ public enum NativeMetadata {
                     want[want.startIndex + i - at] = p.bytes[i - p.offset]
                 }
             }
-            if want != y { return touched ? "The location in the copy is not the one written." : "Other details changed in the copy." }
+            if want != y { return touched ? Words.t("The location in the copy is not the one written.") : Words.t("Other details changed in the copy.") }
             at += x.count
         }
     }
@@ -390,14 +390,14 @@ struct Layout {
         switch NativeMetadata.kind(url) {
         case .jpeg: return try jpeg(url)
         case .cr3: return try cr3(url)
-        case nil: throw Failure("Geotag on the iPhone only handles CR3 and JPG.")
+        case nil: throw Failure(Words.t("Geotag on the iPhone only handles CR3 and JPG."))
         }
     }
 
     // A JPG: the EXIF block in its first APP1 segment.
     static func jpeg(_ url: URL) throws -> Layout {
         let d = try head(url, 256 << 10)
-        guard d.count > 4, d[0] == 0xFF, d[1] == 0xD8 else { throw Failure("This is not a JPG.") }
+        guard d.count > 4, d[0] == 0xFF, d[1] == 0xD8 else { throw Failure(Words.t("This is not a JPG.")) }
         var layout = Layout(kind: .jpeg)
         var p = 2
         var tiff: TIFFBlock?
@@ -417,7 +417,7 @@ struct Layout {
             p += 2 + length
         }
         guard let t = tiff, let first = t.firstIFD, let ifd0 = t.ifd(at: first) else {
-            throw Failure("The photo's details could not be found.")
+            throw Failure(Words.t("The photo's details could not be found."))
         }
         layout.ifd0 = (t, first)
         var others: [Range<Int>] = ifd0.used
@@ -460,10 +460,10 @@ struct Layout {
             }
             return size >= header ? (size, type, header) : nil
         }
-        guard let ftyp = box(start, 0), ftyp.type == "ftyp" else { throw Failure("This is not a CR3.") }
+        guard let ftyp = box(start, 0), ftyp.type == "ftyp" else { throw Failure(Words.t("This is not a CR3.")) }
         var d = try head(url, ftyp.size + 16)
         guard let moov = box(d, ftyp.size), moov.type == "moov", moov.size < 16 << 20 else {
-            throw Failure("The photo's details could not be found.")
+            throw Failure(Words.t("The photo's details could not be found."))
         }
         d = try head(url, ftyp.size + moov.size + 64)
         var layout = Layout(kind: .cr3)
@@ -533,17 +533,17 @@ struct Layout {
 
     /// The new GPS block, written over the old one and the room after it.
     func gpsPatch(_ p: Position) throws -> NativeMetadata.Patch {
-        guard let gps else { throw Failure("This photo has no room for a location.") }
+        guard let gps else { throw Failure(Words.t("This photo has no room for a location.")) }
         let t = gps.tiff
-        guard let old = t.ifd(at: gps.ifd) else { throw Failure("This photo has no room for a location.") }
+        guard let old = t.ifd(at: gps.ifd) else { throw Failure(Words.t("This photo has no room for a location.")) }
         // The room must hold only the old block and zeros: never write over
         // anything else the camera put there.
         let mine = old.used
         for i in gps.room where !mine.contains(where: { $0.contains(i) }) {
-            guard t.bytes[i] == 0 else { throw Failure("This photo's room for a location holds something else.") }
+            guard t.bytes[i] == 0 else { throw Failure(Words.t("This photo's room for a location holds something else.")) }
         }
         for r in mine where !(r.lowerBound >= gps.room.lowerBound && r.upperBound <= gps.room.upperBound) {
-            throw Failure("This photo's location is not where Geotag can write it.")
+            throw Failure(Words.t("This photo's location is not where Geotag can write it."))
         }
 
         var calendar = Calendar(identifier: .gregorian)
@@ -602,7 +602,7 @@ struct Layout {
         }
         t.put32(old.next, &table)
         var bytes = table + data
-        guard bytes.count <= gps.room.count else { throw Failure("This photo's room for a location is too small.") }
+        guard bytes.count <= gps.room.count else { throw Failure(Words.t("This photo's room for a location is too small.")) }
         // Cleared to the end of the old block's room, so nothing old is left.
         let clearTo = max(bytes.count, (mine.map(\.upperBound).max() ?? start) - start)
         bytes += [UInt8](repeating: 0, count: clearTo - bytes.count)
@@ -619,11 +619,11 @@ struct Layout {
             let i = at - t.base
             let was = String(decoding: t.bytes[i..<(i + 19)], as: UTF8.self)
             guard let moved = Saver.shiftedProbe(was, by: shift), moved.utf8.count == 19 else {
-                throw Failure("The dates could not be corrected.")
+                throw Failure(Words.t("The dates could not be corrected."))
             }
             out.append(.init(offset: at, bytes: Array(moved.utf8)))
         }
-        guard !out.isEmpty else { throw Failure("The dates could not be corrected.") }
+        guard !out.isEmpty else { throw Failure(Words.t("The dates could not be corrected.")) }
         return out + (try containerPatches(shift))
     }
 

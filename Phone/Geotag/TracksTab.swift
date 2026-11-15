@@ -11,7 +11,7 @@ struct TracksTab: View {
             List {
                 Section {
                     StatusRow(text: model.tracksLine, busy: model.tracksBusy)
-                    Button("Refresh") { Task { await model.refresh(pullStrava: true) } }
+                    Button(Words.t("Refresh")) { Task { await model.refresh(pullStrava: true) } }
                         .disabled(model.tracksBusy)
                 }
                 Section {
@@ -19,7 +19,7 @@ struct TracksTab: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(track.name)
                             Text(Self.line(track)).font(.caption).foregroundStyle(.secondary)
-                            Button("Recheck photos for this track") { Task { await model.recheckPhotos(for: track) } }
+                            Button(Words.t("Recheck photos for this track")) { Task { await model.recheckPhotos(for: track) } }
                                 .font(.caption)
                                 .buttonStyle(.bordered)
                                 .disabled(model.tracksBusy || model.saving || model.placingLater)
@@ -28,7 +28,7 @@ struct TracksTab: View {
                     }
                 }
             }
-            .navigationTitle("Tracks")
+            .navigationTitle(Words.t("Tracks"))
             .refreshable { await model.refresh(pullStrava: true) }
         }
     }
@@ -38,8 +38,8 @@ struct TracksTab: View {
         let zone = track.timeZone.flatMap(TimeZone.init(identifier:)) ?? .current
         var parts = [When.current.dayAndTime(track.start, zone: zone, seconds: false)]
         let minutes = Int(track.end.timeIntervalSince(track.start) / 60)
-        parts.append(minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(minutes) min")
-        if let metres = track.distance { parts.append(String(format: "%.1f km", metres / 1000)) }
+        parts.append(minutes >= 60 ? Words.t("{0} h", minutes / 60) + " " + Words.t("{0} min", minutes % 60) : Words.t("{0} min", minutes))
+        if let metres = track.distance { parts.append(Words.t("{0} km", String(format: "%.1f", metres / 1000))) }
         return parts.joined(separator: " · ")
     }
 }

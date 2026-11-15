@@ -836,10 +836,23 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - One person per phone (David, 15 November 2026), kept as `macOwner`;
   every card is theirs and nobody is asked. Choose card is dimmed until the
   person is saved.
+- The server (David, 15 November 2026): "NAS" is "server" on the phone,
+  and the server is any folder the Files app reaches (a file server such as
+  the NAS, a USB drive, a storage app). The day folders go straight into the
+  chosen folder; the person has no NAS folder of their own on the phone
+  (`NASThroughFiles.share`). With a storage app the read-back check reads
+  the app's own copy on the phone. Settings, Server has the steps to
+  connect a file server.
+- Five languages on the phone (David, 15 November 2026), as Countries:
+  English, Spanish, French, Simplified and Traditional Chinese, following
+  the phone's language. Every text goes through `Words.t("template {0}",
+  ...)`; the phone loads `Phone/Geotag/Words/words-<language>.json` at
+  launch. The Mac loads nothing and shows the templates, so it stays in
+  English and keeps "NAS". The phone's English list turns NAS into server
+  and this Mac into this iPhone. Every new text needs all five lists.
 - Each phone is on its own (David, 15 November 2026): no iCloud, nothing
   shared with the Macs or other phones except the track service. Settings
-  holds its one person (name and NAS folder; anyone else on the phone is
-  removed), the cameras, added by themselves from the first card (zone from
+  holds its one person (anyone else on the phone is removed), the cameras, added by themselves from the first card (zone from
   the photo; offset from the offset code or typed in seconds), the track
   service (address filled with https://geotrac.cc, key typed) and the NAS.
   Until a camera has an offset its photos are not saved by themselves.

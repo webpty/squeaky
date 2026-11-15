@@ -9,7 +9,7 @@ public enum PhotoText {
 
     /// "2026:10:16 12:00:00" as the camera writes it, in the format chosen in Settings.
     public static func taken(raw: String?, zone: String?) -> String {
-        guard let raw else { return "No time" }
+        guard let raw else { return Words.t("No time") }
         let parser = DateFormatter()
         parser.locale = Locale(identifier: "en_US_POSIX")
         parser.timeZone = TimeZone(secondsFromGMT: 0)
@@ -26,40 +26,40 @@ public enum PhotoText {
     /// camera: Set time and date in camera, in the menu bar."
     public static func clockNote(_ wrong: [(camera: Camera, offset: Int)]) -> String {
         guard !wrong.isEmpty else { return "" }
-        let each = wrong.map { "The \($0.camera.model)'s clock is \(OffsetText.describe($0.offset))." }
-        return each.joined(separator: " ") + " Set it in the camera: Set time and date in camera, in the menu bar."
+        let each = wrong.map { Words.t("The {0}'s clock is {1}.", $0.camera.model, OffsetText.describe($0.offset)) }
+        return each.joined(separator: " ") + Words.t(" Set it in the camera: Set time and date in camera, in the menu bar.")
     }
 
     /// "1 h 25 min", "45 min", "2 d 3 h": a break between two photos.
     public static func gap(_ seconds: Int) -> String {
         let minutes = seconds / 60, hours = minutes / 60, days = hours / 24
-        if days > 0 { return hours % 24 == 0 ? "\(days) d" : "\(days) d \(hours % 24) h" }
-        if hours > 0 { return minutes % 60 == 0 ? "\(hours) h" : "\(hours) h \(minutes % 60) min" }
-        return "\(minutes) min"
+        if days > 0 { return hours % 24 == 0 ? Words.t("{0} d", days) : Words.t("{0} d", days) + " " + Words.t("{0} h", hours % 24) }
+        if hours > 0 { return minutes % 60 == 0 ? Words.t("{0} h", hours) : Words.t("{0} h", hours) + " " + Words.t("{0} min", minutes % 60) }
+        return Words.t("{0} min", minutes)
     }
 
     public static func location(_ row: ImportRow, gap: Int) -> String {
         guard let placement = row.placement else { return "" }
         switch placement {
-        case .matched(let p): return p.fromPoint == 0 ? "Location matched" : "Location matched, \(p.fromPoint) s from the track"
-        case .ownLocation: return "Own location"
+        case .matched(let p): return p.fromPoint == 0 ? Words.t("Location matched") : Words.t("Location matched, {0} s from the track", p.fromPoint)
+        case .ownLocation: return Words.t("Own location")
         case .review(let reason):
             switch reason {
-            case .noTrack: return "No track within \(gap / 60) min"
-            case .offsetNotSet: return "Camera time offset not set"
-            case .zoneNotSet: return "Camera time zone not set"
-            case .noZoneInPhoto: return "No time zone in the photo"
-            case .noTime: return "No time in the photo"
-            case .unknownCamera: return "Camera not registered"
+            case .noTrack: return Words.t("No track within {0} min", gap / 60)
+            case .offsetNotSet: return Words.t("Camera time offset not set")
+            case .zoneNotSet: return Words.t("Camera time zone not set")
+            case .noZoneInPhoto: return Words.t("No time zone in the photo")
+            case .noTime: return Words.t("No time in the photo")
+            case .unknownCamera: return Words.t("Camera not registered")
             }
         }
     }
 
     public static func status(_ status: ImportStatus) -> String {
         switch status {
-        case .new: return "New"
-        case .alreadyImported: return "Already imported"
-        case .unknownCamera: return "Camera not registered"
+        case .new: return Words.t("New")
+        case .alreadyImported: return Words.t("Already imported")
+        case .unknownCamera: return Words.t("Camera not registered")
         }
     }
 }
@@ -67,29 +67,29 @@ public enum PhotoText {
 public enum QueueText {
     public static func status(_ entry: QueueEntry) -> String {
         switch entry.state {
-        case .waiting: return "Waiting"
-        case .sending: return "Sending"
-        case .sent: return entry.sentAs.map { "On the NAS as \($0)" } ?? "On the NAS"
-        case .failed: return "Not sent: \(entry.reason ?? "")"
+        case .waiting: return Words.t("Waiting")
+        case .sending: return Words.t("Sending")
+        case .sent: return entry.sentAs.map { Words.t("On the NAS as {0}", $0) } ?? Words.t("On the NAS")
+        case .failed: return Words.t("Not sent: {0}", entry.reason ?? "")
         }
     }
 
     /// A photo on the Photos page, once saved on this Mac.
     public static func photo(_ entry: QueueEntry) -> String {
         switch entry.state {
-        case .waiting: return "Waiting for the NAS"
-        case .sending: return "Sending to the NAS"
-        case .sent: return "On the NAS"
-        case .failed: return "Not on the NAS: \(entry.reason ?? "")"
+        case .waiting: return Words.t("Waiting for the NAS")
+        case .sending: return Words.t("Sending to the NAS")
+        case .sent: return Words.t("On the NAS")
+        case .failed: return Words.t("Not on the NAS: {0}", entry.reason ?? "")
         }
     }
 
     public static func reach(_ reach: NASReach) -> String {
         switch reach {
-        case .checking: return "Checking"
+        case .checking: return Words.t("Checking")
         case .through(let address): return AppModel.host(address)
-        case .unreachable: return "Not reachable"
-        case .notSetUp: return "Not set up"
+        case .unreachable: return Words.t("Not reachable")
+        case .notSetUp: return Words.t("Not set up")
         }
     }
 }

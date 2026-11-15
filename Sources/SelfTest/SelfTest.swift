@@ -3608,6 +3608,8 @@ extension SelfTest {
         model.choose(near)
         model.askingWhose = nil
         await model.read(near, for: david)
+        // Choosing a card it has seen starts reading it too: wait for whichever read finishes last.
+        for _ in 0..<100 where model.rows.isEmpty || model.photosBusy { try? await Task.sleep(for: .milliseconds(100)) }
         model.cardOutForTest()
         check("map window: the card out, the photos still on the map", model.source == nil && !model.rows.isEmpty && model.canMap && !model.canSave)
 

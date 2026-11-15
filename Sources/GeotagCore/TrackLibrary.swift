@@ -8,11 +8,11 @@ public struct RefreshReport: Equatable, Sendable {
     public var offline = false
 
     public var line: String {
-        if offline { return "Offline. Showing the tracks on this Mac." }
+        if offline { return Words.t("Offline. Showing the tracks on this Mac.") }
         if let first = problems.first { return first }
         var parts: [String] = []
-        parts.append(added == 0 ? "No new tracks." : added == 1 ? "1 new track." : "\(added) new tracks.")
-        if uploaded > 0 { parts.append(uploaded == 1 ? "1 track uploaded." : "\(uploaded) tracks uploaded.") }
+        parts.append(added == 0 ? Words.t("No new tracks.") : added == 1 ? Words.t("1 new track.") : Words.t("{0} new tracks.", added))
+        if uploaded > 0 { parts.append(uploaded == 1 ? Words.t("1 track uploaded.") : Words.t("{0} tracks uploaded.", uploaded)) }
         return parts.joined(separator: " ")
     }
 }

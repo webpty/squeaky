@@ -142,7 +142,7 @@ public struct Saver: Sendable {
         do {
             try fm.createDirectory(at: day, withIntermediateDirectories: true)
         } catch {
-            return .failed("The folder \(day.lastPathComponent) could not be made: \(error.localizedDescription)")
+            return .failed(Words.t("The folder {0} could not be made: {1}", day.lastPathComponent, error.localizedDescription))
         }
 
         // The card's own dates, given to the copy at the end, moved with the
@@ -166,7 +166,7 @@ public struct Saver: Sendable {
             try fm.copyItem(at: source, to: work)
         } catch {
             if (error as NSError).code == NSFileWriteOutOfSpaceError { return fail(Self.diskFull) }
-            return fail("It could not be copied from the card: \(error.localizedDescription)")
+            return fail(Words.t("It could not be copied from the card: {0}", error.localizedDescription))
         }
 
         // The location, and the dates moved, in one go.
@@ -174,8 +174,8 @@ public struct Saver: Sendable {
             do {
                 try write(work, original: source, position: item.position, shift: item.shift)
             } catch {
-                return fail(item.position == nil ? "The dates could not be corrected: \(error.localizedDescription)"
-                                                 : "The location could not be written: \(error.localizedDescription)")
+                return fail(item.position == nil ? Words.t("The dates could not be corrected: {0}", error.localizedDescription)
+                                                 : Words.t("The location could not be written: {0}", error.localizedDescription))
             }
         }
         do {
@@ -184,7 +184,7 @@ public struct Saver: Sendable {
             if let modified { dates[.modificationDate] = modified }
             if !dates.isEmpty { try fm.setAttributes(dates, ofItemAtPath: work.path) }
         } catch {
-            return fail("The card's dates could not be kept: \(error.localizedDescription)")
+            return fail(Words.t("The card's dates could not be kept: {0}", error.localizedDescription))
         }
 
         if let problem = check(copy: work, original: source, position: item.position, shift: item.shift) {
@@ -201,7 +201,7 @@ public struct Saver: Sendable {
                     let differs = !sameLocation(target, work)
                     try? fm.removeItem(at: work)
                     if differs {
-                        return .failed("Previously saved in another location")
+                        return .failed(Words.t("Previously saved in another location"))
                     }
                     return .alreadyThere(target)
                 }
@@ -215,7 +215,7 @@ public struct Saver: Sendable {
             } catch CocoaError.fileWriteFileExists {
                 n += 1
             } catch {
-                return fail("The copy could not be named \(name): \(error.localizedDescription)")
+                return fail(Words.t("The copy could not be named {0}: {1}", name, error.localizedDescription))
             }
         }
     }
@@ -313,12 +313,12 @@ public struct Saver: Sendable {
               CGImageSourceCopyPropertiesAtIndex(src, 0, nil) != nil,
               CGImageSourceCreateThumbnailAtIndex(src, 0, [kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                                                            kCGImageSourceThumbnailMaxPixelSize: 256] as CFDictionary) != nil else {
-            return "The copy does not open."
+            return Words.t("The copy does not open.")
         }
 
         if position == nil, shift == 0 {
             // Copied unchanged: it must be the card's file, byte for byte.
-            guard let a = Self.sha256(copy), a == Self.sha256(original) else { return "The copy differs from the card's file." }
+            guard let a = Self.sha256(copy), a == Self.sha256(original) else { return Words.t("The copy differs from the card's file.") }
             return nil
         }
 
@@ -328,9 +328,9 @@ public struct Saver: Sendable {
                                          original.path, copy.path])
             tags = (try JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
         } catch {
-            return "The copy could not be read back: \(error.localizedDescription)"
+            return Words.t("The copy could not be read back: {0}", error.localizedDescription)
         }
-        guard tags.count == 2 else { return "The copy could not be read back." }
+        guard tags.count == 2 else { return Words.t("The copy could not be read back.") }
         let before = tags[0], after = tags[1]
 
         // The picture itself is untouched, wherever ExifTool files the hash.
@@ -338,8 +338,8 @@ public struct Saver: Sendable {
             r.first { $0.key.hasSuffix(":ImageDataHash") }.map { "\($0.value)" }
         }
         switch (hash(before), hash(after)) {
-        case let (a?, b?): if a != b { return "The picture in the copy changed." }
-        case (_?, nil): return "The picture in the copy could not be checked."
+        case let (a?, b?): if a != b { return Words.t("The picture in the copy changed.") }
+        case (_?, nil): return Words.t("The picture in the copy could not be checked.")
         default: break // a kind of file ExifTool cannot hash; the other checks stand
         }
 
@@ -348,22 +348,22 @@ public struct Saver: Sendable {
             func number(_ key: String) -> Double? { (after[key] as? NSNumber)?.doubleValue }
             guard let lat = number("GPS:GPSLatitude"), let lon = number("GPS:GPSLongitude"),
                   let latRef = after["GPS:GPSLatitudeRef"] as? String, let lonRef = after["GPS:GPSLongitudeRef"] as? String else {
-                return "The location is not in the copy."
+                return Words.t("The location is not in the copy.")
             }
             let readLat = latRef.uppercased().hasPrefix("S") ? -lat : lat
             let readLon = lonRef.uppercased().hasPrefix("W") ? -lon : lon
             if abs(readLat - position.lat) > 1e-6 || abs(readLon - position.lon) > 1e-6 {
-                return "The location in the copy is not the one written."
+                return Words.t("The location in the copy is not the one written.")
             }
             if let alt = position.alt {
-                guard let a = number("GPS:GPSAltitude") else { return "The altitude is not in the copy." }
+                guard let a = number("GPS:GPSAltitude") else { return Words.t("The altitude is not in the copy.") }
                 let ref = (after["GPS:GPSAltitudeRef"] as? NSNumber)?.intValue ?? 0
                 // Half a metre: the watch is no closer than that.
-                if abs((ref == 1 ? -a : a) - alt) > 0.5 { return "The altitude in the copy is not the one written." }
+                if abs((ref == 1 ? -a : a) - alt) > 0.5 { return Words.t("The altitude in the copy is not the one written.") }
             }
-            guard after["GPS:GPSDateStamp"] != nil, after["GPS:GPSTimeStamp"] != nil else { return "The GPS time is not in the copy." }
+            guard after["GPS:GPSDateStamp"] != nil, after["GPS:GPSTimeStamp"] != nil else { return Words.t("The GPS time is not in the copy.") }
             guard (after["GPS:GPSProcessingMethod"] as? String) == Self.processingMethod else {
-                return "The note that Geotag added the location is not in the copy."
+                return Words.t("The note that Geotag added the location is not in the copy.")
             }
         }
 
@@ -373,14 +373,14 @@ public struct Saver: Sendable {
                 ?? before.keys.first { $0.hasSuffix(":DateTimeOriginal") }
             if let key, let was = before[key].map({ "\($0)" }) {
                 guard let expected = Self.shifted(was, by: shift), after[key].map({ "\($0)" }) == expected else {
-                    return "The date in the copy was not corrected."
+                    return Words.t("The date in the copy was not corrected.")
                 }
             }
         }
 
         // No other detail moved.
         let changed = Self.otherDetailsChanged(before, after, datesMoved: shift != 0)
-        if !changed.isEmpty { return "Other details changed in the copy: \(changed.prefix(3).joined(separator: ", "))." }
+        if !changed.isEmpty { return Words.t("Other details changed in the copy: {0}.", changed.prefix(3).joined(separator: ", ")) }
         return nil
         #else
         return NativeMetadata.check(copy: copy, original: original, position: position, shift: shift)
@@ -643,7 +643,7 @@ extension Saver {
     /// only then swapped in. Nil when done; else why not, the copy untouched.
     public func addLocation(to copy: URL, _ position: Position, shift: Int = 0) -> String? {
         let fm = FileManager.default
-        guard fm.fileExists(atPath: copy.path) else { return "The copy is no longer there." }
+        guard fm.fileExists(atPath: copy.path) else { return Words.t("The copy is no longer there.") }
         let attributes = (try? fm.attributesOfItem(atPath: copy.path)) ?? [:]
         // Its dates moved too, when its camera's clock turned out far out.
         let created = (attributes[.creationDate] as? Date)?.addingTimeInterval(Double(shift))
@@ -665,13 +665,13 @@ extension Saver {
             if let modified { dates[.modificationDate] = modified }
             if !dates.isEmpty { try fm.setAttributes(dates, ofItemAtPath: work.path) }
         } catch {
-            return fail("The location could not be written: \(error.localizedDescription)")
+            return fail(Words.t("The location could not be written: {0}", error.localizedDescription))
         }
         if let problem = check(copy: work, original: copy, position: position, shift: shift) { return fail(problem) }
         do {
             _ = try fm.replaceItemAt(copy, withItemAt: work)
         } catch {
-            return fail("The copy could not be replaced: \(error.localizedDescription)")
+            return fail(Words.t("The copy could not be replaced: {0}", error.localizedDescription))
         }
         return nil
     }

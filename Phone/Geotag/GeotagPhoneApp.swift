@@ -13,6 +13,7 @@ struct GeotagPhoneApp: App {
     @State private var finishing: UIBackgroundTaskIdentifier = .invalid
 
     init() {
+        PhoneWords.load()
         #if DEBUG
         DebugHooks.run()
         #endif
@@ -65,16 +66,16 @@ struct PhoneRoot: View {
     var body: some View {
         TabView(selection: $tab) {
             PhotosTab(model: model)
-                .tabItem { Label("Photos", systemImage: "photo.on.rectangle") }
+                .tabItem { Label(Words.t("Photos"), systemImage: "photo.on.rectangle") }
                 .tag(Tab.photos)
             TracksTab(model: model)
-                .tabItem { Label("Tracks", systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
+                .tabItem { Label(Words.t("Tracks"), systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
                 .tag(Tab.tracks)
             QueueTab(model: model)
-                .tabItem { Label("Queue", systemImage: "arrow.up.circle") }
+                .tabItem { Label(Words.t("Queue"), systemImage: "arrow.up.circle") }
                 .tag(Tab.queue)
             SettingsTab(model: model)
-                .tabItem { Label("Settings", systemImage: "gearshape") }
+                .tabItem { Label(Words.t("Settings"), systemImage: "gearshape") }
                 .tag(Tab.settings)
         }
         // The screen stays on while photos are saved or sent: a locked phone stops both.
@@ -117,20 +118,20 @@ struct TrackCheckSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             switch check {
             case .checking:
-                Text("Checking for matching tracks").font(.headline)
+                Text(Words.t("Checking for matching tracks")).font(.headline)
                 LoaderDots().frame(maxWidth: .infinity)
             case .noTrack, .offline:
                 if case .offline = check {
-                    Text("The track service isn't answering.").font(.headline)
+                    Text(Words.t("The track service isn't answering.")).font(.headline)
                 }
-                Text("Not all photos have a track. Make sure this is correct.")
+                Text(Words.t("Not all photos have a track. Make sure this is correct."))
                     .font(check.isOffline ? .body : .headline)
                 VStack(spacing: 10) {
-                    Button { model.checkTracksAgain() } label: { Text("Check tracks again").frame(maxWidth: .infinity) }
+                    Button { model.checkTracksAgain() } label: { Text(Words.t("Check tracks again")).frame(maxWidth: .infinity) }
                         .buttonStyle(.borderedProminent)
-                    Button { model.saveAnyway() } label: { Text("Save anyway").frame(maxWidth: .infinity) }
+                    Button { model.saveAnyway() } label: { Text(Words.t("Save anyway")).frame(maxWidth: .infinity) }
                         .buttonStyle(.bordered)
-                    Button { model.dontSave() } label: { Text("Don't save").frame(maxWidth: .infinity) }
+                    Button { model.dontSave() } label: { Text(Words.t("Don't save")).frame(maxWidth: .infinity) }
                         .buttonStyle(.bordered)
                 }
                 .controlSize(.large)

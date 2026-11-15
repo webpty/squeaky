@@ -4,51 +4,43 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// The phone's own settings: its one person, their cameras, the track
-/// service and the NAS. Each phone is on its own (David, 15 November 2026).
+/// service and the server. Each phone is on its own (David, 15 November 2026).
 struct SettingsTab: View {
     @ObservedObject var model: AppModel
     @State private var choosing = false
     @State private var problem: String?
     @State private var nasName = PhoneFolders.name(PhoneFolders.nasKey)
     @State private var name = ""
-    @State private var nasFolder = ""
 
     var owner: Person? { model.macOwner.flatMap { model.book.person($0) } }
 
     var personUnsaved: Bool {
-        let n = name.trimmingCharacters(in: .whitespacesAndNewlines), f = nasFolder.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !n.isEmpty else { return false }
-        return n != owner?.name || f != (owner?.nasFolder ?? "")
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !n.isEmpty && n != owner?.name
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Person") {
-                    LabeledContent("Name") {
+                Section(Words.t("Person")) {
+                    LabeledContent(Words.t("Name")) {
                         TextField("", text: $name)
                             .textContentType(.name)
                             .multilineTextAlignment(.trailing)
                     }
-                    LabeledContent("NAS folder") {
-                        TextField("", text: $nasFolder)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .multilineTextAlignment(.trailing)
-                    }
                     if personUnsaved {
-                        Button("Save") { model.setPhonePerson(name: name, nasFolder: nasFolder) }
+                        Button(Words.t("Save")) { model.setPhonePerson(name: name) }
                     }
                 }
                 if let owner, !model.book.cameras(of: owner.id).isEmpty {
-                    Section("Cameras") {
+                    Section(Words.t("Cameras")) {
                         ForEach(model.book.cameras(of: owner.id)) { camera in
                             CameraRow(model: model, camera: camera)
                         }
                     }
                 }
-                Section("Track service") {
-                    LabeledContent("Address") {
+                Section(Words.t("Track service")) {
+                    LabeledContent(Words.t("Address")) {
                         TextField("", text: $model.serviceAddress)
                             .textContentType(.URL)
                             .keyboardType(.URL)
@@ -56,42 +48,40 @@ struct SettingsTab: View {
                             .autocorrectionDisabled()
                             .multilineTextAlignment(.trailing)
                     }
-                    LabeledContent("Key") {
+                    LabeledContent(Words.t("Key")) {
                         SecureField("", text: $model.serviceKey)
                             .multilineTextAlignment(.trailing)
                     }
                     if model.serviceUnsaved {
-                        Button("Save") { Task { await model.saveService() } }
+                        Button(Words.t("Save")) { Task { await model.saveService() } }
                             .disabled(model.settingsBusy)
                     }
                     StatusRow(text: model.settingsLine, busy: model.settingsBusy)
                 }
-                Section("NAS") {
-                    LabeledContent("Folder", value: nasName ?? "Not chosen")
-                    Button(nasName == nil ? "Choose" : "Change") {
+                Section(Words.t("Server")) {
+                    LabeledContent(Words.t("Folder"), value: nasName ?? Words.t("Not chosen"))
+                    Button(nasName == nil ? Words.t("Choose") : Words.t("Change")) {
                         problem = nil
                         choosing = true
                     }
                     if nasName != nil {
-                        Button("Remove", role: .destructive) {
+                        Button(Words.t("Remove"), role: .destructive) {
                             nasName = nil
                             Task { await model.forgetNASFolder() }
                         }
                     }
                     StatusRow(text: model.nasLine, busy: model.nasBusy)
+                    NavigationLink(Words.t("How to connect a file server")) { ConnectServer() }
                 }
                 if let problem {
                     Section { Text(problem).foregroundStyle(.secondary) }
                 }
                 Section {
-                    LabeledContent("Version", value: appVersion)
+                    LabeledContent(Words.t("Version"), value: appVersion)
                 }
             }
-            .navigationTitle("Settings")
-            .onAppear {
-                name = owner?.name ?? ""
-                nasFolder = owner?.nasFolder ?? ""
-            }
+            .navigationTitle(Words.t("Settings"))
+            .onAppear { name = owner?.name ?? "" }
             .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
                 switch result {
                 case .success(let url): keepNAS(url)
@@ -108,7 +98,7 @@ struct SettingsTab: View {
         do {
             try PhoneFolders.remember(url, as: key)
         } catch {
-            problem = "\(url.lastPathComponent) could not be kept: \(error.localizedDescription)"
+            problem = Words.t("{0} could not be kept: {1}", PhoneFolders.shownName(url), error.localizedDescription)
             return
         }
         nasName = PhoneFolders.name(key)
@@ -127,15 +117,15 @@ struct CameraRow: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(camera.model)
             HStack {
-                Text("Offset").foregroundStyle(.secondary)
-                TextField("Seconds", text: $text)
+                Text(Words.t("Offset")).foregroundStyle(.secondary)
+                TextField(Words.t("Seconds"), text: $text)
                     .keyboardType(.numbersAndPunctuation)
                     .multilineTextAlignment(.trailing)
                     .onSubmit(save)
             }
             Text(OffsetText.describe(camera.offsetSeconds)).font(.caption).foregroundStyle(.secondary)
             if typed != camera.offsetSeconds, typed != nil {
-                Button("Save", action: save)
+                Button(Words.t("Save"), action: save)
             }
         }
         .onAppear { text = camera.offsetSeconds.map(String.init) ?? "" }
@@ -150,4 +140,30 @@ struct CameraRow: View {
         changed.offsetSeconds = typed
         model.save(changed)
     }
+}
+
+/// How to connect a file server, such as a NAS, so its folder can be chosen
+/// (David, 15 November 2026).
+struct ConnectServer: View {
+    var body: some View {
+        List {
+            ForEach(Array(Self.steps.enumerated()), id: \.offset) { i, step in
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("\(i + 1)").foregroundStyle(.secondary).monospacedDigit()
+                    Text(Words.t(step))
+                }
+            }
+        }
+        .navigationTitle(Words.t("Connect a file server"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    static let steps = [
+        "Open the Files app and tap Browse.",
+        "Tap the three dots at the top right, then Connect to Server.",
+        "Type the server's address, such as smb://10.0.10.10, and tap Connect.",
+        "Choose Registered User, enter the user name and password, and tap Next.",
+        "Come back to Geotag and tap Choose under Server.",
+        "Open the server, open the folder the photos go into, and tap Open.",
+    ]
 }

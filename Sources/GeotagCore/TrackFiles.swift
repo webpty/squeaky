@@ -14,9 +14,9 @@ public enum TrackFileError: Error, LocalizedError, Equatable {
 
     public var errorDescription: String? {
         switch self {
-        case .unknownKind(let name): return "\(name) is not a GPX or FIT file."
-        case .unreadable(let name): return "\(name) could not be read."
-        case .noPoints(let name): return "\(name) has no points with a time and a position."
+        case .unknownKind(let name): return Words.t("{0} is not a GPX or FIT file.", name)
+        case .unreadable(let name): return Words.t("{0} could not be read.", name)
+        case .noPoints(let name): return Words.t("{0} has no points with a time and a position.", name)
         }
     }
 }

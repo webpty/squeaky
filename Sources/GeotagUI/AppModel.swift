@@ -307,7 +307,7 @@ public final class AppModel: ObservableObject {
     }
     /// Geotag opened with photos waiting and the NAS did not answer.
     @Published public private(set) var nasAway = false
-    public static let nasAwayText = "The NAS isn't answering. If you're away from home, turn on Tailscale; otherwise check the connection."
+    public static let nasAwayText = Words.t("The NAS isn't answering. If you're away from home, turn on Tailscale; otherwise check the connection.")
     private var checkingNAS = false
     /// The photos going up now; apart, so their progress redraws only the bar.
     public let meter = SendMeter()
@@ -449,7 +449,7 @@ public final class AppModel: ObservableObject {
                 book = PeopleBook()
             }
         } catch {
-            peopleLine = "The people list could not be read: \(error.localizedDescription)"
+            peopleLine = Words.t("The people list could not be read: {0}", error.localizedDescription)
         }
         self.temperatures = (try? temperatureStore.load()) ?? CameraTemperatures()
         if let raw = defaults.string(forKey: "appearance"), let mode = Appearance(rawValue: raw) {
@@ -596,11 +596,11 @@ public final class AppModel: ObservableObject {
         var parts: [String] = []
         if saving, let source {
             let left = saveTotal - saveDone
-            parts.append("\(left.formatted()) \(left == 1 ? "photo" : "photos") on \(source.name) \(left == 1 ? "is" : "are") not saved yet. Reopening Geotag and clicking Save photos carries on from there.")
+            parts.append(Words.t("{0} {1} on {2} {3} not saved yet. Reopening Geotag and clicking Save photos carries on from there.", left.formatted(), left == 1 ? Words.t("photo") : Words.t("photos"), source.name, left == 1 ? Words.t("is") : Words.t("are")))
         }
         let going = queueEntries.filter { ($0.state == .waiting || $0.state == .sending) && NASFolder(book.person($0.personId)?.nasFolder) != nil }.count
         if going > 0 {
-            parts.append("\(going.formatted()) \(going == 1 ? "photo is" : "photos are") uploading to the NAS. Reopening Geotag will resume the upload.")
+            parts.append(Words.t("{0} {1} uploading to the NAS. Reopening Geotag will resume the upload.", going.formatted(), going == 1 ? Words.t("photo is") : Words.t("photos are")))
         }
         return parts.isEmpty ? nil : parts.joined(separator: " ")
     }
@@ -613,7 +613,7 @@ public final class AppModel: ObservableObject {
         #if os(iOS)
         // Anyone else left on the phone from before is removed.
         if let owner = macOwner.flatMap({ book.person($0) }), book.people.count > 1 {
-            setPhonePerson(name: owner.name, nasFolder: owner.nasFolder ?? "")
+            setPhonePerson(name: owner.name)
         }
         #endif
         #if os(macOS)
@@ -707,7 +707,7 @@ public final class AppModel: ObservableObject {
         }
         defaults.set(fields.address, forKey: "trackServiceAddress")
         savedService = fields
-        await testService(saying: "Saved. ")
+        await testService(saying: Words.t("Saved. "))
         if role != nil { await refresh() }
     }
 
@@ -718,14 +718,14 @@ public final class AppModel: ObservableObject {
         }
         settingsBusy = true
         defer { settingsBusy = false }
-        settingsLine = prefix + "Checking the service"
+        settingsLine = prefix + Words.t("Checking the service")
         do {
             let status = try await service.status()
             serviceStatus = status
             role = status.role
             defaults.set(status.role.rawValue, forKey: "trackServiceRole")
-            let who = status.role == .owner ? "Owner key" : "Reading key"
-            settingsLine = prefix + "\(who). \(status.tracks) \(status.tracks == 1 ? "track" : "tracks") on the service."
+            let who = status.role == .owner ? Words.t("Owner key") : Words.t("Reading key")
+            settingsLine = prefix + Words.t("{0}. {1} {2} on the service.", who, status.tracks, status.tracks == 1 ? Words.t("track") : Words.t("tracks"))
         } catch {
             settingsLine = prefix + error.localizedDescription
         }
@@ -754,7 +754,7 @@ public final class AppModel: ObservableObject {
             #else
             await UIApplication.shared.open(url)
             #endif
-            settingsLine = "Approve on Strava in the browser."
+            settingsLine = Words.t("Approve on Strava in the browser.")
         } catch {
             settingsLine = error.localizedDescription
         }
@@ -782,7 +782,7 @@ public final class AppModel: ObservableObject {
             await testService()
             if serviceStatus?.strava.connected == true {
                 awaitingStrava = false
-                settingsLine = "Strava connected."
+                settingsLine = Words.t("Strava connected.")
                 await refresh()
             }
         }
@@ -798,7 +798,7 @@ public final class AppModel: ObservableObject {
             book = next
             peopleLine = ""
         } catch {
-            peopleLine = "Not saved: \(error.localizedDescription)"
+            peopleLine = Words.t("Not saved: {0}", error.localizedDescription)
         }
     }
 
@@ -828,7 +828,7 @@ public final class AppModel: ObservableObject {
                 self.readingRound += 1
                 self.source = nil
                 // The list, and whose it is, stay until Clear photos or the next card (David, 6 November 2026).
-                if self.ejecting != bsd { self.photosLine = "\(gone?.name ?? "The card") was taken out." }
+                if self.ejecting != bsd { self.photosLine = Words.t("{0} was taken out.", gone?.name ?? Words.t("The card")) }
             }
         }
         cardGuard.onProblem = { [weak self] message in
@@ -857,7 +857,7 @@ public final class AppModel: ObservableObject {
             cardsLine = ""
         } catch {
             openOnCard = LoginItem.isOn
-            cardsLine = "The Mac refused: \(error.localizedDescription)"
+            cardsLine = Words.t("The Mac refused: {0}", error.localizedDescription)
         }
         #endif
     }
@@ -876,30 +876,30 @@ public final class AppModel: ObservableObject {
     public func savePhotos(hold: Bool = false) async {
         guard !saving else { return }
         guard let source else {
-            photosLine = rows.isEmpty ? "Insert a card." : Self.cardOut
+            photosLine = rows.isEmpty ? Words.t("Insert a card.") : Self.cardOut
             return
         }
         guard let personId = importPerson, let person = book.person(personId) else {
-            say("Choose whose card \(source.name) is.", fix: .chooseWhose)
+            say(Words.t("Choose whose card {0} is.", source.name), fix: .chooseWhose)
             return
         }
         guard let folder = saveFolder(of: person), !folder.isEmpty else {
-            say("\(person.name) has no save folder yet.", fix: .chooseFolder(personId))
+            say(Words.t("{0} has no save folder yet.", person.name), fix: .chooseFolder(personId))
             return
         }
         guard let engine else {
-            photosLine = "ExifTool is missing from Geotag. Install Geotag again."
+            photosLine = Words.t("ExifTool is missing from Geotag. Install Geotag again.")
             return
         }
         var isFolder: ObjCBool = false
         guard FileManager.default.fileExists(atPath: folder, isDirectory: &isFolder), isFolder.boolValue else {
-            say("\(person.name)'s save folder can't be found: \(folder). If it is on a drive, plug the drive in, or choose another folder.",
+            say(Words.t("{0}'s save folder can't be found: {1}. If it is on a drive, plug the drive in, or choose another folder.", person.name, folder),
                 fix: .chooseFolder(personId))
             return
         }
         let todo = readyToSave
         guard !todo.isEmpty else {
-            photosLine = rows.isEmpty ? "There are no photos on \(source.name)." : "Every photo on \(source.name) is already saved."
+            photosLine = rows.isEmpty ? Words.t("There are no photos on {0}.", source.name) : Words.t("Every photo on {0} is already saved.", source.name)
             return
         }
         // Earlier photos being placed write the same records: wait for them.
@@ -925,7 +925,7 @@ public final class AppModel: ObservableObject {
         var savedCount = 0, failedCount = 0
         // Every photo's place first, for its folder: the lookups still going
         // are waited for, so none is asked twice.
-        photosLine = "Looking up places"
+        photosLine = Words.t("Looking up places")
         await lookUpRowPlaces()
         while lookingUpPlaces { try? await Task.sleep(for: .milliseconds(100)) }
         let began = Date()
@@ -998,12 +998,12 @@ public final class AppModel: ObservableObject {
         // Ejected or another card chosen meanwhile: that line stands.
         guard readingRound == round else { return }
         let stopped = saveDone < saveTotal
-        var line = stopped ? "Stopped after \(saveDone) of \(saveTotal)." : "\(savedCount) saved."
-        if stopped { line += " \(savedCount) saved." }
+        var line = stopped ? Words.t("Stopped after {0} of {1}.", saveDone, saveTotal) : Words.t("{0} saved.", savedCount)
+        if stopped { line += Words.t(" {0} saved.", savedCount) }
         let unplaced = todo.filter { $0.needsReview && results[$0.id]?.url != nil }.count
-        if unplaced > 0 { line += " \(unplaced) of them without a location: see the Status column." }
-        if failedCount > 0 { line += " \(failedCount) not saved: see the Status column." }
-        if results.values.contains(.failed(Saver.diskFull)) { line = "Stopped: \(Saver.diskFull.lowercased()). \(savedCount) saved before that." }
+        if unplaced > 0 { line += Words.t(" {0} of them without a location: see the Status column.", unplaced) }
+        if failedCount > 0 { line += Words.t(" {0} not saved: see the Status column.", failedCount) }
+        if results.values.contains(.failed(Saver.diskFull)) { line = Words.t("Stopped: {0}. {1} saved before that.", Words.t(Saver.diskFull).lowercased(), savedCount) }
         // Done before the last line is said, so the menu bar never shows it.
         saving = false
         photosLine = line
@@ -1012,12 +1012,12 @@ public final class AppModel: ObservableObject {
         #if os(iOS)
         // No eject on the phone: the card is let go of, and can come out.
         if !stopped, failedCount == 0, savedCount > 0, source.isCard, self.source?.id == source.id {
-            let onPhone = "\(savedCount.formatted()) \(savedCount == 1 ? "photo is" : "photos are") on this iPhone; the NAS copies go from there."
+            let onPhone = Words.t("{0} {1} on this iPhone; the NAS copies go from there.", savedCount.formatted(), savedCount == 1 ? Words.t("photo is") : Words.t("photos are"))
             letGo(done: onPhone)
         }
         #else
         if !stopped, failedCount == 0, savedCount > 0, source.bsd != nil, self.source?.id == source.id {
-            let onMac = "\(savedCount.formatted()) \(savedCount == 1 ? "photo is" : "photos are") on this Mac; the NAS copies go from there."
+            let onMac = Words.t("{0} {1} on this Mac; the NAS copies go from there.", savedCount.formatted(), savedCount == 1 ? Words.t("photo is") : Words.t("photos are"))
             eject(done: onMac)
         }
         #endif
@@ -1026,11 +1026,11 @@ public final class AppModel: ObservableObject {
     /// "Saving 341 of 3,630, about 12 min left", and the warning to connect
     /// to power when the battery would run out first.
     nonisolated public static func savingLine(done: Int, total: Int, left: TimeInterval?, battery: TimeInterval?) -> (line: String, warning: String?) {
-        var line = "Saving \((done + 1).formatted()) of \(total.formatted())"
+        var line = Words.t("Saving {0} of {1}", (done + 1).formatted(), total.formatted())
         guard let left else { return (line, nil) }
-        line += ", \(Remaining.text(left)) left"
+        line += Words.t(", {0} left", Remaining.text(left))
         guard let battery, battery < left else { return (line, nil) }
-        let warning = "Connect to power: \(Remaining.text(left)) of saving left, the battery has \(Remaining.text(battery))."
+        let warning = Words.t("Connect to power: {0} of saving left, the battery has {1}.", Remaining.text(left), Remaining.text(battery))
         return (line + ". " + warning, warning)
     }
 
@@ -1063,7 +1063,7 @@ public final class AppModel: ObservableObject {
                   let url = Folders.choose(startingAt: person.saveFolder) else { return }
             person.saveFolder = url.path
             save(person)
-            photosLine = "\(person.name)'s photos are saved in \(Folders.shown(url.path))."
+            photosLine = Words.t("{0}'s photos are saved in {1}.", person.name, Folders.shown(url.path))
             Task { await savePhotos() }
             #else
             _ = id
@@ -1098,11 +1098,11 @@ public final class AppModel: ObservableObject {
     public var saveBlock: (line: String, fix: PhotosFix)? {
         guard let personId = importPerson, let person = book.person(personId) else { return nil }
         guard let folder = saveFolder(of: person), !folder.isEmpty else {
-            return ("\(person.name) has no save folder yet.", .chooseFolder(personId))
+            return (Words.t("{0} has no save folder yet.", person.name), .chooseFolder(personId))
         }
         var isFolder: ObjCBool = false
         guard FileManager.default.fileExists(atPath: folder, isDirectory: &isFolder), isFolder.boolValue else {
-            return ("\(person.name)'s save folder can't be found: \(folder). If it is on a drive, plug the drive in, or choose another folder.",
+            return (Words.t("{0}'s save folder can't be found: {1}. If it is on a drive, plug the drive in, or choose another folder.", person.name, folder),
                     .chooseFolder(personId))
         }
         return nil
@@ -1148,7 +1148,7 @@ public final class AppModel: ObservableObject {
         }
     }
 
-    public static let cardOut = "The card is out. Insert it again to save these photos."
+    public static let cardOut = Words.t("The card is out. Insert it again to save these photos.")
 
     /// Writes the list a second after it changes, so a save of thousands of
     /// photos writes it once a second, not once a photo.
@@ -1201,34 +1201,34 @@ public final class AppModel: ObservableObject {
         aligning = false
         PhoneFolders.release(card.url)
         source = nil
-        photosLine = "\(card.name) can come out." + (done.map { " \($0)" } ?? "")
+        photosLine = Words.t("{0} can come out.", card.name) + (done.map { " \($0)" } ?? "")
     }
 
     public func eject(done: String? = nil) { letGo(done: done) }
     #else
     public func eject(done: String? = nil) {
         guard let card = source, let bsd = card.bsd else {
-            photosLine = "No card is held to eject."
+            photosLine = Words.t("No card is held to eject.")
             return
         }
         readingRound += 1
         ejecting = bsd
         askingWhose = nil
         aligning = false
-        photosLine = "Ejecting \(card.name)"
+        photosLine = Words.t("Ejecting {0}", card.name)
         cardGuard.eject(bsd) { [weak self] problem in
             guard let self else { return }
             self.ejecting = nil
             if let problem {
-                self.photosLine = "\(card.name) was not ejected. \(problem)"
+                self.photosLine = Words.t("{0} was not ejected. {1}", card.name, problem)
             } else {
                 self.cards.removeAll { $0.bsd == bsd }
                 if self.source?.bsd == bsd { self.source = nil }
                 if let done {
-                    self.photosLine = "\(card.name) can come out. \(done)"
-                    self.notifier.post("\(card.name) can come out.", kind: "card")
+                    self.photosLine = Words.t("{0} can come out. {1}", card.name, done)
+                    self.notifier.post(Words.t("{0} can come out.", card.name), kind: "card")
                 } else {
-                    self.photosLine = "\(card.name) is ejected. You can take it out."
+                    self.photosLine = Words.t("{0} is ejected. You can take it out.", card.name)
                 }
             }
         }
@@ -1258,27 +1258,27 @@ public final class AppModel: ObservableObject {
         askingWhose = nil
         importPerson = personId
         guard let engine else {
-            photosLine = "ExifTool is missing from Geotag."
+            photosLine = Words.t("ExifTool is missing from Geotag.")
             return
         }
         readingRound += 1
         let round = readingRound
         photosBusy = true
         defer { photosBusy = false }
-        photosLine = "Looking for photos"
+        photosLine = Words.t("Looking for photos")
         let url = source.url
         let files = await Task.detached { PhotoScanner.files(in: url) }.value
         let total = files.count
         readProgress = (0, total)
         defer { readProgress = nil }
-        photosLine = "Reading 0 of \(total)"
+        photosLine = Words.t("Reading 0 of {0}", total)
         do {
             let photos = try await Task.detached {
                 let progress: @Sendable (Int) -> Void = { done in
                     Task { @MainActor [weak self] in
                         guard let self, self.readingRound == round else { return }
                         self.readProgress = (done, total)
-                        self.photosLine = "Reading \(done) of \(total)"
+                        self.photosLine = Words.t("Reading {0} of {1}", done, total)
                     }
                 }
                 switch engine {
@@ -1302,7 +1302,7 @@ public final class AppModel: ObservableObject {
             guard readingRound == round, self.source?.id == source.id else { return }
             await loadTimeline()
             rematch()
-            photosLine = rows.isEmpty ? "No photos on \(source.name)." : codes
+            photosLine = rows.isEmpty ? Words.t("No photos on {0}.", source.name) : codes
             #if os(macOS)
             if case .exifTool(let tool) = engine { Task { await noteTemperatures(photos, personId: personId, tool: tool) } }
             #endif
@@ -1319,7 +1319,7 @@ public final class AppModel: ObservableObject {
                 say(block.line, fix: block.fix)
             }
         } catch {
-            if readingRound == round { photosLine = "The photos could not be read: \(error.localizedDescription)" }
+            if readingRound == round { photosLine = Words.t("The photos could not be read: {0}", error.localizedDescription) }
         }
     }
 
@@ -1373,7 +1373,7 @@ public final class AppModel: ObservableObject {
                   let offset = Moments.exactOffset(placing: photo, camera: camera, at: moment) else { continue }
             camera.add(ClockReading(at: moment, offset: offset))
             save(camera)
-            said.append("\(camera.model): clock \(OffsetText.exact(offset)), set from the offset code.")
+            said.append(Words.t("{0}: clock {1}, set from the offset code.", camera.model, OffsetText.exact(offset)))
         }
         return said.joined(separator: " ")
     }
@@ -1423,7 +1423,7 @@ public final class AppModel: ObservableObject {
             let since = max(lastReading.timeIntervalSince1970, reminded[camera.id.uuidString] ?? 0)
             guard now.timeIntervalSince1970 - since >= 7 * 86_400 else { continue }
             let owner = book.person(camera.personId).map { "\($0.name)'s " } ?? ""
-            notifier.post("Time to photograph the offset code with \(owner)\(camera.model).", kind: "clock-\(camera.id.uuidString)")
+            notifier.post(Words.t("Time to photograph the offset code with {0}{1}.", owner, camera.model), kind: "clock-\(camera.id.uuidString)")
             reminded[camera.id.uuidString] = now.timeIntervalSince1970
         }
         defaults.set(reminded, forKey: "clockReminders")
@@ -1730,8 +1730,8 @@ public final class AppModel: ObservableObject {
         }
         try? unplaced.save(keep)
         guard placed > 0 || !problems.isEmpty, !photosBusy, !saving else { return (placed, tried) }
-        var line = placed == 0 ? "" : placed == 1 ? "1 photo saved earlier now has its location." : "\(placed) photos saved earlier now have their location."
-        if let first = problems.first { line += (line.isEmpty ? "" : " ") + "Not placed: \(first)" }
+        var line = placed == 0 ? "" : placed == 1 ? Words.t("1 photo saved earlier now has its location.") : Words.t("{0} photos saved earlier now have their location.", placed)
+        if let first = problems.first { line += (line.isEmpty ? "" : " ") + Words.t("Not placed: {0}", first) }
         photosLine = line
         return (placed, tried)
     }
@@ -1794,8 +1794,8 @@ public final class AppModel: ObservableObject {
     public func recheckPhotos(for track: Track) async {
         guard !tracksBusy, !saving, !placingLater else { return }
         guard let done = await placeLater(within: track.start...track.end) else { return }
-        tracksLine = done.tried == 0 ? "No photos without a location from \(track.name)."
-            : "\(done.placed) of \(done.tried) photos from \(track.name) now have their location."
+        tracksLine = done.tried == 0 ? Words.t("No photos without a location from {0}.", track.name)
+            : Words.t("{0} of {1} photos from {2} now have their location.", done.placed, done.tried, track.name)
     }
 
     /// The photos the map can show: those with a location of their own, and
@@ -1861,7 +1861,7 @@ public final class AppModel: ObservableObject {
         savedNAS = fields
         // New settings are tried now, not at the next minute.
         nextTry = nil
-        await testNAS(saying: "Saved. ")
+        await testNAS(saying: Words.t("Saved. "))
     }
 
     /// Opens the shared folder of every NAS folder in People with the settings
@@ -1869,12 +1869,12 @@ public final class AppModel: ObservableObject {
     public func testNAS(saying prefix: String = "") async {
         let shares = Set(book.people.compactMap { NASFolder($0.nasFolder)?.share }).sorted()
         guard !shares.isEmpty else {
-            nasLine = prefix + "Nobody has a NAS folder yet. Choose one in People."
+            nasLine = prefix + Words.t("Nobody has a NAS folder yet. Choose one in People.")
             return
         }
         nasBusy = true
         defer { nasBusy = false }
-        nasLine = prefix + "Checking the NAS"
+        nasLine = prefix + Words.t("Checking the NAS")
         let port = nasPort ?? nasFields.port
         var lines: [String] = []
         var answered = false
@@ -1885,7 +1885,7 @@ public final class AppModel: ObservableObject {
                 nasReach = .through(connection.address)
                 answered = true
                 let host = Self.host(connection.address)
-                lines.append(shares.count == 1 ? "Connected through \(host)." : "\(share): connected through \(host).")
+                lines.append(shares.count == 1 ? Words.t("Connected through {0}.", host) : Words.t("{0}: connected through {1}.", share, host))
             } catch {
                 nasReach = .unreachable
                 lines.append((shares.count == 1 ? "" : "\(share): ") + error.localizedDescription)
@@ -1898,12 +1898,12 @@ public final class AppModel: ObservableObject {
     /// "19 photos are on the NAS." or "17 photos are on the NAS. 2 were not sent."
     public static func batchText(sent: Int, failed: Int) -> String {
         var parts: [String] = []
-        if sent > 0 { parts.append(sent == 1 ? "1 photo is on the NAS." : "\(sent.formatted()) photos are on the NAS.") }
+        if sent > 0 { parts.append(sent == 1 ? Words.t("1 photo is on the NAS.") : Words.t("{0} photos are on the NAS.", sent.formatted())) }
         if failed > 0 {
             if sent > 0 {
-                parts.append(failed == 1 ? "1 was not sent." : "\(failed.formatted()) were not sent.")
+                parts.append(failed == 1 ? Words.t("1 was not sent.") : Words.t("{0} were not sent.", failed.formatted()))
             } else {
-                parts.append(failed == 1 ? "1 photo was not sent." : "\(failed.formatted()) photos were not sent.")
+                parts.append(failed == 1 ? Words.t("1 photo was not sent.") : Words.t("{0} photos were not sent.", failed.formatted()))
             }
         }
         return parts.joined(separator: " ")
@@ -1952,7 +1952,7 @@ public final class AppModel: ObservableObject {
         sendPaused = on
         defaults.set(on, forKey: "sendPaused")
         if on {
-            say(meter.count == 0 ? "Paused." : meter.count == 1 ? "Pausing after this photo." : "Pausing after these \(meter.count) photos.")
+            say(meter.count == 0 ? Words.t("Paused.") : meter.count == 1 ? Words.t("Pausing after this photo.") : Words.t("Pausing after these {0} photos.", meter.count))
         } else {
             nextTry = nil
             say("")
@@ -1971,7 +1971,7 @@ public final class AppModel: ObservableObject {
               let people = peopleStore as? PeopleStoreFile,
               let history = history as? HistoryStoreFolder,
               let temperatures = temperatureStore as? TemperatureStoreFile else {
-            cloudProblem = "iCloud Drive is off on this Mac."
+            cloudProblem = Words.t("iCloud Drive is off on this Mac.")
             return
         }
         #if os(iOS)
@@ -2000,7 +2000,7 @@ public final class AppModel: ObservableObject {
             if let taken = done.settingsTaken { takeSettings(taken) }
             if cloudMacs != done.macs { cloudMacs = done.macs }
         case .failure(let error):
-            cloudProblem = "Not synced with iCloud: \(error.localizedDescription)"
+            cloudProblem = Words.t("Not synced with iCloud: {0}", error.localizedDescription)
         }
     }
 
@@ -2015,13 +2015,14 @@ public final class AppModel: ObservableObject {
     #if os(iOS)
     /// The phone's one person (David, 15 November 2026): made the first time,
     /// changed after; anyone else on the phone, and their cameras, removed.
-    public func setPhonePerson(name: String, nasFolder: String) {
+    public func setPhonePerson(name: String) {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let nas = nasFolder.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
         var person = macOwner.flatMap { book.person($0) } ?? Person(name: name)
         person.name = name
-        person.nasFolder = nas.isEmpty ? nil : nas
+        // The server is the folder chosen in Settings, whatever it is (David,
+        // 15 November 2026): the person's own NAS folder is no longer asked.
+        person.nasFolder = NASThroughFiles.share
         let keep = person
         store { book in
             for other in book.people where other.id != keep.id { book.remove(person: other.id) }
@@ -2179,7 +2180,7 @@ public final class AppModel: ObservableObject {
             changeQueue { all in
                 for i in all.indices where all[i].state == .waiting && book.person(all[i].personId) == nil {
                     all[i].state = .failed
-                    all[i].reason = "Their person was removed from People"
+                    all[i].reason = Words.t("Their person was removed from People")
                     batchFailed += 1
                 }
             }
@@ -2199,7 +2200,7 @@ public final class AppModel: ObservableObject {
                         nasReach = .unreachable
                         let retry = Date().addingTimeInterval(60)
                         nextTry = retry
-                        halt = "\(error.localizedDescription) Trying again at \(When.current.time(retry))."
+                        halt = Words.t("{0} Trying again at {1}.", error.localizedDescription, When.current.time(retry))
                         break
                     }
                     if connection.ours { ourMounts[connection.folder.path] = connection }
@@ -2221,7 +2222,7 @@ public final class AppModel: ObservableObject {
                 if full {
                     let retry = Date().addingTimeInterval(300)
                     nextTry = retry
-                    halt = "NAS full. Trying again at \(When.current.time(retry))."
+                    halt = Words.t("NAS full. Trying again at {0}.", When.current.time(retry))
                 }
                 if halt == nil, running > 0 { sayGoing() }
                 refreshWork()
@@ -2232,7 +2233,7 @@ public final class AppModel: ObservableObject {
             say(halt)
             return
         }
-        say(sendPaused ? "Paused." : restingLine())
+        say(sendPaused ? Words.t("Paused.") : restingLine())
         let waiting = queueEntries.contains { $0.state == .waiting && NASFolder(book.person($0.personId)?.nasFolder) != nil }
         // All that can go has gone, and nothing is still being saved or placed:
         // one notification for the whole batch.
@@ -2253,9 +2254,9 @@ public final class AppModel: ObservableObject {
     private func sayGoing() {
         guard let address = sendingThrough, meter.count > 0, !sendPaused else { return }
         let host = Self.host(address)
-        let going = meter.only.map { "\($0.name) to \(host)" } ?? "\(meter.count) photos to \(host) at once"
-        var line = going + (sendingLeft().map { ", \($0) left." } ?? ".")
-        if let word = sendingSpeed() { line += " \(word.rawValue)." }
+        let going = meter.only.map { Words.t("{0} to {1}", $0.name, host) } ?? Words.t("{0} photos to {1} at once", meter.count, host)
+        var line = going + (sendingLeft().map { Words.t(", {0} left.", $0) } ?? ".")
+        if let word = sendingSpeed() { line += " " + Words.t(word.rawValue) + "." }
         say(line)
     }
 
@@ -2396,7 +2397,7 @@ public final class AppModel: ObservableObject {
             let now = meter.count
             let ahead = queueEntries.filter { $0.state == .waiting && NASFolder(book.person($0.personId)?.nasFolder) != nil }.count
             let total = done + now + ahead
-            lines.append("Sending to the NAS: \((done + now).formatted()) of \(total.formatted())" + (sendingLeft().map { ", \($0) left" } ?? ""))
+            lines.append(Words.t("Sending to the NAS: {0} of {1}", (done + now).formatted(), total.formatted()) + (sendingLeft().map { Words.t(", {0} left", $0) } ?? ""))
             for id in meter.order {
                 if let going = meter.going[id] { lines.append("\(going.name): \(going.text)") }
             }
@@ -2418,14 +2419,14 @@ public final class AppModel: ObservableObject {
             .map(\.name)
             .sorted()
         if !names.isEmpty {
-            parts.append("\(names.joined(separator: ", ")) \(names.count == 1 ? "has" : "have") no NAS folder. Choose one in Settings, People.")
+            parts.append(Words.t("{0} {1} no NAS folder. Choose one in Settings, People.", names.joined(separator: ", "), names.count == 1 ? Words.t("has") : Words.t("have")))
         }
         let resting = waiting.compactMap(\.notBefore).filter { $0 > Date() }
         if let soonest = resting.min() {
-            parts.append("\(resting.count) to try again at \(When.current.time(soonest)).")
+            parts.append(Words.t("{0} to try again at {1}.", resting.count, When.current.time(soonest)))
         }
-        if failed > 0 { parts.append("\(failed) not sent: see the list.") }
-        if parts.isEmpty, waiting.isEmpty, !queueEntries.isEmpty { return "Everything is on the NAS." }
+        if failed > 0 { parts.append(Words.t("{0} not sent: see the list.", failed)) }
+        if parts.isEmpty, waiting.isEmpty, !queueEntries.isEmpty { return Words.t("Everything is on the NAS.") }
         return parts.joined(separator: " ")
     }
 
@@ -2449,7 +2450,7 @@ public final class AppModel: ObservableObject {
         guard !makingDownload else { return }
         downloading = chip
         defer { downloading = nil }
-        downloadLine = "Making the \(chip.title) disk image"
+        downloadLine = Words.t("Making the {0} disk image", chip.title)
         let app = Bundle.main.bundleURL
         let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
         let made: Result<URL, Error> = await withCheckedContinuation { done in
@@ -2459,10 +2460,10 @@ public final class AppModel: ObservableObject {
         }
         switch made {
         case .success(let url):
-            downloadLine = "\(url.lastPathComponent) is in Downloads."
+            downloadLine = Words.t("{0} is in Downloads.", url.lastPathComponent)
             NSWorkspace.shared.activateFileViewerSelecting([url])
         case .failure(let error):
-            downloadLine = "Geotag was not saved to Downloads. \(error.localizedDescription)"
+            downloadLine = Words.t("Geotag was not saved to Downloads. {0}", error.localizedDescription)
         }
     }
     #endif
@@ -2488,7 +2489,7 @@ public final class AppModel: ObservableObject {
         tracksBusy = true
         defer { tracksBusy = false }
         // At once, so no line from before stays up while the tracks come in.
-        tracksLine = "Loading tracks"
+        tracksLine = Words.t("Loading tracks")
         if role == nil { await testService() }
         guard let role else {
             tracks = await library.listed()
@@ -2498,7 +2499,7 @@ public final class AppModel: ObservableObject {
         await loadMaps(service)
         if thumbnails.forgetFailures() { mapsRound += 1 }
         let report = await library.refresh(service: service, role: role, pullStrava: pullStrava) { @MainActor [weak self] done, total in
-            self?.tracksLine = "Loading tracks: \(done.formatted()) of \(total.formatted())"
+            self?.tracksLine = Words.t("Loading tracks: {0} of {1}", done.formatted(), total.formatted())
         }
         tracks = await library.listed()
         tracksLine = report.line
@@ -2554,7 +2555,7 @@ public final class AppModel: ObservableObject {
             do {
                 switch try await library.importFile(url, role: role) {
                 case .added: added += 1
-                case .alreadyHere(let existing): lines.append("\(url.lastPathComponent) is already here as \(existing.name).")
+                case .alreadyHere(let existing): lines.append(Words.t("{0} is already here as {1}.", url.lastPathComponent, existing.name))
                 }
             } catch {
                 lines.append(error.localizedDescription)
@@ -2562,7 +2563,7 @@ public final class AppModel: ObservableObject {
         }
         tracks = await library.listed()
         if added > 0 {
-            lines.insert(added == 1 ? "1 track imported." : "\(added) tracks imported.", at: 0)
+            lines.insert(added == 1 ? Words.t("1 track imported.") : Words.t("{0} tracks imported.", added), at: 0)
         }
         if added > 0, role == .owner {
             await refresh()

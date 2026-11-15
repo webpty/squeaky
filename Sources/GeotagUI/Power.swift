@@ -1,3 +1,4 @@
+import GeotagCore
 import Foundation
 #if os(macOS)
 import AppKit
@@ -32,10 +33,10 @@ public struct MacPower: PowerPort {
 public enum Remaining {
     public static func text(_ seconds: TimeInterval) -> String {
         let minutes = Int((seconds / 60).rounded())
-        if minutes < 1 { return "less than a minute" }
-        if minutes < 60 { return "about \(minutes) min" }
+        if minutes < 1 { return Words.t("less than a minute") }
+        if minutes < 60 { return Words.t("about {0} min", minutes) }
         let h = minutes / 60, m = minutes % 60
-        return m == 0 ? "about \(h) h" : "about \(h) h \(m) min"
+        return m == 0 ? Words.t("about {0} h", h) : Words.t("about {0} h {1} min", h, m)
     }
 
     /// What is left at the pace so far: nil until enough has gone to tell.

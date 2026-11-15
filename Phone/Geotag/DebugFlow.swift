@@ -12,7 +12,7 @@ extension DebugHooks {
         let args = CommandLine.arguments
         guard let i = args.firstIndex(of: "--flow-test"), args.count > i + 3 else { return false }
         let card = URL(fileURLWithPath: args[i + 1]), gpx = URL(fileURLWithPath: args[i + 2]), nas = URL(fileURLWithPath: args[i + 3])
-        model.setPhonePerson(name: "Flow", nasFolder: "share/Geotag")
+        model.setPhonePerson(name: "Flow")
         guard let owner = model.macOwner, model.book.people.count == 1 else { print("flow: FAILED, no person"); return true }
         try? PhoneFolders.remember(nas, as: PhoneFolders.nasKey)
         await model.start()

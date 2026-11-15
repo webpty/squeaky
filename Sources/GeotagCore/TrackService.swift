@@ -71,8 +71,8 @@ public enum ServiceError: Error, LocalizedError, Equatable {
 
     public var errorDescription: String? {
         switch self {
-        case .notSetUp: return "The track service is not set up in Settings."
-        case .offline: return "The track service cannot be reached."
+        case .notSetUp: return Words.t("The track service is not set up in Settings.")
+        case .offline: return Words.t("The track service cannot be reached.")
         case .refused(let message): return message
         case .unexpected(let message): return message
         }
@@ -135,12 +135,12 @@ public struct TrackServiceHTTP: TrackServicePort {
             if let problem = try? JSONDecoder().decode(Problem.self, from: data) {
                 throw ServiceError.refused(problem.error)
             }
-            throw ServiceError.unexpected("The track service answered \(status).")
+            throw ServiceError.unexpected(Words.t("The track service answered {0}.", status))
         }
         do {
             return try JSONDecoder().decode(T.self, from: data)
         } catch {
-            throw ServiceError.unexpected("The track service's answer could not be read.")
+            throw ServiceError.unexpected(Words.t("The track service's answer could not be read."))
         }
     }
 

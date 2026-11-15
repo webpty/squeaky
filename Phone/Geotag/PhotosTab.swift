@@ -14,25 +14,25 @@ struct PhotosTab: View {
                 Section {
                     StatusRow(text: model.photosLine, busy: model.photosBusy || model.saving)
                     if let id = model.importPerson, let person = model.book.person(id) {
-                        LabeledContent("Person", value: person.name)
+                        LabeledContent(Words.t("Person"), value: person.name)
                     }
                     if !model.rows.isEmpty {
-                        LabeledContent("Photos", value: counts)
+                        LabeledContent(Words.t("Photos"), value: counts)
                     }
                 }
                 Section {
                     if model.saving {
-                        Button("Stop") { model.stopSaving() }
+                        Button(Words.t("Stop")) { model.stopSaving() }
                     } else {
-                        Button("Choose card") { choosing = true }
+                        Button(Words.t("Choose card")) { choosing = true }
                             .disabled(model.photosBusy || model.macOwner == nil)
                         if model.source != nil {
-                            Button("Save photos") { Task { await model.savePhotos() } }
+                            Button(Words.t("Save photos")) { Task { await model.savePhotos() } }
                                 .disabled(!model.canSave)
-                            Button("Done with this card") { model.letGo() }
+                            Button(Words.t("Done with this card")) { model.letGo() }
                                 .disabled(model.photosBusy)
                         } else if !model.rows.isEmpty {
-                            Button("Clear photos") { model.clearPhotos() }
+                            Button(Words.t("Clear photos")) { model.clearPhotos() }
                         }
                     }
                 }
@@ -44,7 +44,7 @@ struct PhotosTab: View {
                     }
                 }
             }
-            .navigationTitle("Photos")
+            .navigationTitle(Words.t("Photos"))
             .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
                 guard case .success(let url) = result else { return }
                 model.choose(Self.source(url))
@@ -59,7 +59,7 @@ struct PhotosTab: View {
     var counts: String {
         let before = model.rows.filter { $0.status == .alreadyImported }.count
         let new = model.rows.count - before
-        return before == 0 ? new.formatted() : "\(new.formatted()) new, \(before.formatted()) already saved"
+        return before == 0 ? new.formatted() : Words.t("{0} new, {1} already saved", new.formatted(), before.formatted())
     }
 
     /// The card, or a folder on it: known again next time by the card's own id.
@@ -85,7 +85,7 @@ struct WhoseCard: View {
                     Task { await model.read(source, for: person.id) }
                 }
             }
-            .navigationTitle("Whose card is \(model.askingWhose?.name ?? "it")?")
+            .navigationTitle(Words.t("Whose card is {0}?", model.askingWhose?.name ?? ""))
             .navigationBarTitleDisplayMode(.inline)
         }
         .presentationDetents([.medium])
@@ -113,9 +113,9 @@ struct PhotoRow: View {
                 return QueueText.photo(entry) + why
             }
             switch result {
-            case .saved: return "Saved"
-            case .alreadyThere: return "Already saved"
-            case .failed(let why): return "Not saved: \(why)"
+            case .saved: return Words.t("Saved")
+            case .alreadyThere: return Words.t("Already saved")
+            case .failed(let why): return Words.t("Not saved: {0}", Words.t(why))
             }
         }
         return row.status == .alreadyImported ? PhotoText.status(row.status) : PhotoText.location(row, gap: model.maxGapSeconds)

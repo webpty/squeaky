@@ -1,3 +1,4 @@
+import GeotagCore
 import Foundation
 
 /// The order a date is written in, as chosen in Settings.
@@ -75,6 +76,6 @@ public struct When: Sendable {
     }
 
     public func dayAndTime(_ date: Date, zone: TimeZone = .current, weekday: Bool = false, seconds: Bool = false) -> String {
-        "\(day(date, zone: zone, weekday: weekday)) at \(time(date, zone: zone, seconds: seconds))"
+        Words.t("{0} at {1}", day(date, zone: zone, weekday: weekday), time(date, zone: zone, seconds: seconds))
     }
 }

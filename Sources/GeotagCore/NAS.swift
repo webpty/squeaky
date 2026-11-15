@@ -33,7 +33,7 @@ public enum NASError: Error, LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case .offline(let why), .failed(let why): return why
-        case .full: return "NAS full"
+        case .full: return Words.t("NAS full")
         }
     }
 
@@ -50,13 +50,13 @@ public enum NASError: Error, LocalizedError, Equatable {
             : (ns.userInfo[NSUnderlyingErrorKey] as? NSError).flatMap { $0.domain == NSPOSIXErrorDomain ? Int32($0.code) : nil }
         if let posix {
             if posix == ENOSPC || posix == EDQUOT { return .full }
-            if broken.contains(posix) { return .offline("The connection to the NAS broke off.") }
-            if posix == EACCES || posix == EPERM || posix == EROFS { return .failed("The NAS refused to write it.") }
+            if broken.contains(posix) { return .offline(Words.t("The connection to the NAS broke off.")) }
+            if posix == EACCES || posix == EPERM || posix == EROFS { return .failed(Words.t("The NAS refused to write it.")) }
         }
         if ns.domain == NSCocoaErrorDomain {
             if ns.code == NSFileWriteOutOfSpaceError { return .full }
             if [NSFileWriteNoPermissionError, NSFileReadNoPermissionError, NSFileWriteVolumeReadOnlyError].contains(ns.code) {
-                return .failed("The NAS refused to write it.")
+                return .failed(Words.t("The NAS refused to write it."))
             }
         }
         return .failed("\(doing): \(error.localizedDescription)")
@@ -101,7 +101,7 @@ public enum NASSender {
                             engine: PhotoEngine?, progress: @escaping @Sendable (SendStep) -> Void) throws -> SendOutcome {
         let fm = FileManager.default
         progress(.looking)
-        guard fm.fileExists(atPath: local.path) else { throw NASError.failed("The copy on this Mac is no longer there.") }
+        guard fm.fileExists(atPath: local.path) else { throw NASError.failed(Words.t("The copy on this Mac is no longer there.")) }
         // One handle for all of it: should the copy be swapped for a newer one
         // meanwhile, this send stays whole and the newer one goes next.
         let input: FileHandle
@@ -110,7 +110,7 @@ public enum NASSender {
         do {
             input = try FileHandle(forReadingFrom: local)
         } catch {
-            throw NASError.failed("The copy on this Mac could not be read: \(error.localizedDescription)")
+            throw NASError.failed(Words.t("The copy on this Mac could not be read: {0}", error.localizedDescription))
         }
         defer { try? input.close() }
         do {
@@ -118,14 +118,14 @@ public enum NASSender {
             try input.seek(toOffset: 0)
             localHash = try hash(input)
         } catch {
-            throw NASError.failed("The copy on this Mac could not be read: \(error.localizedDescription)")
+            throw NASError.failed(Words.t("The copy on this Mac could not be read: {0}", error.localizedDescription))
         }
 
         // The day folder, and room in it.
         do {
             try fm.createDirectory(at: folder, withIntermediateDirectories: true)
         } catch {
-            throw NASError.from(error, doing: "Making the folder \(folder.lastPathComponent)")
+            throw NASError.from(error, doing: Words.t("Making the folder {0}", folder.lastPathComponent))
         }
         if clean { clearLeftovers(in: folder) }
         if let free = (try? fm.attributesOfFileSystem(forPath: folder.path))?[.systemFreeSize] as? NSNumber,
@@ -152,7 +152,7 @@ public enum NASSender {
                         // The same photo at the same place, its details written
                         // a little differently (an older Geotag): it is there.
                         if sameLocation(target, local) { return .alreadyThere(target) }
-                        throw NASError.failed("Already on the NAS with another location")
+                        throw NASError.failed(Words.t("Already on the NAS with another location"))
                     }
                     replacing = true
                     break
@@ -161,7 +161,7 @@ public enum NASSender {
                 target = folder.appendingPathComponent(Saver.numbered(name, n))
             }
         } catch {
-            throw NASError.from(error, doing: "Looking at \(target.lastPathComponent) on the NAS")
+            throw NASError.from(error, doing: Words.t("Looking at {0} on the NAS", target.lastPathComponent))
         }
 
         // Up under a working name, a piece at a time.
@@ -192,7 +192,7 @@ public enum NASSender {
             try output.close()
         } catch {
             drop()
-            throw NASError.from(error, doing: "Copying \(name) to the NAS")
+            throw NASError.from(error, doing: Words.t("Copying {0} to the NAS", name))
         }
 
         // Read back from the NAS itself, and compared.
@@ -202,11 +202,11 @@ public enum NASSender {
             arrived = try hashOnNAS(work) { progress(.checking($0)) }
         } catch {
             drop()
-            throw NASError.from(error, doing: "Reading \(name) back from the NAS")
+            throw NASError.from(error, doing: Words.t("Reading {0} back from the NAS", name))
         }
         guard arrived == localHash else {
             drop()
-            throw NASError.failed("It arrived on the NAS different from the Mac's copy.")
+            throw NASError.failed(Words.t("It arrived on the NAS different from the Mac's copy."))
         }
 
         // The Mac copy's own dates, given once it has its name: a working
@@ -231,14 +231,14 @@ public enum NASSender {
                 try fm.moveItem(at: target, to: old)
             } catch {
                 drop()
-                throw NASError.from(error, doing: "Setting aside the earlier \(target.lastPathComponent)")
+                throw NASError.from(error, doing: Words.t("Setting aside the earlier {0}", target.lastPathComponent))
             }
             do {
                 try fm.moveItem(at: work, to: target)
             } catch {
                 try? fm.moveItem(at: old, to: target)
                 drop()
-                throw NASError.from(error, doing: "Naming \(target.lastPathComponent) on the NAS")
+                throw NASError.from(error, doing: Words.t("Naming {0} on the NAS", target.lastPathComponent))
             }
             try? fm.removeItem(at: old)
             return .replaced(dated(target))
@@ -260,7 +260,7 @@ public enum NASSender {
                 final = folder.appendingPathComponent(Saver.numbered(name, n))
             } catch {
                 drop()
-                throw NASError.from(error, doing: "Naming \(final.lastPathComponent) on the NAS")
+                throw NASError.from(error, doing: Words.t("Naming {0} on the NAS", final.lastPathComponent))
             }
         }
     }
@@ -316,20 +316,20 @@ public enum SendStep: Equatable, Sendable {
 
     public var text: String {
         switch self {
-        case .looking: return "Looking"
-        case .sending(let f): return "Sending \(Int((f * 100).rounded(.down)))%"
-        case .checking(let f): return "Checking \(Int((f * 100).rounded(.down)))%"
-        case .naming: return "Naming"
+        case .looking: return Words.t("Looking")
+        case .sending(let f): return Words.t("Sending {0}%", Int((f * 100).rounded(.down)))
+        case .checking(let f): return Words.t("Checking {0}%", Int((f * 100).rounded(.down)))
+        case .naming: return Words.t("Naming")
         }
     }
 
     /// The step alone, without its share.
     public var word: String {
         switch self {
-        case .looking: return "Looking"
-        case .sending: return "Sending"
-        case .checking: return "Checking"
-        case .naming: return "Naming"
+        case .looking: return Words.t("Looking")
+        case .sending: return Words.t("Sending")
+        case .checking: return Words.t("Checking")
+        case .naming: return Words.t("Naming")
         }
     }
 
@@ -425,8 +425,8 @@ public struct NASOverSMB: NASPort {
                 continue
             }
         }
-        throw NASError.offline(tried.isEmpty ? "No NAS address is set in Settings."
-                                              : "The NAS can't be reached at \(tried.joined(separator: " or ")).")
+        throw NASError.offline(tried.isEmpty ? Words.t("No NAS address is set in Settings.")
+                                              : Words.t("The NAS can't be reached at {0}.", tried.joined(separator: Words.t(" or "))))
     }
 
     public func disconnect(_ connection: NASConnection) async {
@@ -468,7 +468,7 @@ public struct NASOverSMB: NASPort {
         parts.scheme = "smb"
         parts.host = host
         parts.path = "/" + share
-        guard let url = parts.url else { return .failure(.failed("The NAS address is not valid.")) }
+        guard let url = parts.url else { return .failure(.failed(Words.t("The NAS address is not valid."))) }
         // Never a window asking for a password: what Settings holds, or nothing.
         let open = NSMutableDictionary()
         open["UIOption"] = "NoUI"
@@ -491,7 +491,7 @@ public struct NASOverSMB: NASPort {
             DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
                 guard once.first() else { return }
                 if let id = request.id { NetFSMountURLCancel(id) }
-                done.resume(returning: .failure(.offline("The NAS did not answer at \(host).")))
+                done.resume(returning: .failure(.offline(Words.t("The NAS did not answer at {0}.", host))))
             }
         }
     }
@@ -504,12 +504,12 @@ public struct NASOverSMB: NASPort {
         }
         switch status {
         case EAUTH, EACCES, EPERM, -5045, -5046, -5999:
-            return .failure(.failed(user == nil ? "The NAS wants a user name and password: set them in Settings."
-                                                : "The NAS refused the user name or password in Settings."))
+            return .failure(.failed(user == nil ? Words.t("The NAS wants a user name and password: set them in Settings.")
+                                                : Words.t("The NAS refused the user name or password in Settings.")))
         case ENOENT, -5998, -6003:
-            return .failure(.failed("The NAS has no shared folder called \(share)."))
+            return .failure(.failed(Words.t("The NAS has no shared folder called {0}.", share)))
         default:
-            return .failure(.offline("The NAS did not open \(share) at \(host) (\(status))."))
+            return .failure(.offline(Words.t("The NAS did not open {0} at {1} ({2}).", share, host, status)))
         }
     }
 }

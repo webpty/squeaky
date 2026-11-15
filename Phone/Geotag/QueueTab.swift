@@ -16,19 +16,19 @@ struct QueueTab: View {
             List {
                 Section {
                     StatusRow(text: model.queueLine, busy: model.meter.count > 0)
-                    LabeledContent("NAS", value: QueueText.reach(model.nasReach))
-                    LabeledContent("Waiting", value: waiting.formatted())
-                    if held > 0 { LabeledContent("Waiting for the tracks", value: held.formatted()) }
-                    LabeledContent("On the NAS", value: sent.formatted())
-                    LabeledContent("Not sent", value: failed.count.formatted())
+                    LabeledContent(Words.t("NAS"), value: QueueText.reach(model.nasReach))
+                    LabeledContent(Words.t("Waiting"), value: waiting.formatted())
+                    if held > 0 { LabeledContent(Words.t("Waiting for the tracks"), value: held.formatted()) }
+                    LabeledContent(Words.t("On the NAS"), value: sent.formatted())
+                    LabeledContent(Words.t("Not sent"), value: failed.count.formatted())
                 }
                 Section {
-                    Button(model.sendPaused ? "Resume" : "Pause") { model.setSendPaused(!model.sendPaused) }
-                    Button("Retry failed") { model.retryFailed() }
+                    Button(model.sendPaused ? Words.t("Resume") : Words.t("Pause")) { model.setSendPaused(!model.sendPaused) }
+                    Button(Words.t("Retry failed")) { model.retryFailed() }
                         .disabled(failed.isEmpty)
                 }
                 if !failed.isEmpty {
-                    Section("Not sent") {
+                    Section(Words.t("Not sent")) {
                         ForEach(failed) { entry in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text((entry.relativePath as NSString).lastPathComponent)
@@ -38,7 +38,7 @@ struct QueueTab: View {
                     }
                 }
             }
-            .navigationTitle("Queue")
+            .navigationTitle(Words.t("Queue"))
             .task { await model.checkNAS() }
             .refreshable { await model.checkNAS() }
         }
