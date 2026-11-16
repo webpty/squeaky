@@ -18,16 +18,10 @@ struct PhotosTab: View {
                     StatusRow(text: model.syncActivity ?? QueueText.sync(model.lastSave, problem: model.sharedProblem),
                               busy: model.syncActivity != nil)
                     StatusRow(text: model.photosLine, busy: model.photosBusy || model.saving)
-                    if let id = model.importPerson, model.book.person(id) != nil {
-                        // Tapped: the card is the other side's, and is read again for it.
-                        Button {
-                            guard let source = model.source, !model.saving else { return }
-                            let other = id == PhoneFolders.othersId ? model.macOwner : PhoneFolders.othersId
-                            if let other { Task { await model.read(source, for: other) } }
-                        } label: {
-                            LabeledContent(Words.t("Card"), value: id == PhoneFolders.othersId ? Words.t("Someone else's") : Words.t("Mine"))
-                        }
-                        .disabled(model.source == nil || model.saving || model.photosBusy)
+                    // Who the SD card belongs to: said, not changed here (0.29.19); changed in Settings.
+                    if let id = model.importPerson, let person = model.book.person(id) {
+                        LabeledContent(Words.t("SD card belongs to"),
+                                       value: id == PhoneFolders.othersId ? Words.t("Someone else") : person.name)
                     }
                     if !model.rows.isEmpty {
                         LabeledContent(Words.t("Photos"), value: counts)
@@ -80,6 +74,13 @@ struct PhotosTab: View {
             // The last card's photo behind every tab, veiled (0.29.5, David, 16 November 2026).
             .background(Backdrop(image: model.sidebarImage))
             .navigationTitle(Words.t("Photos"))
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { model.checkAgain() } label: { Image(systemName: "arrow.clockwise") }
+                        .accessibilityLabel(Words.t("Check photos again"))
+                        .disabled(model.source == nil || model.saving || model.photosBusy)
+                }
+            }
             .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
                 switch result {
                 case .success(let url):
@@ -227,23 +228,26 @@ struct Square: View {
     }
 }
 
-/// Whose card it is, asked the first time a card is chosen and remembered.
+/// Asked the first time a card is read and remembered: "Does this SD card
+/// belong to David?" (0.29.19).
 struct WhoseCard: View {
     @ObservedObject var model: AppModel
 
+    var owner: String { model.macOwner.flatMap { model.book.person($0)?.name } ?? "" }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(Words.t("Whose card is this?")).font(.headline)
-            VStack(spacing: 10) {
-                Button { pick(model.macOwner) } label: { Text(Words.t("Mine")).frame(maxWidth: .infinity) }
+            Text(Words.t("Does this SD card belong to {0}?", owner)).font(.headline)
+            HStack(spacing: 10) {
+                Button { pick(model.macOwner) } label: { Text(Words.t("Yes")).frame(maxWidth: .infinity) }
                     .buttonStyle(.borderedProminent)
-                Button { pick(PhoneFolders.othersId) } label: { Text(Words.t("Someone else's")).frame(maxWidth: .infinity) }
+                Button { pick(PhoneFolders.othersId) } label: { Text(Words.t("No")).frame(maxWidth: .infinity) }
                     .buttonStyle(.bordered)
             }
             .controlSize(.large)
         }
         .padding(24)
-        .presentationDetents([.height(200)])
+        .presentationDetents([.height(170)])
     }
 
     func pick(_ id: UUID?) {

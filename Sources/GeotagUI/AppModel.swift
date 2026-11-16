@@ -629,6 +629,14 @@ public final class AppModel: ObservableObject {
         guard !started else { return }
         started = true
         #if os(iOS)
+        // Once (0.29.19): cards switched to someone else's by a tap on the old Card row
+        // go back to the phone's person (David, 16 November 2026).
+        if !defaults.bool(forKey: "cardOwnersReset"), let owner = macOwner {
+            var owners = defaults.dictionary(forKey: "cardPeople") as? [String: String] ?? [:]
+            for (card, person) in owners where person == PhoneFolders.othersId.uuidString { owners[card] = owner.uuidString }
+            defaults.set(owners, forKey: "cardPeople")
+            defaults.set(true, forKey: "cardOwnersReset")
+        }
         // Anyone else left on the phone from before is removed, and a NAS
         // folder kept from before gives way to the server chosen in Settings.
         if let owner = macOwner.flatMap({ book.person($0) }),
@@ -1443,6 +1451,37 @@ public final class AppModel: ObservableObject {
     }
 
     /// Whoever this card belonged to last time.
+    /// Every SD card Geotag has read, with its name and who it belongs to (0.29.19).
+    public struct KnownCard: Identifiable, Equatable {
+        public var id: String
+        public var name: String
+        public var personId: UUID
+    }
+
+    public var knownCards: [KnownCard] {
+        let owners = defaults.dictionary(forKey: "cardPeople") as? [String: String] ?? [:]
+        let names = defaults.dictionary(forKey: "cardNames") as? [String: String] ?? [:]
+        return owners.compactMap { id, person in
+            guard let person = UUID(uuidString: person), book.person(person) != nil else { return nil }
+            return KnownCard(id: id, name: names[id] ?? Words.t("SD card"), personId: person)
+        }.sorted { $0.name < $1.name }
+    }
+
+    /// Who a card belongs to, changed in Settings; the card in now is read again for them.
+    public func setOwner(of card: String, to personId: UUID) {
+        var owners = defaults.dictionary(forKey: "cardPeople") as? [String: String] ?? [:]
+        owners[card] = personId.uuidString
+        defaults.set(owners, forKey: "cardPeople")
+        objectWillChange.send()
+        if let source, source.id == card, !saving { Task { await read(source, for: personId) } }
+    }
+
+    /// The card now in, read again for whoever it belongs to.
+    public func checkAgain() {
+        guard let source, let person = importPerson, !saving, !photosBusy else { return }
+        Task { await read(source, for: person) }
+    }
+
     public func lastPerson(for source: PhotoSource) -> UUID? {
         let saved = defaults.dictionary(forKey: "cardPeople") as? [String: String] ?? [:]
         return saved[source.id].flatMap(UUID.init(uuidString:)).flatMap { id in book.person(id) != nil ? id : nil }
@@ -1452,6 +1491,10 @@ public final class AppModel: ObservableObject {
         var saved = defaults.dictionary(forKey: "cardPeople") as? [String: String] ?? [:]
         saved[source.id] = personId.uuidString
         defaults.set(saved, forKey: "cardPeople")
+        // The card's own name, for the list of SD cards in Settings (0.29.19).
+        var names = defaults.dictionary(forKey: "cardNames") as? [String: String] ?? [:]
+        names[source.id] = source.name
+        defaults.set(names, forKey: "cardNames")
         askingWhose = nil
         importPerson = personId
         guard let engine else {

@@ -17,6 +17,7 @@ struct SettingsTab: View {
     /// Offsets typed, by camera, until the checkmark saves them.
     @State private var offsets: [UUID: String] = [:]
     @State private var showingCode = false
+    @State private var changing: AppModel.KnownCard?
 
     var owner: Person? { model.macOwner.flatMap { model.book.person($0) } }
 
@@ -47,6 +48,24 @@ struct SettingsTab: View {
                     Section(Words.t("Other cameras")) {
                         ForEach(model.book.cameras(of: PhoneFolders.othersId)) { camera in
                             CameraRow(camera: camera, text: offset(camera))
+                        }
+                    }
+                }
+                // Each SD card read, and who it belongs to; changed only here (0.29.19).
+                if !model.knownCards.isEmpty {
+                    Section(Words.t("SD cards")) {
+                        ForEach(model.knownCards) { card in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(card.name)
+                                    Text(Words.t("Belongs to {0}", card.personId == PhoneFolders.othersId ? Words.t("someone else")
+                                                 : (model.book.person(card.personId)?.name ?? "")))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Button(Words.t("Change")) { changing = card }
+                                    .buttonStyle(.bordered)
+                            }
                         }
                     }
                 }
@@ -97,6 +116,13 @@ struct SettingsTab: View {
             // The last card's photo behind every tab, veiled (0.29.5, David, 16 November 2026).
             .background(Backdrop(image: model.sidebarImage))
             .navigationTitle(Words.t("Settings"))
+            .confirmationDialog(Words.t("Does this SD card belong to {0}?", owner?.name ?? ""),
+                                isPresented: Binding(get: { changing != nil }, set: { if !$0 { changing = nil } }),
+                                titleVisibility: .visible) {
+                Button(Words.t("Yes")) { if let card = changing, let me = model.macOwner { model.setOwner(of: card.id, to: me) } }
+                Button(Words.t("No")) { if let card = changing { model.setOwner(of: card.id, to: PhoneFolders.othersId) } }
+                Button(Words.t("Cancel"), role: .cancel) {}
+            }
             .scrollDismissesKeyboard(.immediately)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

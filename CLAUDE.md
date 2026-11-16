@@ -1060,6 +1060,18 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   and that photos saved on the Mac may be saved again, and its button reads
   Save anyway.
 
+## Who an SD card belongs to (0.29.19, David, 16 November 2026)
+
+- The old Card row switched a card's owner on a tap and read it again;
+  David tapped it to read the card again and his card became someone
+  else's (JPGs only, never checked against his list). Now the Photos tab
+  only says "SD card belongs to: David" (or "Someone else"); reading again
+  is the round icon at the top right ("Check photos again"); the owner is
+  changed only in Settings, SD cards, with Change and the question "Does
+  this SD card belong to David?" (Yes, No), the same question asked the
+  first time a card is read. 0.29.19 set cards marked someone else's back
+  to the phone's person once.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.
