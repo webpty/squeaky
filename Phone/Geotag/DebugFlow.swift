@@ -58,7 +58,8 @@ extension DebugHooks {
         let keptJPG = jpgs.filter { FileManager.default.fileExists(atPath: $0.localPath) }.count
         let keptRaw = raws.filter { FileManager.default.fileExists(atPath: $0.localPath) }.count
         print("  90 days on: \(keptJPG) of \(jpgs.count) JPGs kept on the phone, \(keptRaw) of \(raws.count) raws left on it")
-        if keptJPG != jpgs.count || keptRaw != 0 || raws.isEmpty { ok = false }
+        // Every copy leaves once on the server: the JPGs are in the Photos library (0.29.15).
+        if keptJPG != 0 || keptRaw != 0 || raws.isEmpty || jpgs.isEmpty { ok = false }
         // Someone else's card: saved with locations on the phone, never sent.
         let before = model.queueEntries.count
         let theirs = PhotoSource(id: "flow-card-theirs", name: "THEIRCARD", url: card, isCard: true)
@@ -70,12 +71,13 @@ extension DebugHooks {
         }
         await model.savePhotos()
         while model.saving || model.photosBusy { try? await Task.sleep(for: .milliseconds(200)) }
-        let others = PhotoScanner.files(in: PhoneFolders.documents.appendingPathComponent("Others"))
-        let placedThere = others.filter { (try? NativeMetadata.read($0))?.lat != nil }.count
-        print("  someone else's card: \(placedThere) of \(others.count) with a location in Others, queue \(before) then \(model.queueEntries.count)")
+        let others = PhotoScanner.files(in: PhoneFolders.copies.appendingPathComponent("Others"))
+        let savedOthers = model.results.values.filter { $0.url != nil }.count
+        print("  someone else's card: \(savedOthers) saved, \(others.count) copies left on the phone, queue \(before) then \(model.queueEntries.count)")
         let otherRaws = others.filter { !isJPG($0.path) }.count
         print("  someone else's card: \(otherRaws) raws saved")
-        if others.count != model.rows.count || placedThere != others.count || model.queueEntries.count != before || otherRaws != 0 { ok = false }
+        if savedOthers != model.rows.count || !others.isEmpty || model.queueEntries.count != before || otherRaws != 0 { ok = false }
+        if model.photosLine.contains("Photos:") { print("  \(model.photosLine)"); ok = false }
         // Remembered: the same card again is not asked about.
         model.choose(theirs)
         if model.askingWhose != nil { ok = false; print("  asked again about a card it knows") }

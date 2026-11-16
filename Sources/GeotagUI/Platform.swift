@@ -20,6 +20,28 @@ public extension PlatformImage {
 }
 
 #if os(iOS)
+import Photos
+
+/// The phone's Photos library (0.29.15): each JPG saved from a card is added
+/// there, with its location and date, as a copy of its own.
+public enum PhoneLibrary {
+    /// Asks the first time; true when Geotag may add photos.
+    public static func allowed() async -> Bool {
+        let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+        return status == .authorized || status == .limited
+    }
+
+    public static func add(_ url: URL) async throws {
+        try await PHPhotoLibrary.shared().performChanges {
+            let options = PHAssetResourceCreationOptions()
+            options.originalFilename = url.lastPathComponent
+            PHAssetCreationRequest.forAsset().addResource(with: .photo, fileURL: url, options: options)
+        }
+    }
+
+    public static func isJPG(_ url: URL) -> Bool { ["jpg", "jpeg"].contains(url.pathExtension.lowercased()) }
+}
+
 /// Where things are on the iPhone (14 November 2026). Each person's copies
 /// go in Geotag's own folder, which shows in the Files app under On My
 /// iPhone. The card, the NAS folder and Geotag's folder in iCloud Drive are
@@ -32,8 +54,21 @@ public enum PhoneFolders {
     /// "Documents/David", made when first needed.
     public static func saveFolder(for person: Person) -> URL {
         let name = person.name.replacingOccurrences(of: "/", with: "-").trimmingCharacters(in: .whitespaces)
-        let url = documents.appendingPathComponent(name.isEmpty ? person.id.uuidString : name, isDirectory: true)
+        let url = copies.appendingPathComponent(name.isEmpty ? person.id.uuidString : name, isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    /// Geotag's working copies (0.29.15, David, 16 November 2026: the photos
+    /// belong in the Photos library, not in Files): hidden, left out of the
+    /// phone's backup, each removed once it is on the server.
+    public static var copies: URL {
+        var url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Geotag/Copies", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? url.setResourceValues(values)
         return url
     }
 

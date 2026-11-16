@@ -54,6 +54,7 @@ struct PhoneRoot: View {
     @ObservedObject var meter: SendMeter
     @State private var tab = Tab.photos
     @State private var cards: CardWatch?
+    @State private var work: BackgroundWork?
     @Environment(\.scenePhase) private var phase
 
     enum Tab { case photos, tracks, queue, settings }
@@ -89,13 +90,20 @@ struct PhoneRoot: View {
         .onAppear {
             if cards == nil { cards = CardWatch(model: model) }
             cards?.start()
+            if work == nil {
+                work = BackgroundWork(model: model)
+                work?.start()
+            }
         }
         .onChange(of: phase) { _, now in
             if now == .active { cards?.start() } else { cards?.stop() }
         }
         // The screen stays on while photos are saved or sent: a locked phone stops both.
+        // The screen stays on while saving or sending only when the phone has not
+        // taken the work on in the background (0.29.15).
         .onChange(of: model.saving || meter.count > 0) { _, busy in
-            UIApplication.shared.isIdleTimerDisabled = busy
+            UIApplication.shared.isIdleTimerDisabled = busy && !(work?.isRunning ?? false)
+            if busy, let refused = work?.refused { model.tell(refused) }
         }
         .sheet(isPresented: Binding(get: { model.trackCheck != nil }, set: { _ in })) {
             if let check = model.trackCheck { TrackCheckSheet(model: model, check: check) }

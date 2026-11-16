@@ -650,6 +650,10 @@ public final class AppModel: ObservableObject {
         }
         applyAppearance()
         startCards()
+        #if os(iOS)
+        // Before any sending: nothing tidied away before it is in the library.
+        await moveOutOfFiles()
+        #endif
         startSending()
         Task {
             await checkNAS()
@@ -957,6 +961,10 @@ public final class AppModel: ObservableObject {
         var savedCount = 0, failedCount = 0
         var cardGone: String?
         #if os(iOS)
+        var libraryFailed = 0
+        var libraryProblem: String?
+        #endif
+        #if os(iOS)
         backgroundedDuringSave = false
         #endif
         // Every photo's place first, for its folder: the lookups still going
@@ -1017,6 +1025,24 @@ public final class AppModel: ObservableObject {
             case .saved(let url):
                 savedCount += 1
                 remember(row.photo)
+                #if os(iOS)
+                // Into the Photos library, then the working copy of someone else's photo is no longer needed (0.29.15).
+                if PhoneLibrary.isJPG(url) {
+                    if libraryAllowed == nil { libraryAllowed = await PhoneLibrary.allowed() }
+                    if libraryAllowed == true {
+                        do {
+                            try await PhoneLibrary.add(url)
+                            if !goesToServer(personId) { try? FileManager.default.removeItem(at: url) }
+                        } catch {
+                            libraryFailed += 1
+                            libraryProblem = error.localizedDescription
+                        }
+                    } else {
+                        libraryFailed += 1
+                        libraryProblem = Words.t("Geotag isn't allowed to add photos: allow it in the phone's Settings, Privacy, Photos, Geotag.")
+                    }
+                }
+                #endif
                 // Saved without a location: kept on the list to be placed later,
                 // unless it has no time at all and never can be.
                 if case .review(let reason)? = row.placement, reason != .noTime,
@@ -1077,6 +1103,9 @@ public final class AppModel: ObservableObject {
         if unplaced > 0 { line += Words.t(" {0} of them without a location: see the Status column.", unplaced) }
         if failedCount > 0 { line += Words.t(" {0} not saved: see the Status column.", failedCount) }
         #endif
+        #if os(iOS)
+        if libraryFailed > 0, let libraryProblem { line += " " + Words.t("{0} not added to Photos: {1}", libraryFailed, libraryProblem) }
+        #endif
         if let cardGone {
             line = cardGone + " " + Words.t("{0} saved; the rest are still to save, and are saved when the card is opened again.", savedCount)
             #if os(iOS)
@@ -1113,6 +1142,68 @@ public final class AppModel: ObservableObject {
     #if os(iOS)
     /// Set by the phone's app when it goes to the background during a save (0.29.13).
     public var backgroundedDuringSave = false
+    /// Whether the phone lets Geotag add photos to the library; asked once a launch.
+    private var libraryAllowed: Bool?
+
+    /// Once (0.29.15): the copies in Files moved to Geotag's hidden storage,
+    /// every JPG among them added to the Photos library, the records moved
+    /// with them. Done again next launch until every JPG is in; nothing is
+    /// deleted on the way.
+    func moveOutOfFiles() async {
+        guard !defaults.bool(forKey: "movedToLibrary") else { return }
+        let fm = FileManager.default
+        let old = PhoneFolders.documents, new = PhoneFolders.copies
+        // The folders moved first, and every path kept with them.
+        for name in (try? fm.contentsOfDirectory(atPath: old.path)) ?? [] where !name.hasPrefix(".") {
+            let from = old.appendingPathComponent(name), to = new.appendingPathComponent(name)
+            if fm.fileExists(atPath: to.path) {
+                for item in (try? fm.contentsOfDirectory(atPath: from.path)) ?? [] {
+                    try? fm.moveItem(at: from.appendingPathComponent(item), to: to.appendingPathComponent(item))
+                }
+                try? fm.removeItem(at: from)
+            } else {
+                try? fm.moveItem(at: from, to: to)
+            }
+        }
+        let move = { (path: String) -> String in path.hasPrefix(old.path + "/") ? new.path + path.dropFirst(old.path.count) : path }
+        changeQueue { all in for i in all.indices { all[i].localPath = move(all[i].localPath) } }
+        if var list = try? unplaced.load() {
+            for i in list.indices { list[i].localPath = move(list[i].localPath) }
+            try? unplaced.save(list)
+        }
+        for i in sentRecords.indices { sentRecords[i].localPath = move(sentRecords[i].localPath) }
+        try? sentLog.save(sentRecords)
+        for (id, result) in results {
+            if case .saved(let url) = result { results[id] = .saved(URL(fileURLWithPath: move(url.path))) }
+            if case .alreadyThere(let url) = result { results[id] = .alreadyThere(URL(fileURLWithPath: move(url.path))) }
+        }
+        // Then every JPG into the library.
+        guard await PhoneLibrary.allowed() else {
+            photosLine = Words.t("Geotag isn't allowed to add photos: allow it in the phone's Settings, Privacy, Photos, Geotag.")
+            return
+        }
+        var added = defaults.stringArray(forKey: "addedToLibrary").map(Set.init) ?? []
+        var failed = 0
+        var problem: String?
+        let jpgs = (fm.enumerator(at: new, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? []).filter(PhoneLibrary.isJPG)
+        for url in jpgs where !added.contains(url.path) {
+            do {
+                try await PhoneLibrary.add(url)
+                added.insert(url.path)
+                defaults.set(Array(added), forKey: "addedToLibrary")
+            } catch {
+                failed += 1
+                problem = error.localizedDescription
+            }
+        }
+        if failed > 0, let problem {
+            photosLine = Words.t("{0} not added to Photos: {1}", failed, problem)
+        } else {
+            defaults.set(true, forKey: "movedToLibrary")
+            defaults.removeObject(forKey: "addedToLibrary")
+            if !jpgs.isEmpty { photosLine = Words.t("{0} photos from Files are now in Photos.", jpgs.count) }
+        }
+    }
     #endif
 
     /// "Saving 341 of 3,630, about 12 min left", and the warning to connect
@@ -2486,11 +2577,11 @@ public final class AppModel: ObservableObject {
         let busy = Set(queueEntries.filter { $0.state != .sent }.map(\.localPath))
         var plan = MacTidy.plan(sentRecords, keep: keepOnMac, busy: busy, now: now)
         #if os(iOS)
-        // Raws leave the phone once they are on the server and checked; JPGs stay (0.29.5).
-        let raws = MacTidy.plan(sentRecords, keep: .untilOnNAS, busy: busy, now: now)
-        let isRaw: (Int) -> Bool = { !["jpg", "jpeg"].contains((self.sentRecords[$0].localPath as NSString).pathExtension.lowercased()) }
-        plan.remove = Array(Set(plan.remove + raws.remove.filter(isRaw))).sorted()
-        plan.gone = Array(Set(plan.gone + raws.gone.filter(isRaw))).sorted()
+        // Every working copy leaves once it is on the server: raws (0.29.5), and JPGs too,
+        // now that they are in the Photos library (0.29.15).
+        let onServer = MacTidy.plan(sentRecords, keep: .untilOnNAS, busy: busy, now: now)
+        plan.remove = Array(Set(plan.remove + onServer.remove)).sorted()
+        plan.gone = Array(Set(plan.gone + onServer.gone)).sorted()
         #endif
         guard !plan.remove.isEmpty || !plan.gone.isEmpty else { return }
         let fm = FileManager.default

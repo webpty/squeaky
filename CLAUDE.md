@@ -839,8 +839,9 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   shared folder's own name is internal, "Nm3Lvwhomes" for homes). Sending
   runs only while Geotag is open; the screen stays on while saving or
   sending.
-- Copies are never removed from the phone (David, 15 November 2026: each
-  person manages their own photos): `keepOnMac` is always `.always` there.
+- Each person manages their own photos (David, 15 November 2026), in the
+  Photos library since 0.29.15; Geotag's own working copies leave the phone
+  once on the server.
 - One person per phone (David, 15 November 2026), kept as `macOwner`.
   Choose card is dimmed until the person is saved.
 - Not every card is the phone's person's (David, 15 November 2026: his
@@ -1019,6 +1020,24 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - The phone has no Status column: its line gives each reason with how many.
   A failed square has a red mark; the count of saved photos updates after
   each photo.
+
+## The Photos library and the background (0.29.15, David, 16 November 2026)
+
+- Photos saved on the phone go into its Photos library, not Files (David:
+  "they should show in the library"): every JPG saved from a card is added
+  with its location and date (`PhoneLibrary`, add-only permission). Raws
+  never go into the library. Geotag's working copies live hidden in
+  Application Support/Geotag/Copies, out of the phone's backup, and each
+  leaves once it is on the server. Someone else's JPGs go into the library
+  and their copy is removed at once. Geotag no longer shows in Files.
+- On the first launch of 0.29.15, what was in Files (Documents) is moved to
+  the hidden copies with every path kept, and every JPG added to Photos;
+  done again each launch until all are in; nothing deleted on the way.
+- A save, and the sending after it, ask the phone to keep running in the
+  background (`BackgroundWork`, BGContinuedProcessingTask, iOS 26 and
+  later): progress on the Lock Screen; cancelling there is Stop. The screen
+  stays on only when the phone will not take it on. Not yet seen on a real
+  phone, nor whether the card stays readable meanwhile.
 
 ## Architecture
 

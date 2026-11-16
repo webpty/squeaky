@@ -1,1 +1,2 @@
 "CFBundleDisplayName" = "Geotag";
+"NSPhotoLibraryAddUsageDescription" = "Geotag ajoute les photos qu'il enregistre depuis vos cartes.";
