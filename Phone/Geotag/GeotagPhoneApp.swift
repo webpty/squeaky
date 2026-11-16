@@ -26,6 +26,7 @@ struct GeotagPhoneApp: App {
                     #if DEBUG
                     if await DebugHooks.flow(model) { exit(0) }
                     if await DebugHooks.watch(model) { exit(0) }
+                    await DebugHooks.show(model)
                     #endif
                     await model.start()
                 }

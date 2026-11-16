@@ -23,6 +23,35 @@ public enum ServerList {
         try encoder.encode(entries).write(to: url, options: .atomic)
     }
 
+    /// This device's cameras and their offsets (0.29.1).
+    public static func writeCameras(_ cameras: [Camera], into personFolder: URL, device: String) throws {
+        let safe = device.replacingOccurrences(of: "/", with: "-")
+        let url = personFolder.appendingPathComponent(folderName, isDirectory: true).appendingPathComponent("cameras-\(safe).json")
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .secondsSince1970
+        encoder.outputFormatting = [.sortedKeys]
+        try encoder.encode(cameras).write(to: url, options: .atomic)
+    }
+
+    /// For each camera model, the one whose offset was set most recently on any device.
+    public static func readCameras(from personFolder: URL) -> [Camera] {
+        let folder = personFolder.appendingPathComponent(folderName, isDirectory: true)
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        var newest: [String: Camera] = [:]
+        for name in names.sorted() where name.hasPrefix("cameras-") && name.hasSuffix(".json") {
+            guard let data = try? Data(contentsOf: folder.appendingPathComponent(name)),
+                  let list = try? decoder.decode([Camera].self, from: data) else { continue }
+            for camera in list where camera.offsetSeconds != nil {
+                if let known = newest[camera.model], known.offsetDate >= camera.offsetDate { continue }
+                newest[camera.model] = camera
+            }
+        }
+        return newest.values.sorted { $0.model < $1.model }
+    }
+
     /// Every device's list, together; a list that cannot be read is left out.
     public static func read(from personFolder: URL) -> [HistoryEntry] {
         let folder = personFolder.appendingPathComponent(folderName, isDirectory: true)

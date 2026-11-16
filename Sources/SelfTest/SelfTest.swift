@@ -1430,6 +1430,26 @@ extension SelfTest {
         for _ in 0..<100 where second.rows.isEmpty || second.photosBusy { try? await Task.sleep(for: .milliseconds(100)) }
         check("server list: the other Mac counts them as saved before", second.rows.count == 4
               && second.rows.allSatisfy { $0.status == .alreadyImported }, "\(second.rows.map(\.status))")
+        // An offset set on one device reaches the other; the newest wins.
+        if var camera = first.book.camera(personId: davidA, model: "Canon EOS R5m2") {
+            camera.offsetSeconds = 7
+            first.save(camera)
+            await first.publishCameras(davidA)
+            await second.pullCameras(davidB)
+            let got = second.book.camera(personId: davidB, model: "Canon EOS R5m2")?.offsetSeconds
+            check("server list: a camera offset set on one Mac reaches the other", got == 7, "\(String(describing: got))")
+            if var theirs = second.book.camera(personId: davidB, model: "Canon EOS R5m2") {
+                try? await Task.sleep(for: .milliseconds(20))
+                theirs.offsetSeconds = -3
+                second.save(theirs)
+                await second.publishCameras(davidB)
+                await first.pullCameras(davidA)
+                let back = first.book.camera(personId: davidA, model: "Canon EOS R5m2")?.offsetSeconds
+                check("server list: a newer offset from the other comes back", back == -3, "\(String(describing: back))")
+            }
+        } else {
+            check("server list: a camera to set", false)
+        }
         // Server away: no wait, and the card reads as new.
         nas.online = false
         await second.checkNAS()

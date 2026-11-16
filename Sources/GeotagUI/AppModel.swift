@@ -808,7 +808,16 @@ public final class AppModel: ObservableObject {
 
     public func save(_ person: Person) { store { $0.save(person) } }
     public func remove(person id: UUID) { store { $0.remove(person: id) }; rematch() }
-    public func save(_ camera: Camera) { store { $0.save(camera) }; rematch() }
+    public func save(_ camera: Camera) {
+        var camera = camera
+        // An offset set here: dated, and shared with the person's other devices (0.29.1).
+        let before = book.cameras.first { $0.id == camera.id }
+        let changed = before?.offsetSeconds != camera.offsetSeconds || before?.readings != camera.readings
+        if changed, camera.offsetSeconds != nil { camera.offsetSet = Date() }
+        store { $0.save(camera) }
+        rematch()
+        if changed { let person = camera.personId; Task { await publishCameras(person) } }
+    }
     public func remove(camera id: UUID) { store { $0.remove(camera: id) }; rematch() }
 
     // MARK: Photos
@@ -1297,7 +1306,9 @@ public final class AppModel: ObservableObject {
                 case .native: return NativeMetadata.scan(files, progress: progress)
                 }
             }.value
-            // What any Mac or phone saved before, from the list on the server.
+            // The camera offsets set on the person's other devices, then what
+            // any Mac or phone saved before, from the lists on the server.
+            await pullCameras(personId)
             let past = ((try? history.load(personId)) ?? []) + (await serverHistory(personId))
             guard readingRound == round, self.source?.id == source.id else { return }
             #if os(iOS)
@@ -1904,7 +1915,47 @@ public final class AppModel: ObservableObject {
     /// Everyone's lists, as Geotag opens: the photos saved before this
     /// version count on the other devices straight away.
     func publishAllHistory() async {
-        for person in book.people { await publishHistory(person.id) }
+        for person in book.people {
+            await pullCameras(person.id)
+            await publishHistory(person.id)
+            await publishCameras(person.id)
+        }
+    }
+
+    /// This device's cameras for a person, with their offsets, put on the server.
+    public func publishCameras(_ personId: UUID) async {
+        let cameras = book.cameras(of: personId).filter { $0.offsetSeconds != nil }
+        guard !cameras.isEmpty, let folder = await serverFolder(personId) else { return }
+        let device = deviceId
+        _ = await Task.detached { try? ServerList.writeCameras(cameras, into: folder, device: device) }.value
+    }
+
+    /// Offsets set more recently on another device taken here; a camera
+    /// another device knows and this one not yet, added.
+    public func pullCameras(_ personId: UUID) async {
+        guard let folder = await serverFolder(personId) else { return }
+        let shared = await Task.detached { ServerList.readCameras(from: folder) }.value
+        var taken = false
+        var next = book
+        for theirs in shared {
+            if var mine = next.camera(personId: personId, model: theirs.model) {
+                guard mine.offsetSeconds == nil || theirs.offsetDate > mine.offsetDate else { continue }
+                mine.offsetSeconds = theirs.offsetSeconds
+                mine.readings = theirs.readings
+                mine.offsetSet = theirs.offsetDate
+                if mine.zone == .notSet { mine.zone = theirs.zone }
+                next.save(mine)
+            } else {
+                var added = Camera(personId: personId, model: theirs.model, zone: theirs.zone, offsetSeconds: theirs.offsetSeconds)
+                added.readings = theirs.readings
+                added.offsetSet = theirs.offsetDate
+                next.save(added)
+            }
+            taken = true
+        }
+        guard taken else { return }
+        store { $0 = next }
+        rematch()
     }
 
     /// Saves the NAS settings, says so at once, then what the NAS answers.

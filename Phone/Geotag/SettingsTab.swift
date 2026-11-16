@@ -14,6 +14,7 @@ struct SettingsTab: View {
     @State private var name = ""
     /// Offsets typed, by camera, until the checkmark saves them.
     @State private var offsets: [UUID: String] = [:]
+    @State private var showingCode = false
 
     var owner: Person? { model.macOwner.flatMap { model.book.person($0) } }
 
@@ -32,12 +33,13 @@ struct SettingsTab: View {
                             .multilineTextAlignment(.trailing)
                     }
                 }
-                if let owner, !model.book.cameras(of: owner.id).isEmpty {
-                    Section(Words.t("Cameras")) {
+                Section(Words.t("Cameras")) {
+                    if let owner {
                         ForEach(model.book.cameras(of: owner.id)) { camera in
                             CameraRow(camera: camera, text: offset(camera))
                         }
                     }
+                    Button(Words.t("Show offset code")) { showingCode = true }
                 }
                 if !model.book.cameras(of: PhoneFolders.othersId).isEmpty {
                     Section(Words.t("Other cameras")) {
@@ -92,7 +94,12 @@ struct SettingsTab: View {
                         .disabled(model.settingsBusy)
                 }
             }
-            .onAppear { name = owner?.name ?? "" }
+            .onAppear {
+                name = owner?.name ?? ""
+                #if DEBUG
+                if CommandLine.arguments.contains("--offset-code") { showingCode = true }
+                #endif
+            }
             .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
                 switch result {
                 case .success(let url): keepNAS(url)
@@ -100,6 +107,8 @@ struct SettingsTab: View {
                 }
             }
         }
+        // Apart from the Files list: two on one view and neither opens.
+        .fullScreenCover(isPresented: $showingCode) { OffsetCodeScreen() }
     }
 
     /// What is typed for a camera's offset: its saved offset until changed.

@@ -887,6 +887,23 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - This is Geotag's own record on the server, read only to know what was
   saved; it never decides anything about the photos there.
 
+## Offsets shared, the offset code and squares on the phone (0.29.1, David, 16 November 2026)
+
+- Camera offsets go through the same `.geotag` folder: each device writes
+  `cameras-<device>.json` with the person's cameras that have an offset;
+  for each model the offset set most recently on any device wins
+  (`Camera.offsetSet`; before 0.29.1, the last offset code reading's date).
+  Read as Geotag opens and before a card is read; written whenever an
+  offset changes. Others' cameras on a phone are never shared.
+- The phone shows the offset code full screen (Settings, Cameras, Show
+  offset code), at full brightness, its clock checked against
+  time.apple.com by one NTP question, as the Mac does with sntp.
+- The Photos tab on the phone shows the photos still to be saved as square
+  pictures, three to a row; already saved ones are left out. Why photos
+  wait is one line per reason, with how many.
+- Version numbers: small changes raise the last digit (David, 16 November
+  2026).
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

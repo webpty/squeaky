@@ -1,5 +1,6 @@
 import GeotagCore
 import GeotagUI
+import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -27,6 +28,10 @@ struct PhotosTab: View {
                     if !model.rows.isEmpty {
                         LabeledContent(Words.t("Photos"), value: counts)
                     }
+                    // Why photos wait: one line for each reason, with how many.
+                    ForEach(reasons, id: \.self) { line in
+                        Text(line).foregroundStyle(.secondary)
+                    }
                 }
                 Section {
                     if model.saving {
@@ -46,11 +51,16 @@ struct PhotosTab: View {
                         }
                     }
                 }
-                if !model.rows.isEmpty {
+                // The photos to be saved, as squares (0.29.1, David, 16 November 2026).
+                let waiting = model.rows.filter { $0.willImport && model.results[$0.id] == nil }
+                if !waiting.isEmpty {
                     Section {
-                        ForEach(model.rows) { row in
-                            PhotoRow(model: model, row: row)
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 3), spacing: 2) {
+                            ForEach(waiting) { row in
+                                Square(url: model.pictureURL(row))
+                            }
                         }
+                        .listRowInsets(EdgeInsets())
                     }
                 }
             }
@@ -79,6 +89,19 @@ struct PhotosTab: View {
         }
     }
 
+    /// "8 photos: Camera time offset not set".
+    var reasons: [String] {
+        guard !model.saving else { return [] }
+        var counts: [String: Int] = [:]
+        var order: [String] = []
+        for row in model.rows where row.needsReview && row.status != .alreadyImported && model.results[row.id] == nil {
+            let why = PhotoText.location(row, gap: model.maxGapSeconds)
+            if counts[why] == nil { order.append(why) }
+            counts[why, default: 0] += 1
+        }
+        return order.map { counts[$0] == 1 ? Words.t("1 photo: {0}", $0) : Words.t("{0} photos: {1}", counts[$0]!.formatted(), $0) }
+    }
+
     /// "340 new, 12 already saved".
     var counts: String {
         let before = model.rows.filter { $0.status == .alreadyImported }.count
@@ -96,33 +119,38 @@ struct PhotosTab: View {
     }
 }
 
-/// One photo: its name, when it was taken, and where it stands.
-struct PhotoRow: View {
-    @ObservedObject var model: AppModel
-    let row: ImportRow
+/// A photo as a square picture, made from its own file and kept while
+/// Geotag runs.
+struct Square: View {
+    let url: URL?
+    @State private var image: UIImage?
+    static let made = NSCache<NSURL, UIImage>()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(row.photo.fileName)
-            Text(PhotoText.taken(row.photo)).font(.caption).foregroundStyle(.secondary)
-            Text(status).font(.caption).foregroundStyle(.secondary)
-        }
-        .lineLimit(1)
+        Color(.secondarySystemBackground)
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                if let image {
+                    Image(uiImage: image).resizable().scaledToFill()
+                }
+            }
+            .clipped()
+            .task(id: url) {
+                guard let url else { return }
+                if let known = Self.made.object(forKey: url as NSURL) { image = known; return }
+                let picture = await Task.detached { Self.picture(url) }.value
+                if let picture { Self.made.setObject(picture, forKey: url as NSURL) }
+                image = picture
+            }
     }
 
-    var status: String {
-        if let result = model.results[row.id] {
-            if let url = result.url, let entry = model.queueEntry(for: url.path) {
-                let why = row.needsReview ? " · " + PhotoText.location(row, gap: model.maxGapSeconds) : ""
-                return QueueText.photo(entry) + why
-            }
-            switch result {
-            case .saved: return Words.t("Saved")
-            case .alreadyThere: return Words.t("Already saved")
-            case .failed(let why): return Words.t("Not saved: {0}", Words.t(why))
-            }
-        }
-        return row.status == .alreadyImported ? PhotoText.status(row.status) : PhotoText.location(row, gap: model.maxGapSeconds)
+    nonisolated static func picture(_ url: URL) -> UIImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                                                                       kCGImageSourceCreateThumbnailWithTransform: true,
+                                                                       kCGImageSourceThumbnailMaxPixelSize: 360] as CFDictionary)
+        else { return nil }
+        return UIImage(cgImage: cg)
     }
 }
 

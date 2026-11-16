@@ -110,3 +110,22 @@ extension DebugHooks {
     }
 }
 #endif
+
+#if DEBUG
+extension DebugHooks {
+    /// `--show-card <card>`: the card read as a remembered one, for a picture
+    /// of the Photos tab; the app then runs as usual.
+    @MainActor
+    static func show(_ model: AppModel) async {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--show-card"), args.count > i + 1 else { return }
+        model.setPhonePerson(name: "Show")
+        guard let owner = model.macOwner else { return }
+        var people = UserDefaults.standard.dictionary(forKey: "cardPeople") as? [String: String] ?? [:]
+        people["show-card"] = owner.uuidString
+        UserDefaults.standard.set(people, forKey: "cardPeople")
+        let source = PhotoSource(id: "show-card", name: "EOS_DIGITAL", url: URL(fileURLWithPath: args[i + 1]), isCard: true)
+        model.choose(source)
+    }
+}
+#endif

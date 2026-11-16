@@ -42,6 +42,12 @@ public struct Camera: Codable, Identifiable, Equatable, Sendable {
     /// Every offset code photo, oldest first: the clock's drift is worked out
     /// from them, and photos are matched with it (David, 1 November 2026).
     public var readings: [ClockReading] = []
+    /// When the offset was last set, here or on another device: the newest
+    /// wins when devices share their offsets (0.29.1).
+    public var offsetSet: Date?
+
+    /// When the offset was set, as best known: before 0.29.1, the last reading.
+    public var offsetDate: Date { offsetSet ?? readings.last?.at ?? .distantPast }
 
     public init(id: UUID = UUID(), personId: UUID, model: String, zone: CameraZone, offsetSeconds: Int? = nil) {
         self.id = id
@@ -69,7 +75,7 @@ public struct Camera: Codable, Identifiable, Equatable, Sendable {
     /// Ready for matching: both the zone and the offset are known.
     public var isReady: Bool { zone != .notSet && offsetSeconds != nil }
 
-    private enum CodingKeys: String, CodingKey { case id, personId, model, zone, zoneId, offsetSeconds, firmware, firmwareSeen, readings }
+    private enum CodingKeys: String, CodingKey { case id, personId, model, zone, zoneId, offsetSeconds, firmware, firmwareSeen, readings, offsetSet }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -80,6 +86,7 @@ public struct Camera: Codable, Identifiable, Equatable, Sendable {
         firmware = try c.decodeIfPresent(String.self, forKey: .firmware)
         firmwareSeen = try c.decodeIfPresent(Date.self, forKey: .firmwareSeen)
         readings = try c.decodeIfPresent([ClockReading].self, forKey: .readings) ?? []
+        offsetSet = try c.decodeIfPresent(Date.self, forKey: .offsetSet)
         switch try c.decode(String.self, forKey: .zone) {
         case "photo": zone = .fromPhoto
         case "fixed": zone = .fixed(try c.decode(String.self, forKey: .zoneId))
@@ -96,6 +103,7 @@ public struct Camera: Codable, Identifiable, Equatable, Sendable {
         try c.encodeIfPresent(firmware, forKey: .firmware)
         try c.encodeIfPresent(firmwareSeen, forKey: .firmwareSeen)
         if !readings.isEmpty { try c.encode(readings, forKey: .readings) }
+        try c.encodeIfPresent(offsetSet, forKey: .offsetSet)
         switch zone {
         case .fromPhoto: try c.encode("photo", forKey: .zone)
         case .fixed(let id): try c.encode("fixed", forKey: .zone); try c.encode(id, forKey: .zoneId)
