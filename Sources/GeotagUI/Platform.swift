@@ -212,8 +212,10 @@ public enum PhoneFolders {
     /// this one's. Anything else stays as it is.
     public static func current(_ path: String) -> String {
         let home = NSHomeDirectory()
+        // The phone's folders and the simulator's alike: whatever comes before
+        // "Containers/Data/Application/<id>" is this install's own (0.29.14).
         guard !path.hasPrefix(home + "/"),
-              let range = path.range(of: #"^/(private/)?var/mobile/Containers/Data/Application/[0-9A-F-]{36}"#, options: .regularExpression)
+              let range = path.range(of: #"/Containers/Data/Application/[0-9A-F-]{36}"#, options: .regularExpression)
         else { return path }
         return home + path[range.upperBound...]
     }

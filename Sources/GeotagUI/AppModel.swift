@@ -512,6 +512,16 @@ public final class AppModel: ObservableObject {
         if let kept = photoList?.load() {
             rows = kept.rows
             results = kept.results
+            #if os(iOS)
+            // Reinstalled since: the copies are under this install's folder (0.29.14).
+            for (id, result) in results {
+                switch result {
+                case .saved(let url): results[id] = .saved(URL(fileURLWithPath: PhoneFolders.current(url.path)))
+                case .alreadyThere(let url): results[id] = .alreadyThere(URL(fileURLWithPath: PhoneFolders.current(url.path)))
+                case .failed: break
+                }
+            }
+            #endif
             importPerson = kept.personId.flatMap { book.person($0) != nil ? $0 : nil }
             photosLine = Self.cardOut
         }

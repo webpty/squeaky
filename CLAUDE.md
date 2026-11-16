@@ -829,7 +829,11 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   every 3 s while Geotag is in front. No eject: the card is let go of once
   saved, and not read again until it has been taken out. Copies go in Geotag's folder on the phone
   (On My iPhone, Geotag, one folder per person). Paths kept in the queue and
-  records are moved to the new install's folder after each reinstall.
+  records, and the Photos list's copies (0.29.14), are moved to the new
+  install's folder after each reinstall; matched on
+  "/Containers/Data/Application/<id>", the phone's and the simulator's alike.
+  A saved photo whose copy has left the phone (a raw on the server) shows no
+  square once the card is out.
 - The NAS: its shared folder, connected in the Files app and chosen once in
   Settings (`NASThroughFiles`), matched by the name the Files app shows (a
   shared folder's own name is internal, "Nm3Lvwhomes" for homes). Sending

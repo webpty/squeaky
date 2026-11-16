@@ -109,7 +109,10 @@ struct PhotosTab: View {
         // from the copy on the phone once the card is out, with a check (0.29.12).
         let cardIn = model.source != nil
         let waiting = model.rows.filter { row in
-            if model.results[row.id]?.url != nil { return true }
+            if let copy = model.results[row.id]?.url {
+                // Card out: only a copy still on the phone has a picture; a raw sent to the server has none (0.29.14).
+                return cardIn || FileManager.default.fileExists(atPath: copy.path)
+            }
             if case .failed? = model.results[row.id] { return cardIn }
             return cardIn && row.willImport && model.results[row.id] == nil
         }
