@@ -14,8 +14,9 @@ struct PhotosTab: View {
         NavigationStack {
             List {
                 Section {
-                    Text(model.syncActivity ?? QueueText.sync(model.lastSave, problem: model.sharedProblem))
-                        .foregroundStyle(.secondary)
+                    // A spinning wheel while the sync files are read or saved (0.29.18).
+                    StatusRow(text: model.syncActivity ?? QueueText.sync(model.lastSave, problem: model.sharedProblem),
+                              busy: model.syncActivity != nil)
                     StatusRow(text: model.photosLine, busy: model.photosBusy || model.saving)
                     if let id = model.importPerson, model.book.person(id) != nil {
                         // Tapped: the card is the other side's, and is read again for it.

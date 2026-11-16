@@ -2235,21 +2235,30 @@ public final class AppModel: ObservableObject {
                 problem = why.localizedDescription
                 continue
             }
-            syncActivity = Words.t("Reading the sync files")
             if let refreshed = await refreshServerCopy(person.id, folder: folder) { problem = refreshed }
             syncActivity = Words.t("Saving the sync file")
             let entries = (try? history.load(person.id)) ?? []
             let cameras = book.cameras(of: person.id).filter { $0.offsetSeconds != nil }
             let device = deviceId
-            let failure: String? = await Task.detached {
-                do {
-                    if !entries.isEmpty { try ServerList.write(entries, into: folder, device: device) }
-                    if !cameras.isEmpty { try ServerList.writeCameras(cameras, into: folder, device: device) }
-                    return nil
-                } catch {
-                    return error.localizedDescription
+            // Given up after 30 seconds rather than hanging (0.29.18).
+            let failure: String? = await withTaskGroup(of: String??.self) { group in
+                group.addTask {
+                    await Task.detached { () -> String? in
+                        do {
+                            if !entries.isEmpty { try ServerList.write(entries, into: folder, device: device) }
+                            if !cameras.isEmpty { try ServerList.writeCameras(cameras, into: folder, device: device) }
+                            return nil
+                        } catch {
+                            return error.localizedDescription
+                        }
+                    }.value
                 }
-            }.value
+                group.addTask { try? await Task.sleep(for: .seconds(30)); return .some(Words.t("no answer within 30 seconds.")) }
+                let first = await group.next() ?? nil
+                group.cancelAll()
+                return first ?? nil
+            }
+            syncActivity = nil
             if let failure { problem = Words.t("it couldn't be written:") + " " + failure }
             // The phone's person, or this Mac's owner, or the first: the line on the Photos page.
             if person.id == (macOwner ?? people.first?.id) {
@@ -2305,7 +2314,27 @@ public final class AppModel: ObservableObject {
     /// Both sync files read in one visit, kept here, the offsets taken; nil
     /// when all went well, else why not.
     func refreshServerCopy(_ personId: UUID, folder: URL) async -> String? {
-        let read = await Task.detached { (ServerList.readChecked(from: folder), ServerList.readCameras(from: folder)) }.value
+        // Which files, said as they are read, and given up after 30 seconds rather than hanging (0.29.18).
+        let names = await Task.detached { ServerList.files(in: folder) }.value
+        syncActivity = names.isEmpty ? Words.t("Reading the sync files")
+            : Words.t("Reading the sync files: {0}", names.joined(separator: ", "))
+        let outcome = await withTaskGroup(of: ([HistoryEntry], String?, [Camera])?.self) { group in
+            group.addTask {
+                await Task.detached { () -> ([HistoryEntry], String?, [Camera]) in
+                    let saved = ServerList.readChecked(from: folder)
+                    return (saved.entries, saved.problem, ServerList.readCameras(from: folder))
+                }.value
+            }
+            group.addTask { try? await Task.sleep(for: .seconds(30)); return nil }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+        guard let outcome else {
+            syncActivity = nil
+            return Words.t("reading the sync files took more than 30 seconds: {0}", names.joined(separator: ", "))
+        }
+        let read = ((entries: outcome.0, problem: outcome.1), outcome.2)
         let copy = ServerCopy(entries: read.0.entries, cameras: read.1)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .secondsSince1970
@@ -2315,6 +2344,7 @@ public final class AppModel: ObservableObject {
         }
         applyCameras(copy.cameras, personId: personId)
         await noteLastSave(folder, personId)
+        syncActivity = nil
         return read.0.problem.map { Words.t("the other devices' sync files couldn't be read:") + " " + $0 }
     }
 

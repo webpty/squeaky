@@ -42,8 +42,8 @@ public enum ServerList {
         decoder.dateDecodingStrategy = .secondsSince1970
         var newest: [String: Camera] = [:]
         for name in names.sorted() where name.hasPrefix("cameras-") && name.hasSuffix(".json") {
-            guard let data = try? Data(contentsOf: folder.appendingPathComponent(name)),
-                  let list = try? decoder.decode([Camera].self, from: data) else { continue }
+            guard let bytes = try? data(folder.appendingPathComponent(name)),
+                  let list = try? decoder.decode([Camera].self, from: bytes) else { continue }
             for camera in list where camera.offsetSeconds != nil {
                 if let known = newest[camera.model], known.offsetDate >= camera.offsetDate { continue }
                 newest[camera.model] = camera
@@ -78,6 +78,26 @@ public enum ServerList {
     /// Every device's list, together; a list that cannot be read is left out.
     public static func read(from personFolder: URL) -> [HistoryEntry] { readChecked(from: personFolder).entries }
 
+    /// A file's bytes, fetched the way the Files app expects: a coordinated
+    /// read makes a file provider (the NAS on the phone) bring the file down
+    /// first, where a plain read can wait on it for ever (0.29.18).
+    public static func data(_ url: URL) throws -> Data {
+        var result: Result<Data, Error> = .failure(CocoaError(.fileReadUnknown))
+        var coordination: NSError?
+        NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &coordination) { readable in
+            result = Result { try Data(contentsOf: readable) }
+        }
+        if let coordination { throw coordination }
+        return try result.get()
+    }
+
+    /// The sync files in the folder, for saying which one is being read.
+    public static func files(in personFolder: URL) -> [String] {
+        let folder = personFolder.appendingPathComponent(folderName, isDirectory: true)
+        return ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
+            .filter { $0.hasSuffix(".json") && ($0.hasPrefix("saved-") || $0.hasPrefix("cameras-")) }.sorted()
+    }
+
     /// The same, with why a list could not be read, when one could not (0.29.11).
     public static func readChecked(from personFolder: URL) -> (entries: [HistoryEntry], problem: String?) {
         let folder = personFolder.appendingPathComponent(folderName, isDirectory: true)
@@ -96,7 +116,7 @@ public enum ServerList {
         var out: [HistoryEntry] = []
         for name in names.sorted() where name.hasPrefix("saved-") && name.hasSuffix(".json") {
             do {
-                let list = try decoder.decode([HistoryEntry].self, from: Data(contentsOf: folder.appendingPathComponent(name)))
+                let list = try decoder.decode([HistoryEntry].self, from: data(folder.appendingPathComponent(name)))
                 for entry in list where seen.insert(entry.key).inserted { out.append(entry) }
             } catch {
                 problem = "\(name): \(error.localizedDescription)"
