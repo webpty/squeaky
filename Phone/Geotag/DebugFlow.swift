@@ -78,3 +78,35 @@ extension DebugHooks {
     }
 }
 #endif
+
+#if DEBUG
+extension DebugHooks {
+    /// `--watch-test <card>`: a remembered card is read by itself, and not
+    /// again once let go of while it is still in.
+    @MainActor
+    static func watch(_ model: AppModel) async -> Bool {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--watch-test"), args.count > i + 1 else { return false }
+        let card = URL(fileURLWithPath: args[i + 1])
+        model.setPhonePerson(name: "Watch")
+        guard let owner = model.macOwner else { print("watch: FAILED, no person"); return true }
+        var people = UserDefaults.standard.dictionary(forKey: "cardPeople") as? [String: String] ?? [:]
+        people["watch-card"] = owner.uuidString
+        UserDefaults.standard.set(people, forKey: "cardPeople")
+        CardWatch.remember(card, id: "watch-card")
+        let watch = CardWatch(model: model)
+        watch.start()
+        try? await Task.sleep(for: .seconds(5))
+        while model.photosBusy || model.saving { try? await Task.sleep(for: .milliseconds(200)) }
+        let found = model.source?.id == "watch-card" && !model.rows.isEmpty
+        print("  read by itself: \(found), \(model.rows.count) photos")
+        model.letGo()
+        try? await Task.sleep(for: .seconds(8))
+        let stayed = model.source == nil
+        print("  not read again once let go of: \(stayed)")
+        watch.stop()
+        print(found && stayed ? "watch: all passed" : "watch: FAILED")
+        return true
+    }
+}
+#endif

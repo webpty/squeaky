@@ -822,8 +822,12 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   photos and the queue behave as on the Mac. The phone's
   screens are its own (`Phone/Geotag`), four tabs: Photos, Tracks, Queue,
   Settings. No map pictures on the phone.
-- The card: chosen in the Files list (a USB-C card reader); no eject, the
-  card is let go of once saved. Copies go in Geotag's folder on the phone
+- The card: opened once in the Files list (a USB-C card reader), with
+  Open card; the phone allows no app into a card before that. Each card
+  opened is remembered (`CardWatch`, David, 16 November 2026): plugged in
+  while Geotag is open, or when it opens, it is read by itself, looked for
+  every 3 s while Geotag is in front. No eject: the card is let go of once
+  saved, and not read again until it has been taken out. Copies go in Geotag's folder on the phone
   (On My iPhone, Geotag, one folder per person). Paths kept in the queue and
   records are moved to the new install's folder after each reinstall.
 - The NAS: its shared folder, connected in the Files app and chosen once in

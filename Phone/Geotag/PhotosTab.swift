@@ -32,15 +32,17 @@ struct PhotosTab: View {
                     if model.saving {
                         Button(Words.t("Stop")) { model.stopSaving() }
                     } else {
-                        Button(Words.t("Choose card")) { choosing = true }
-                            .disabled(model.photosBusy || model.macOwner == nil)
-                        if model.source != nil {
+                        if model.source == nil {
+                            Button(Words.t("Open card")) { choosing = true }
+                                .disabled(model.photosBusy || model.macOwner == nil)
+                            if !model.rows.isEmpty {
+                                Button(Words.t("Clear photos")) { model.clearPhotos() }
+                            }
+                        } else {
                             Button(Words.t("Save photos")) { Task { await model.savePhotos() } }
                                 .disabled(!model.canSave)
                             Button(Words.t("Done with this card")) { model.letGo() }
                                 .disabled(model.photosBusy)
-                        } else if !model.rows.isEmpty {
-                            Button(Words.t("Clear photos")) { model.clearPhotos() }
                         }
                     }
                 }
@@ -55,7 +57,10 @@ struct PhotosTab: View {
             .navigationTitle(Words.t("Photos"))
             .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
                 switch result {
-                case .success(let url): model.choose(Self.source(url))
+                case .success(let url):
+                    let source = Self.source(url)
+                    CardWatch.remember(url, id: source.id)
+                    model.choose(source)
                 case .failure(let error): model.tell(error.localizedDescription)
                 }
             }
@@ -82,11 +87,11 @@ struct PhotosTab: View {
     }
 
     /// The card, or a folder on it: known again next time by the card's own id.
-    static func source(_ url: URL) -> PhotoSource {
+    static func source(_ url: URL, id known: String? = nil) -> PhotoSource {
         _ = url.startAccessingSecurityScopedResource()
         let values = try? url.resourceValues(forKeys: [.volumeUUIDStringKey, .volumeNameKey])
         let name = values?.volumeName ?? (url.lastPathComponent == "DCIM" ? url.deletingLastPathComponent().lastPathComponent : url.lastPathComponent)
-        let id = values?.volumeUUIDString ?? values?.volumeName ?? url.path
+        let id = known ?? values?.volumeUUIDString ?? values?.volumeName ?? url.path
         return PhotoSource(id: id, name: name, url: url, isCard: true)
     }
 }

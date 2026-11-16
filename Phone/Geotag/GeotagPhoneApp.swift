@@ -25,6 +25,7 @@ struct GeotagPhoneApp: App {
                 .task {
                     #if DEBUG
                     if await DebugHooks.flow(model) { exit(0) }
+                    if await DebugHooks.watch(model) { exit(0) }
                     #endif
                     await model.start()
                 }
@@ -48,6 +49,8 @@ struct PhoneRoot: View {
     @ObservedObject var model: AppModel
     @ObservedObject var meter: SendMeter
     @State private var tab = Tab.photos
+    @State private var cards: CardWatch?
+    @Environment(\.scenePhase) private var phase
 
     enum Tab { case photos, tracks, queue, settings }
 
@@ -77,6 +80,14 @@ struct PhoneRoot: View {
             SettingsTab(model: model)
                 .tabItem { Label(Words.t("Settings"), systemImage: "gearshape") }
                 .tag(Tab.settings)
+        }
+        // Remembered cards are looked for while Geotag is in front.
+        .onAppear {
+            if cards == nil { cards = CardWatch(model: model) }
+            cards?.start()
+        }
+        .onChange(of: phase) { _, now in
+            if now == .active { cards?.start() } else { cards?.stop() }
         }
         // The screen stays on while photos are saved or sent: a locked phone stops both.
         .onChange(of: model.saving || meter.count > 0) { _, busy in
