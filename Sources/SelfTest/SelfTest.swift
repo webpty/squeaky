@@ -79,6 +79,7 @@ struct SelfTest {
         }
         await serverList(scratch)
         trackNames()
+        bursts(scratch)
         await trackCheck(scratch)
         await settingsFeedback(scratch)
         await naming(scratch)
@@ -1484,6 +1485,40 @@ extension SelfTest {
     }
 }
 
+extension SelfTest {
+    /// Bursts in their own folders (0.29.6).
+    static func bursts(_ scratch: URL) {
+        func photo(_ name: String, _ time: String, _ sub: String, drive: Int?, model: String = "Canon EOS R5m2") -> ScannedPhoto {
+            var p = ScannedPhoto(url: URL(fileURLWithPath: "/card/\(name)"), fileName: name, size: 1, taken: "2026:11:16 \(time)",
+                                 subSeconds: sub, zone: "+01:00", model: model)
+            p.drive = drive
+            return p
+        }
+        // A fast burst in RAW+JPG, a slow one, quick single shots, and a lone continuous frame.
+        let photos = [
+            photo("A1.CR3", "10:00:00", "10", drive: 5), photo("A1.JPG", "10:00:00", "10", drive: 5),
+            photo("A2.CR3", "10:00:00", "20", drive: 5), photo("A2.JPG", "10:00:00", "20", drive: 5),
+            photo("A3.JPG", "10:00:00", "30", drive: 5),
+            photo("B1.JPG", "10:05:00", "00", drive: 4), photo("B2.JPG", "10:05:01", "50", drive: 4), photo("B3.JPG", "10:05:03", "40", drive: 4),
+            photo("C1.JPG", "10:10:00", "00", drive: 0), photo("C2.JPG", "10:10:00", "80", drive: 0), photo("C3.JPG", "10:10:01", "60", drive: 0),
+            photo("D1.JPG", "10:20:00", "00", drive: 5),
+            photo("N1.JPG", "11:00:00", "00", drive: nil, model: "COOLPIX P950"), photo("N2.JPG", "11:00:00", "50", drive: nil, model: "COOLPIX P950"),
+            photo("N3.JPG", "11:00:01", "00", drive: nil, model: "COOLPIX P950"),
+        ]
+        let found = Bursts.find(photos).map { $0.map { ($0 as NSString).lastPathComponent }.sorted() }
+        check("bursts: a fast burst, RAW and JPG together", found.first == ["A1.CR3", "A1.JPG", "A2.CR3", "A2.JPG", "A3.JPG"], "\(found)")
+        check("bursts: a slow burst, frames up to two seconds apart", found.count > 1 && found[1] == ["B1.JPG", "B2.JPG", "B3.JPG"], "\(found)")
+        check("bursts: quick single shots and a lone continuous frame are not bursts",
+              !found.joined().contains { $0.hasPrefix("C") || $0.hasPrefix("D") })
+        check("bursts: a camera with no drive mode, three frames under a second apart", found.count == 3 && found[2] == ["N1.JPG", "N2.JPG", "N3.JPG"])
+        // Numbered on from the folders already there.
+        let day = scratch.appendingPathComponent("BURST-DAY")
+        try? FileManager.default.createDirectory(at: day.appendingPathComponent("burst_01"), withIntermediateDirectories: true)
+        check("bursts: numbered on from those already in the day folder",
+              Bursts.nextName(in: day) == "burst_02" && Bursts.nextName(in: day, taken: ["burst_02"]) == "burst_03")
+    }
+}
+
 final class FakeNAS: NASPort, @unchecked Sendable {
     let root: URL
     private let lock = NSLock()
@@ -2305,6 +2340,9 @@ extension SelfTest {
         for (a, b) in zip(byTool, mine) {
             var x = a, y = b
             x.firmware = nil; y.firmware = nil // ExifTool reads it for the newest photo only
+            // The drive mode: ExifTool reads it only for photos close to another.
+            if let drive = x.drive, drive != y.drive { differ.append("\(a.fileName): drive \(drive) vs \(String(describing: y.drive))") }
+            x.drive = nil; y.drive = nil
             if let p = x.ownLat, let q = y.ownLat, abs(p - q) < 1e-7 { y.ownLat = p }
             if let p = x.ownLon, let q = y.ownLon, abs(p - q) < 1e-7 { y.ownLon = p }
             if x != y { differ.append("\(a.fileName): \(a) vs \(b)") }

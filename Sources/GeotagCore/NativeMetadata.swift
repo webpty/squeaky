@@ -49,6 +49,8 @@ public enum NativeMetadata {
         public var gpsTime: [Double]?
         public var processingMethod: String?
         public var mapDatum: String?
+        /// Canon's drive mode: CameraSettings, the sixth value (0.29.6).
+        public var drive: Int?
     }
 
     public static func read(_ url: URL) throws -> Details {
@@ -66,6 +68,7 @@ public enum NativeMetadata {
         }
         if let x = layout.maker, let ifd = x.0.ifd(at: x.1) {
             d.firmware = Firmware.version([ifd.string(0x0007)])
+            if let e = ifd.entry(0x0001), e.type == 3, e.count > 5 { d.drive = x.0.u16(e.data + 2 * 5) }
         }
         if let gps = layout.gps, let ifd = gps.tiff.ifd(at: gps.ifd) {
             if let r = ifd.rationals(0x0002), r.count == 3, let ref = ifd.string(0x0001) {
@@ -106,6 +109,7 @@ public enum NativeMetadata {
                                     zone: d.zone, model: d.model, hasLocation: located,
                                     ownLat: located ? d.lat : nil, ownLon: located ? d.lon : nil,
                                     firmware: d.firmware, lens: d.lens, lensSerial: d.lensSerial))
+            out[out.count - 1].drive = d.drive
             if (i + 1) % 25 == 0 || i + 1 == files.count { progress(i + 1) }
         }
         return out

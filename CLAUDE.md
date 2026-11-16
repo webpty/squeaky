@@ -940,6 +940,23 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Settings shows the server folder's whole path, as the Files app names it.
 - The Photos tab's squares show only while the card is in.
 
+## Bursts (0.29.6, David, 16 November 2026)
+
+- Each burst goes into its own folder inside its day folder: "burst_01",
+  "burst_02", numbered on from the burst folders already in that day folder
+  on the device. Mac and phone alike, so the NAS gets the same folders.
+- A burst is two or more frames shot in one of Canon's continuous drive
+  modes (ContinuousDrive 1, 3, 4, 5, 8, 10: Continuous, Speed Priority,
+  Low, High, High+, Silent), each within 2 s of the last. Single shots never
+  are, however quick: David's photos up to 16 November 2026 are all
+  "Single", some under a second apart. A camera with no drive mode: three
+  or more frames each under a second apart. RAW and JPG of a frame together.
+- The drive mode is read natively on the phone (maker notes, CameraSettings
+  value 6); on the Mac by ExifTool only for photos within 2 s of another,
+  since the fast card read skips the maker notes.
+- No real burst has been tried yet: the stand-in was a copy with its drive
+  mode and times changed.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

@@ -21,6 +21,8 @@ public struct SaveItem: Sendable {
     /// Seconds to move the photo's own dates by, when its camera's clock was
     /// far out (David, 18 October 2026); 0 leaves them as the camera wrote them.
     public var shift: Int
+    /// "burst_01": the burst folder inside the day folder, for a photo of a burst (0.29.6).
+    public var burst: String?
 
     public init(photo: ScannedPhoto, placement: Placement, withoutLocation: Bool, place: String? = nil, shift: Int = 0) {
         self.photo = photo
@@ -138,7 +140,8 @@ public struct Saver: Sendable {
     public func save(_ item: SaveItem) -> SaveResult {
         let fm = FileManager.default
         let source = item.photo.url
-        let day = folder.appendingPathComponent(Self.folderName(item.photo, place: item.place, shift: item.shift), isDirectory: true)
+        var day = folder.appendingPathComponent(Self.folderName(item.photo, place: item.place, shift: item.shift), isDirectory: true)
+        if let burst = item.burst { day.appendPathComponent(burst, isDirectory: true) }
         do {
             try fm.createDirectory(at: day, withIntermediateDirectories: true)
         } catch {

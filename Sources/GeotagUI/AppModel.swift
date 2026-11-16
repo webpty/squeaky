@@ -952,6 +952,11 @@ public final class AppModel: ObservableObject {
         while lookingUpPlaces { try? await Task.sleep(for: .milliseconds(100)) }
         let began = Date()
         var warnedPower = false
+        // Bursts, each to its own folder, numbered on from those already in its day folder.
+        var burstOf: [String: Int] = [:]
+        for (n, ids) in Bursts.find(todo.map(\.photo)).enumerated() { for id in ids { burstOf[id] = n } }
+        var burstName: [Int: String] = [:]
+        var namedIn: [String: Set<String>] = [:]
         for row in todo {
             if stopAsked || readingRound != round || self.source?.id != source.id { break }
             // How long is left at the pace so far, and whether the battery lasts that long.
@@ -974,6 +979,16 @@ public final class AppModel: ObservableObject {
             }
             // A camera whose clock was far out: the copy gets the right dates.
             item.shift = dateShift(row.photo, personId: personId)
+            if let n = burstOf[row.id] {
+                if burstName[n] == nil {
+                    let dayPath = URL(fileURLWithPath: folder, isDirectory: true)
+                        .appendingPathComponent(Saver.folderName(item.photo, place: item.place, shift: item.shift), isDirectory: true)
+                    let name = Bursts.nextName(in: dayPath, taken: namedIn[dayPath.path] ?? [])
+                    burstName[n] = name
+                    namedIn[dayPath.path, default: []].insert(name)
+                }
+                item.burst = burstName[n]
+            }
             let named = item
             let result = await Task.detached { saver.save(named) }.value
             results[row.id] = result
@@ -1859,7 +1874,12 @@ public final class AppModel: ObservableObject {
 
     /// "2027.01.12/IMG_0001.jpg": a saved copy's place under its person's folder.
     static func relative(_ url: URL) -> String {
-        "\(url.deletingLastPathComponent().lastPathComponent)/\(url.lastPathComponent)"
+        let folder = url.deletingLastPathComponent()
+        // A burst's folder sits inside its day folder (0.29.6).
+        if folder.lastPathComponent.hasPrefix("burst_") {
+            return "\(folder.deletingLastPathComponent().lastPathComponent)/\(folder.lastPathComponent)/\(url.lastPathComponent)"
+        }
+        return "\(folder.lastPathComponent)/\(url.lastPathComponent)"
     }
 
     /// Every change to the queue goes through here and is written at once, so

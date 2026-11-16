@@ -32,6 +32,9 @@ public struct ScannedPhoto: Identifiable, Codable, Equatable, Sendable {
     /// The lens as the camera names it, and its serial number.
     public var lens: String?
     public var lensSerial: String?
+    /// Canon's drive mode (its ContinuousDrive value), for finding bursts;
+    /// nil when the camera records none, or before 0.29.6.
+    public var drive: Int?
 
     public init(url: URL, fileName: String, size: Int64, taken: String?, subSeconds: String?, zone: String?, model: String?,
                 hasLocation: Bool = false, ownLat: Double? = nil, ownLon: Double? = nil, firmware: String? = nil,
@@ -123,7 +126,38 @@ public struct PhotoScanner: Sendable {
             progress(done)
         }
         readFirmware(&out)
+        readDrives(&out)
         return out
+    }
+
+    /// The drive mode of photos taken within two seconds of another by the same
+    /// camera, the only ones that can be part of a burst: Canon keeps it in the
+    /// maker notes, which the fast read skips (0.29.6).
+    func readDrives(_ photos: inout [ScannedPhoto]) {
+        var byModel: [String: [(Int, Date)]] = [:]
+        for (i, p) in photos.enumerated() {
+            if let model = p.model, let at = Moments.clockReading(p) { byModel[model, default: []].append((i, at)) }
+        }
+        var wanted = Set<Int>()
+        for (_, list) in byModel {
+            let sorted = list.sorted { $0.1 < $1.1 }
+            for (a, b) in zip(sorted, sorted.dropFirst()) where b.1.timeIntervalSince(a.1) <= 2 {
+                wanted.insert(a.0)
+                wanted.insert(b.0)
+            }
+        }
+        let picked = wanted.sorted()
+        for start in stride(from: 0, to: picked.count, by: 100) {
+            let batch = Array(picked[start..<min(start + 100, picked.count)])
+            guard let data = try? exifTool.run(["-j", "-q", "-q", "-fast", "-charset", "filename=utf8", "-ContinuousDrive#"]
+                                               + batch.map { photos[$0].url.path }),
+                  let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { continue }
+            var byPath: [String: Int] = [:]
+            for row in rows {
+                if let path = row["SourceFile"] as? String, let v = (row["ContinuousDrive"] as? NSNumber)?.intValue { byPath[path] = v }
+            }
+            for i in batch { photos[i].drive = byPath[photos[i].url.path] }
+        }
     }
 
     /// The software version of each camera, from its newest photo only: Canon
