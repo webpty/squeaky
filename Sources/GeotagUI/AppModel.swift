@@ -945,6 +945,10 @@ public final class AppModel: ObservableObject {
                                      subSeconds: photo.subSeconds, imported: Date()))
         }
         var savedCount = 0, failedCount = 0
+        var cardGone: String?
+        #if os(iOS)
+        backgroundedDuringSave = false
+        #endif
         // Every photo's place first, for its folder: the lookups still going
         // are waited for, so none is asked twice.
         photosLine = Words.t("Looking up places")
@@ -991,6 +995,12 @@ public final class AppModel: ObservableObject {
             }
             let named = item
             let result = await Task.detached { saver.save(named) }.value
+            // The card gone mid-save (pulled, or the phone stopped letting Geotag in): stop at
+            // once, the rest left to be saved, not marked as failed (0.29.13, David, 16 November 2026).
+            if case .failed(let why) = result, !FileManager.default.fileExists(atPath: row.photo.url.path) {
+                cardGone = Words.t("The card stopped answering after {0} photos:", savedCount) + " " + Words.t(why)
+                break
+            }
             results[row.id] = result
             saveDone += 1
             switch result {
@@ -1041,12 +1051,39 @@ public final class AppModel: ObservableObject {
         var line = stopped ? Words.t("Stopped after {0} of {1}.", saveDone, saveTotal) : Words.t("{0} saved.", savedCount)
         if stopped { line += Words.t(" {0} saved.", savedCount) }
         let unplaced = todo.filter { $0.needsReview && results[$0.id]?.url != nil }.count
+        #if os(iOS)
+        // The phone has no Status column: the reasons themselves, with how many each (0.29.13).
+        if unplaced > 0 { line += Words.t(" {0} of them without a location.", unplaced) }
+        var reasons: [String: Int] = [:]
+        var order: [String] = []
+        for row in todo {
+            guard case .failed(let why)? = results[row.id] else { continue }
+            let said = Words.t(why)
+            if reasons[said] == nil { order.append(said) }
+            reasons[said, default: 0] += 1
+        }
+        for said in order { line += " " + Words.t("{0} not saved: {1}", reasons[said]!, said) }
+        #else
         if unplaced > 0 { line += Words.t(" {0} of them without a location: see the Status column.", unplaced) }
         if failedCount > 0 { line += Words.t(" {0} not saved: see the Status column.", failedCount) }
+        #endif
+        if let cardGone {
+            line = cardGone + " " + Words.t("{0} saved; the rest are still to save, and are saved when the card is opened again.", savedCount)
+            #if os(iOS)
+            if backgroundedDuringSave { line += " " + Words.t("Geotag was in the background meanwhile, which can stop the card.") }
+            #endif
+        }
         if results.values.contains(.failed(Saver.diskFull)) { line = Words.t("Stopped: {0}. {1} saved before that.", Words.t(Saver.diskFull).lowercased(), savedCount) }
         // Done before the last line is said, so the menu bar never shows it.
         saving = false
         photosLine = line
+        #if os(iOS)
+        // The card gone: let go of, so it is read again as soon as it is back.
+        if cardGone != nil, let gone = self.source {
+            PhoneFolders.release(gone.url)
+            self.source = nil
+        }
+        #endif
         // Every photo is on this Mac: the NAS copies go from there, so the
         // card is not needed any more (David, 1 November 2026).
         #if os(iOS)
@@ -1062,6 +1099,11 @@ public final class AppModel: ObservableObject {
         }
         #endif
     }
+
+    #if os(iOS)
+    /// Set by the phone's app when it goes to the background during a save (0.29.13).
+    public var backgroundedDuringSave = false
+    #endif
 
     /// "Saving 341 of 3,630, about 12 min left", and the warning to connect
     /// to power when the battery would run out first.

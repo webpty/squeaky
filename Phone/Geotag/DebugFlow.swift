@@ -148,3 +148,44 @@ extension DebugHooks {
     }
 }
 #endif
+
+#if DEBUG
+extension DebugHooks {
+    /// `--pull-test <card> <gpx>`: the card taken away after the first photo
+    /// saved; the save must stop there, the rest not marked as failed.
+    @MainActor
+    static func pull(_ model: AppModel) async -> Bool {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--pull-test"), args.count > i + 2 else { return false }
+        let card = URL(fileURLWithPath: args[i + 1]), gpx = URL(fileURLWithPath: args[i + 2])
+        model.setPhonePerson(name: "Pull")
+        guard let owner = model.macOwner else { return true }
+        await model.importFiles([gpx])
+        var camera = Camera(personId: owner, model: "Canon EOS R5m2", zone: .fromPhoto, offsetSeconds: 0)
+        camera.offsetSet = Date()
+        model.save(camera)
+        let source = PhotoSource(id: "pull-card", name: "PULLCARD", url: card, isCard: true)
+        var people = UserDefaults.standard.dictionary(forKey: "cardPeople") as? [String: String] ?? [:]
+        people["pull-card"] = owner.uuidString
+        UserDefaults.standard.set(people, forKey: "cardPeople")
+        model.choose(source)
+        try? await Task.sleep(for: .seconds(1))
+        while model.photosBusy || model.trackCheck == .checking { try? await Task.sleep(for: .milliseconds(100)) }
+        model.dontSave()
+        guard model.source != nil, !model.rows.isEmpty else { print("pull: FAILED, the card was not read"); return true }
+        let saving = Task { await model.savePhotos() }
+        let until = Date().addingTimeInterval(30)
+        while model.results.isEmpty, Date() < until { try? await Task.sleep(for: .milliseconds(20)) }
+        let away = card.deletingLastPathComponent().appendingPathComponent(card.lastPathComponent + "-away")
+        try? FileManager.default.moveItem(at: card, to: away)
+        await saving.value
+        try? FileManager.default.moveItem(at: away, to: card)
+        let failed = model.results.values.filter { if case .failed = $0 { return true }; return false }.count
+        print("  line: \(model.photosLine)")
+        print("  \(model.results.count) results, \(failed) failed, card let go: \(model.source == nil)")
+        print(failed == 0 && model.results.count < model.rows.count && model.photosLine.hasPrefix("The card stopped answering")
+              && model.source == nil ? "pull: all passed" : "pull: FAILED")
+        return true
+    }
+}
+#endif

@@ -27,12 +27,14 @@ struct GeotagPhoneApp: App {
                     #if DEBUG
                     if await DebugHooks.flow(model) { exit(0) }
                     if await DebugHooks.watch(model) { exit(0) }
+                    if await DebugHooks.pull(model) { exit(0) }
                     await DebugHooks.show(model)
                     #endif
                     await model.start()
                 }
         }
         .onChange(of: phase) { _, now in
+            if now == .background, model.saving { model.backgroundedDuringSave = true }
             // Sent to the background mid-photo: a little time to finish it.
             if now == .background, finishing == .invalid {
                 finishing = UIApplication.shared.beginBackgroundTask(withName: "Geotag") {

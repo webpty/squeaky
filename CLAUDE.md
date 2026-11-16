@@ -1003,6 +1003,19 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   check in the bottom right corner, from the copy on the phone once the card
   is out.
 
+## A card gone mid-save; reasons on the phone (0.29.13, David, 16 November 2026)
+
+- A card that goes during a save (David pulled the reader to install by
+  cable: 68 saved, then 427 marked "not saved: see the Status column") stops
+  the save at the first photo it can't give: "The card stopped answering
+  after N photos: <why>. N saved; the rest are still to save..." The rest
+  are not marked failed; the phone lets go of the card, so it is read again
+  and carries on when back. Noted when Geotag was in the background
+  meanwhile.
+- The phone has no Status column: its line gives each reason with how many.
+  A failed square has a red mark; the count of saved photos updates after
+  each photo.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.
