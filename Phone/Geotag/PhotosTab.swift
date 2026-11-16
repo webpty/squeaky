@@ -62,14 +62,16 @@ struct PhotosTab: View {
                         // Squares of one size, a small gap between them, corners rounded (0.29.9).
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 3), spacing: 3) {
                             ForEach(waiting) { row in
-                                Square(image: model.pictureURL(row).flatMap { pictures.made[$0] })
+                                Square(image: model.pictureURL(row).flatMap { pictures.made[$0] },
+                                       saved: model.results[row.id]?.url != nil)
                             }
                         }
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
                     }
                     .onAppear { pictures.make(waiting.compactMap { model.pictureURL($0) }) }
-                    .onChange(of: waiting.map(\.id)) { _, _ in pictures.make(waiting.compactMap { model.pictureURL($0) }) }
+                    // Made again when a picture's file changes: from the card to the copy once the card is out.
+                    .onChange(of: waiting.compactMap { model.pictureURL($0) }) { _, urls in pictures.make(urls) }
                 }
             }
             .scrollContentBackground(.hidden)
@@ -102,8 +104,10 @@ struct PhotosTab: View {
 
     /// The photos still to be saved, one square per frame: the JPG of a RAW+JPG pair.
     var shown: [ImportRow] {
-        guard model.source != nil else { return [] }
-        let waiting = model.rows.filter { $0.willImport && model.results[$0.id] == nil }
+        // Still to save while the card is in, and saved from this card: those keep their square,
+        // from the copy on the phone once the card is out, with a check (0.29.12).
+        let cardIn = model.source != nil
+        let waiting = model.rows.filter { (cardIn && $0.willImport && model.results[$0.id] == nil) || model.results[$0.id]?.url != nil }
         var seen = Set<String>()
         let jpgFirst = waiting.sorted { a, b in
             let ja = ["jpg", "jpeg"].contains((a.photo.fileName as NSString).pathExtension.lowercased())
@@ -189,6 +193,7 @@ final class Pictures: ObservableObject {
 /// A photo as a square, filled to its edges, cropped from the middle.
 struct Square: View {
     let image: UIImage?
+    var saved = false
 
     var body: some View {
         Color(.secondarySystemBackground)
@@ -199,6 +204,15 @@ struct Square: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 4))
+            .overlay(alignment: .bottomTrailing) {
+                if saved {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 18))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, .green)
+                        .padding(4)
+                }
+            }
     }
 }
 

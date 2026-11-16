@@ -139,6 +139,12 @@ extension DebugHooks {
             model.save(camera)
         }
         model.choose(source)
+        if args.contains("--save") {
+            try? await Task.sleep(for: .seconds(3))
+            while model.photosBusy { try? await Task.sleep(for: .milliseconds(200)) }
+            model.dontSave()
+            await model.savePhotos()
+        }
     }
 }
 #endif

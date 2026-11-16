@@ -1034,7 +1034,7 @@ public final class AppModel: ObservableObject {
         }
         rows = marked
         if historyPerson == personId { historyEntries = past }
-        Task { await publishHistory(personId) }
+        Task { await shareWithServer() }
         // Ejected or another card chosen meanwhile: that line stands.
         guard readingRound == round else { return }
         let stopped = saveDone < saveTotal
@@ -1336,12 +1336,10 @@ public final class AppModel: ObservableObject {
             }.value
             // The camera offsets set on the person's other devices, then what
             // any Mac or phone saved before, from the lists on the server.
-            // Each step said as it happens (0.29.10, David: "i like transparency").
-            photosLine = Words.t("Checking the server for camera offsets")
-            await pullCameras(personId)
-            guard readingRound == round else { return }
-            photosLine = Words.t("Checking the server for photos already saved")
-            let past = ((try? history.load(personId)) ?? []) + (await serverHistory(personId))
+            // What the sync files held when last read, kept here: no wait on the server (0.29.12).
+            let copy = loadServerCopy(personId)
+            if let cameras = copy?.cameras { applyCameras(cameras, personId: personId) }
+            let past = ((try? history.load(personId)) ?? []) + (copy?.entries ?? [])
             guard readingRound == round, self.source?.id == source.id else { return }
             #if os(iOS)
             addCameras(photos, personId: personId)
@@ -1995,21 +1993,12 @@ public final class AppModel: ObservableObject {
 
     /// The photos any device saved for this person, as listed on the server.
     public func serverHistory(_ personId: UUID) async -> [HistoryEntry] {
-        let folder: URL
-        switch await openServerFolder(personId) {
-        case .success(let found): folder = found
-        case .failure(let why):
-            if goesToServer(personId), NASFolder(book.person(personId)?.nasFolder) != nil {
-                syncFailed(why.localizedDescription)
-                if photosBusy { photosLine = Words.t("Checking the server for photos already saved: {0} Going on with this phone's own list.", why.localizedDescription) }
-            }
-            return []
+        if case .success(let folder) = await openServerFolder(personId), let problem = await refreshServerCopy(personId, folder: folder) {
+            syncFailed(problem)
         }
-        await noteLastSave(folder, personId)
-        let read = await Task.detached { ServerList.readChecked(from: folder) }.value
-        if let problem = read.problem { syncFailed(Words.t("the other devices' sync files couldn't be read:") + " " + problem) }
-        return read.entries
+        return loadServerCopy(personId)?.entries ?? []
     }
+
 
     /// This device's list of photos saved for a person, put on the server.
     public func publishHistory(_ personId: UUID) async {
@@ -2070,7 +2059,7 @@ public final class AppModel: ObservableObject {
                 problem = why.localizedDescription
                 continue
             }
-            await pullCameras(person.id)
+            if let refreshed = await refreshServerCopy(person.id, folder: folder) { problem = refreshed }
             let entries = (try? history.load(person.id)) ?? []
             let cameras = book.cameras(of: person.id).filter { $0.offsetSeconds != nil }
             let device = deviceId
@@ -2108,17 +2097,51 @@ public final class AppModel: ObservableObject {
     /// Offsets set more recently on another device taken here; a camera
     /// another device knows and this one not yet, added.
     public func pullCameras(_ personId: UUID) async {
-        let folder: URL
-        switch await openServerFolder(personId) {
-        case .success(let found): folder = found
-        case .failure(let why):
-            if goesToServer(personId), NASFolder(book.person(personId)?.nasFolder) != nil {
-                syncFailed(why.localizedDescription)
-                if photosBusy { photosLine = Words.t("Checking the server for camera offsets: {0} Going on without them.", why.localizedDescription) }
-            }
-            return
+        guard case .success(let folder) = await openServerFolder(personId) else { return }
+        _ = await refreshServerCopy(personId, folder: folder)
+    }
+
+    // MARK: The server's sync files, kept here (0.29.12, David: "whats the point of having
+    // it locally if it's going to check the server everytime")
+
+    /// What the sync files on the server held when last read: every device's
+    /// photos saved and the newest offset of each camera.
+    struct ServerCopy: Codable {
+        var entries: [HistoryEntry]
+        var cameras: [Camera]
+    }
+
+    private func copyFile(_ personId: UUID) -> URL {
+        let folder = (peopleStore as? PeopleStoreFile)?.url.deletingLastPathComponent()
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Geotag")
+        return folder.appendingPathComponent("servercopy-\(personId.uuidString).json")
+    }
+
+    func loadServerCopy(_ personId: UUID) -> ServerCopy? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+        return (try? Data(contentsOf: copyFile(personId))).flatMap { try? decoder.decode(ServerCopy.self, from: $0) }
+    }
+
+    /// Both sync files read in one visit, kept here, the offsets taken; nil
+    /// when all went well, else why not.
+    func refreshServerCopy(_ personId: UUID, folder: URL) async -> String? {
+        let read = await Task.detached { (ServerList.readChecked(from: folder), ServerList.readCameras(from: folder)) }.value
+        let copy = ServerCopy(entries: read.0.entries, cameras: read.1)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .secondsSince1970
+        if let data = try? encoder.encode(copy) {
+            try? FileManager.default.createDirectory(at: copyFile(personId).deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? data.write(to: copyFile(personId), options: .atomic)
         }
-        let shared = await Task.detached { ServerList.readCameras(from: folder) }.value
+        applyCameras(copy.cameras, personId: personId)
+        await noteLastSave(folder, personId)
+        return read.0.problem.map { Words.t("the other devices' sync files couldn't be read:") + " " + $0 }
+    }
+
+    /// Offsets set more recently on another device taken here; a camera
+    /// another device knows and this one not yet, added.
+    func applyCameras(_ shared: [Camera], personId: UUID) {
         var taken = false
         var next = book
         for theirs in shared {
@@ -2141,6 +2164,7 @@ public final class AppModel: ObservableObject {
         store { $0 = next }
         rematch()
     }
+
 
     /// Saves the NAS settings, says so at once, then what the NAS answers.
     public func saveNAS() async {
@@ -2235,9 +2259,11 @@ public final class AppModel: ObservableObject {
                 break
             }
         }
+        let wasAway = nasReach == .unreachable
         if nasReach != answered { nasReach = answered }
         // The server answers and the lists were not written since Geotag opened.
-        if case .through = answered, sharedAt == nil { Task { await shareWithServer() } }
+        // The server answers, and the files were not read since Geotag opened, or it was away.
+        if case .through = answered, sharedAt == nil || wasAway { Task { await shareWithServer() } }
     }
 
     private func startSending() {

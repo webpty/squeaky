@@ -989,6 +989,20 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   Files app's connection is down), with the phone's own words; no answer
   within 15 seconds; a sync file that couldn't be written or read.
 
+## The sync files kept here; saved photos keep their square (0.29.12, David, 16 November 2026)
+
+- Each device keeps what the sync files held when last read
+  (`servercopy-<person id>.json` beside people.json): every device's photos
+  saved and each camera's newest offset. Reading a card uses that copy and
+  never waits on the server (David: one card and one reader, moved between
+  devices; "whats the point of having it locally if it's going to check the
+  server everytime"). The copy is refreshed, both files in one visit, with
+  each sharing: as Geotag opens, when the server answers again after being
+  away, after each save and each batch sent.
+- On the phone, photos saved from the card keep their square with a green
+  check in the bottom right corner, from the copy on the phone once the card
+  is out.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

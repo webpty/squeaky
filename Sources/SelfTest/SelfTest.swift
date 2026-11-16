@@ -1423,7 +1423,7 @@ extension SelfTest {
         let onServer = await second.serverHistory(davidB)
         check("server list: one Mac's photos saved are listed on the server for the other", listed && onServer.count == 4,
               "\(onServer.count) listed")
-        // The second Mac reads the same card: nothing new on it.
+        // The second Mac reads the same card: nothing new on it, from the copy it keeps.
         let card = scratchCard(root)
         second.saveWhenReady = false
         second.choose(card)
@@ -1465,8 +1465,9 @@ extension SelfTest {
               && QueueText.sync(second.lastSave, problem: second.sharedProblem).hasPrefix("Sync file not saved: "),
               QueueText.sync(second.lastSave, problem: second.sharedProblem))
         let started = Date()
-        let none = await second.serverHistory(davidB)
-        check("server list: a server that does not answer is not waited for", none.isEmpty && Date().timeIntervalSince(started) < 2)
+        let kept = await second.serverHistory(davidB)
+        check("server list: a server that does not answer is not waited for, the copy kept here used",
+              kept.count == 4 && Date().timeIntervalSince(started) < 2, "\(kept.count)")
     }
 }
 
