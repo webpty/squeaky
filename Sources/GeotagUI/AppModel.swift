@@ -1028,7 +1028,11 @@ public final class AppModel: ObservableObject {
                 #if os(iOS)
                 // Into the Photos library, then the working copy of someone else's photo is no longer needed (0.29.15).
                 if PhoneLibrary.isJPG(url) {
-                    if libraryAllowed == nil { libraryAllowed = await PhoneLibrary.allowed() }
+                    if libraryAllowed == nil {
+                        photosLine = Words.t("Waiting for permission to add to Photos")
+                        libraryAllowed = await PhoneLibrary.allowed()
+                    }
+                    photosLine = Words.t("{0}, adding to Photos", said.line)
                     if libraryAllowed == true {
                         do {
                             try await PhoneLibrary.add(url)
@@ -1153,6 +1157,10 @@ public final class AppModel: ObservableObject {
         guard !defaults.bool(forKey: "movedToLibrary") else { return }
         let fm = FileManager.default
         let old = PhoneFolders.documents, new = PhoneFolders.copies
+        // Every step said as it happens (0.29.16, David: "it's really exhausting to have to ask for basic things like this").
+        if !((try? fm.contentsOfDirectory(atPath: old.path)) ?? []).filter({ !$0.hasPrefix(".") }).isEmpty {
+            photosLine = Words.t("Moving photos out of Files")
+        }
         // The folders moved first, and every path kept with them.
         for name in (try? fm.contentsOfDirectory(atPath: old.path)) ?? [] where !name.hasPrefix(".") {
             let from = old.appendingPathComponent(name), to = new.appendingPathComponent(name)
@@ -1178,6 +1186,7 @@ public final class AppModel: ObservableObject {
             if case .alreadyThere(let url) = result { results[id] = .alreadyThere(URL(fileURLWithPath: move(url.path))) }
         }
         // Then every JPG into the library.
+        photosLine = Words.t("Waiting for permission to add to Photos")
         guard await PhoneLibrary.allowed() else {
             photosLine = Words.t("Geotag isn't allowed to add photos: allow it in the phone's Settings, Privacy, Photos, Geotag.")
             return
@@ -1186,7 +1195,10 @@ public final class AppModel: ObservableObject {
         var failed = 0
         var problem: String?
         let jpgs = (fm.enumerator(at: new, includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? []).filter(PhoneLibrary.isJPG)
-        for url in jpgs where !added.contains(url.path) {
+        let todo = jpgs.filter { !added.contains($0.path) }
+        if todo.isEmpty { photosLine = "" }
+        for (n, url) in todo.enumerated() {
+            photosLine = Words.t("Adding photos from Files to Photos: {0} of {1}", n + 1, todo.count)
             do {
                 try await PhoneLibrary.add(url)
                 added.insert(url.path)
@@ -2161,6 +2173,8 @@ public final class AppModel: ObservableObject {
     /// last try failed: shown on the Queue page (0.29.2, David, 16 November 2026).
     @Published public private(set) var sharedAt: Date?
     @Published public private(set) var sharedProblem: String?
+    /// What is being done with the sync files right now, said in place of the sync line (0.29.16).
+    @Published public private(set) var syncActivity: String?
     /// Who wrote into the server folder last, and when, any device (0.29.3);
     /// remembered between launches (0.29.10).
     @Published public private(set) var lastSave: ServerList.LastSave? = {
@@ -2202,7 +2216,9 @@ public final class AppModel: ObservableObject {
                 problem = why.localizedDescription
                 continue
             }
+            syncActivity = Words.t("Reading the sync files")
             if let refreshed = await refreshServerCopy(person.id, folder: folder) { problem = refreshed }
+            syncActivity = Words.t("Saving the sync file")
             let entries = (try? history.load(person.id)) ?? []
             let cameras = book.cameras(of: person.id).filter { $0.offsetSeconds != nil }
             let device = deviceId
@@ -2221,6 +2237,7 @@ public final class AppModel: ObservableObject {
                 lastSave = await Task.detached { ServerList.lastSave(in: folder) }.value
             }
         }
+        syncActivity = nil
         if let problem {
             sharedProblem = problem
         } else {
@@ -3021,13 +3038,27 @@ public final class AppModel: ObservableObject {
         defer { namingTracks = false }
         let file = TrackPlaces.file(beside: (peopleStore as? PeopleStoreFile)?.url)
         if trackPlaces.isEmpty { trackPlaces = TrackPlaces.load(file) }
-        for track in tracks where trackPlaces[track.id] == nil {
+        let unnamed = tracks.filter { trackPlaces[$0.id] == nil }
+        guard !unnamed.isEmpty else { return }
+        let before = tracksLine
+        var said = ""
+        defer { if tracksLine == said { tracksLine = before } }
+        for (n, track) in unnamed.enumerated() {
+            if !tracksBusy {
+                said = Words.t("Naming tracks by place: {0} of {1}", n + 1, unnamed.count)
+                tracksLine = said
+            }
             guard let points = await library.points(track.id), let first = points.lat.indices.first else { continue }
             let mid = points.lat.count / 2, last = points.lat.count - 1
             var spots: [TrackPlaces.Spot] = []
             for i in [first, mid, last] {
                 try? await Task.sleep(for: .milliseconds(1100))
-                guard let spot = await TrackPlaces.spot(points.lat[i], points.lon[i]) else { return }
+                guard let spot = await TrackPlaces.spot(points.lat[i], points.lon[i]) else {
+                    // Said, not silent: the rest are named next time (0.29.16).
+                    said = ""
+                    if !tracksBusy { tracksLine = Words.t("Tracks not named by place: OpenStreetMap isn't answering. {0} of {1} named.", n, unnamed.count) }
+                    return
+                }
                 spots.append(spot)
             }
             guard let name = TrackPlaces.name(spots[0], spots[1], spots[2]) else { continue }

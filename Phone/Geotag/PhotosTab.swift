@@ -14,7 +14,7 @@ struct PhotosTab: View {
         NavigationStack {
             List {
                 Section {
-                    Text(QueueText.sync(model.lastSave, problem: model.sharedProblem))
+                    Text(model.syncActivity ?? QueueText.sync(model.lastSave, problem: model.sharedProblem))
                         .foregroundStyle(.secondary)
                     StatusRow(text: model.photosLine, busy: model.photosBusy || model.saving)
                     if let id = model.importPerson, model.book.person(id) != nil {

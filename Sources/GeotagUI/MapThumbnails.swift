@@ -227,8 +227,11 @@ import UIKit
 /// wordless OpenStreetMap tiles from CARTO, named by the track service, with
 /// the route drawn on top, in blue on the phone. Kept on the phone once made.
 @MainActor
-public final class MapThumbnails {
+public final class MapThumbnails: ObservableObject {
     public static let size = CGSize(width: 120, height: 90)
+    /// Maps asked for and made in this round, for "Making maps: 3 of 40" (0.29.16).
+    @Published public private(set) var asked = 0
+    @Published public private(set) var made = 0
     static let scale: CGFloat = 3
     public static let lineColour = UIColor.systemBlue
 
@@ -268,6 +271,9 @@ public final class MapThumbnails {
         let memoKey = "\(track.id)-\(dark)"
         if let failed = failedAt[memoKey], Date().timeIntervalSince(failed) < 60 { return nil }
         if let running = inFlight[memoKey] { return await running.value }
+        if asked == made { asked = 0; made = 0 }
+        asked += 1
+        defer { made += 1 }
         let file = fileURL(track.id, dark: dark)
         let gate = self.gate
         let task = Task { () -> UIImage? in

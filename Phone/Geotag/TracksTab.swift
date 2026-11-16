@@ -6,12 +6,21 @@ import UIKit
 /// The watch's tracks, from the track service.
 struct TracksTab: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var maps: MapThumbnails
+
+    init(model: AppModel) {
+        self.model = model
+        self.maps = model.thumbnails
+    }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     StatusRow(text: model.tracksLine, busy: model.tracksBusy)
+                    if maps.asked > maps.made {
+                        StatusRow(text: Words.t("Making maps: {0} of {1}", maps.made + 1, maps.asked), busy: true)
+                    }
                 }
                 Section {
                     ForEach(model.tracks.sorted { $0.start > $1.start }) { track in

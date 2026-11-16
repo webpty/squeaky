@@ -1039,6 +1039,17 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   stays on only when the phone will not take it on. Not yet seen on a real
   phone, nor whether the card stays readable meanwhile.
 
+## Every step on screen (0.29.16, David, 16 November 2026: "it's really exhausting to have to ask for basic things like this")
+
+- Anything that takes more than a moment says what it is doing, with a
+  count, and every failure says why. Check each new step against this
+  before calling a build done. Lines so far: moving out of Files ("Waiting
+  for permission to add to Photos", "Adding photos from Files to Photos: 9
+  of 40"), "<saving line>, adding to Photos", "Naming tracks by place: 3 of
+  40" (and "Tracks not named by place: OpenStreetMap isn't answering"),
+  "Making maps: 3 of 40" (phone), "Reading the sync files" and "Saving the
+  sync file" in place of the sync line, and the card-reading steps.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.
