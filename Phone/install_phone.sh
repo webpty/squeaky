@@ -8,7 +8,7 @@ TEAM=$(defaults read com.apple.dt.Xcode IDEProvisioningTeamByIdentifier 2>/dev/n
 [ -z "$TEAM" ] && TEAM=$(defaults read com.apple.dt.Xcode IDEProvisioningTeams 2>/dev/null | grep -m1 -E 'teamID' | sed -E 's/.*= "?([A-Z0-9]+)"?;/\1/')
 [ -z "$TEAM" ] && TEAM=$(security find-certificate -a -c "Apple Development" -p 2>/dev/null | openssl x509 -noout -subject 2>/dev/null | grep -o -E 'OU ?= ?[A-Z0-9]{10}' | head -1 | grep -o -E '[A-Z0-9]{10}$')
 [ -z "$TEAM" ] && { echo "NO_TEAM"; exit 2; }
-PHONE=$(xcrun devicectl list devices 2>/dev/null | awk '/iPhone/ && / connected / && /physical/ {for(i=1;i<=NF;i++) if ($i ~ /^[0-9A-F-]{25,}$/) {print $i; exit}}')
+PHONE=$(xcrun devicectl list devices 2>/dev/null | awk '/iPhone/ && (/ connected / || /available \(paired\)/) && /physical/ {for(i=1;i<=NF;i++) if ($i ~ /^[0-9A-F-]{25,}$/) {print $i; exit}}')
 [ -z "$PHONE" ] && { echo "NO_PHONE"; exit 3; }
 BUNDLE=${BUNDLE:-com.webpty.geotag}
 VERSION=$(sed -n 's/.*appVersion = "\(.*\)".*/\1/p' ../Sources/GeotagCore/Version.swift)
