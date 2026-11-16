@@ -54,6 +54,7 @@ public enum PhoneFolders {
 
     public static func forget(_ key: String) {
         UserDefaults.standard.removeObject(forKey: key)
+        UserDefaults.standard.removeObject(forKey: key + "Path")
         opened[key] = nil
     }
 
@@ -79,6 +80,24 @@ public enum PhoneFolders {
 
     /// The name of the folder kept under `key`, for Settings.
     public static func name(_ key: String) -> String? { folder(key).map(shownName) }
+
+    /// The path saved when the folder was chosen: shown at once, the NAS never
+    /// asked (0.29.8, David, 16 November 2026: Settings froze while it was).
+    public static func savedPath(_ key: String) -> String? {
+        UserDefaults.standard.string(forKey: key + "Path")
+    }
+
+    /// Works the path out, off the main thread, and saves it.
+    public static func savePath(_ key: String) async -> String? {
+        let path = await Task.detached { PhoneFolders.path(key) }.value
+        if let path { UserDefaults.standard.set(path, forKey: key + "Path") }
+        return path
+    }
+
+    /// Whether a folder is kept under `key`, without opening it.
+    public static func isChosen(_ key: String) -> Bool {
+        UserDefaults.standard.data(forKey: key) != nil
+    }
 
     /// The whole path of the folder kept under `key`, from the shared folder
     /// or drive down, as the Files app names them: "homes/david/Geotag" (0.29.5).
@@ -165,7 +184,10 @@ public struct NASThroughFiles: NASPort {
     public init() {}
 
     /// The chosen folder's name stands for the address; none chosen, none.
-    public var addresses: [String] { PhoneFolders.name(PhoneFolders.nasKey).map { [$0] } ?? [] }
+    public var addresses: [String] {
+        // Never opens the folder: asked on the main thread, and the NAS may be slow to answer.
+        PhoneFolders.isChosen(PhoneFolders.nasKey) ? [PhoneFolders.savedPath(PhoneFolders.nasKey) ?? NASThroughFiles.share] : []
+    }
 
     public func connect(share: String) async throws -> NASConnection {
         guard let chosen = PhoneFolders.folder(PhoneFolders.nasKey) else {

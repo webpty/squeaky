@@ -937,7 +937,10 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - The phone's background is the newest JPG of the last card (the Mac's
   sidebar photo), filling the screen behind every tab, under a dark layer in
   dark mode and a light one in light mode.
-- Settings shows the server folder's whole path, as the Files app names it.
+- Settings shows the server folder's whole path, as the Files app names it,
+  saved when the folder is chosen (0.29.8): opening Settings never asks the
+  NAS, which froze the tab while it answered. Nothing on the main thread
+  opens the server folder.
 - The Photos tab's squares show only while the card is in.
 
 ## Bursts (0.29.6, David, 16 November 2026)

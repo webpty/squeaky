@@ -10,7 +10,7 @@ struct SettingsTab: View {
     @ObservedObject var model: AppModel
     @State private var choosing = false
     @State private var problem: String?
-    @State private var nasName = PhoneFolders.path(PhoneFolders.nasKey)
+    @State private var nasName = PhoneFolders.savedPath(PhoneFolders.nasKey)
     @State private var name = ""
     /// Offsets typed, by camera, until the checkmark saves them.
     @State private var offsets: [UUID: String] = [:]
@@ -65,13 +65,13 @@ struct SettingsTab: View {
                 }
                 Section(Words.t("Server")) {
                     LabeledContent(Words.t("Folder")) {
-                        Text(nasName ?? Words.t("Not chosen")).lineLimit(1).truncationMode(.middle)
+                        Text(nasName ?? (PhoneFolders.isChosen(PhoneFolders.nasKey) ? "" : Words.t("Not chosen"))).lineLimit(1).truncationMode(.middle)
                     }
-                    Button(nasName == nil ? Words.t("Choose") : Words.t("Change")) {
+                    Button(PhoneFolders.isChosen(PhoneFolders.nasKey) ? Words.t("Change") : Words.t("Choose")) {
                         problem = nil
                         choosing = true
                     }
-                    if nasName != nil {
+                    if PhoneFolders.isChosen(PhoneFolders.nasKey) {
                         Button(Words.t("Remove"), role: .destructive) {
                             nasName = nil
                             Task { await model.forgetNASFolder() }
@@ -98,6 +98,10 @@ struct SettingsTab: View {
                         .accessibilityLabel(Words.t("Save"))
                         .disabled(model.settingsBusy)
                 }
+            }
+            .task {
+                // A folder chosen before 0.29.8 has no saved path: worked out once, in the background.
+                if nasName == nil, PhoneFolders.isChosen(PhoneFolders.nasKey) { nasName = await PhoneFolders.savePath(PhoneFolders.nasKey) }
             }
             .onAppear {
                 name = owner?.name ?? ""
@@ -150,7 +154,8 @@ struct SettingsTab: View {
             problem = Words.t("{0} could not be kept: {1}", PhoneFolders.shownName(url), error.localizedDescription)
             return
         }
-        nasName = PhoneFolders.path(key)
+        nasName = PhoneFolders.shownName(url)
+        Task { nasName = await PhoneFolders.savePath(key) ?? nasName }
         Task { await model.useNASFolder() }
     }
 }
