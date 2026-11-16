@@ -129,7 +129,7 @@ struct AlignmentView: View {
             return
         }
         if let id = found.first?.trackId, let track = model.tracks.first(where: { $0.id == id }) {
-            place = track.name
+            place = model.trackTitle(track)
             return
         }
         if let first = placed.first, let clock = Moments.clockReading(first.row.photo) {

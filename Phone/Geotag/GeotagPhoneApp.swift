@@ -126,22 +126,32 @@ struct TrackCheckSheet: View {
     @ObservedObject var model: AppModel
     let check: TrackCheck
 
+    /// The newest track, by when it starts.
+    var latest: Track? { model.tracks.max { $0.start < $1.start } }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             switch check {
             case .checking:
                 Text(Words.t("Checking for matching tracks")).font(.headline)
                 LoaderDots().frame(maxWidth: .infinity)
-            case .noTrack, .offline:
+            case .ready, .noTrack, .offline:
+                // Before every save on the phone (0.29.5, David, 16 November 2026).
                 if case .offline = check {
                     Text(Words.t("The track service isn't answering.")).font(.headline)
                 }
-                Text(Words.t("Not all photos have a track. Make sure this is correct."))
-                    .font(check.isOffline ? .body : .headline)
+                if let latest {
+                    Text(Words.t("Latest track: {0}, starts {1}", model.trackTitle(latest),
+                                 When.current.dayAndTime(latest.start, zone: latest.timeZone.flatMap(TimeZone.init(identifier:)) ?? .current)))
+                        .font(.headline)
+                }
+                if check != .ready {
+                    Text(Words.t("Not all photos have a track. Make sure this is correct."))
+                }
                 VStack(spacing: 10) {
-                    Button { model.checkTracksAgain() } label: { Text(Words.t("Check tracks again")).frame(maxWidth: .infinity) }
+                    Button { model.saveAnyway() } label: { Text(Words.t("Save photos")).frame(maxWidth: .infinity) }
                         .buttonStyle(.borderedProminent)
-                    Button { model.saveAnyway() } label: { Text(Words.t("Save anyway")).frame(maxWidth: .infinity) }
+                    Button { model.checkTracksAgain() } label: { Text(Words.t("Check tracks again")).frame(maxWidth: .infinity) }
                         .buttonStyle(.bordered)
                     Button { model.dontSave() } label: { Text(Words.t("Don't save")).frame(maxWidth: .infinity) }
                         .buttonStyle(.bordered)
@@ -150,7 +160,7 @@ struct TrackCheckSheet: View {
             }
         }
         .padding(24)
-        .presentationDetents([.height(check == .checking ? 140 : 300)])
+        .presentationDetents([.height(check == .checking ? 140 : 340)])
         .interactiveDismissDisabled()
     }
 }
@@ -174,5 +184,29 @@ struct StatusRow: View {
                 Text(text).foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+/// The newest JPG of the last card, filling the screen behind the tabs,
+/// centred, under a dark layer in dark mode and a light one in light mode.
+struct Backdrop: View {
+    let image: UIImage?
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        GeometryReader { box in
+            ZStack {
+                Color(.systemGroupedBackground)
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: box.size.width, height: box.size.height)
+                        .clipped()
+                    (scheme == .dark ? Color.black : Color.white).opacity(scheme == .dark ? 0.6 : 0.65)
+                }
+            }
+        }
+        .ignoresSafeArea()
     }
 }

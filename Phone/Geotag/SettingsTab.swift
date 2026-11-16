@@ -10,7 +10,7 @@ struct SettingsTab: View {
     @ObservedObject var model: AppModel
     @State private var choosing = false
     @State private var problem: String?
-    @State private var nasName = PhoneFolders.name(PhoneFolders.nasKey)
+    @State private var nasName = PhoneFolders.path(PhoneFolders.nasKey)
     @State private var name = ""
     /// Offsets typed, by camera, until the checkmark saves them.
     @State private var offsets: [UUID: String] = [:]
@@ -64,7 +64,9 @@ struct SettingsTab: View {
                     StatusRow(text: model.settingsLine, busy: model.settingsBusy)
                 }
                 Section(Words.t("Server")) {
-                    LabeledContent(Words.t("Folder"), value: nasName ?? Words.t("Not chosen"))
+                    LabeledContent(Words.t("Folder")) {
+                        Text(nasName ?? Words.t("Not chosen")).lineLimit(1).truncationMode(.middle)
+                    }
                     Button(nasName == nil ? Words.t("Choose") : Words.t("Change")) {
                         problem = nil
                         choosing = true
@@ -85,6 +87,9 @@ struct SettingsTab: View {
                     LabeledContent(Words.t("Version"), value: appVersion)
                 }
             }
+            .scrollContentBackground(.hidden)
+            // The last card's photo behind every tab, veiled (0.29.5, David, 16 November 2026).
+            .background(Backdrop(image: model.sidebarImage))
             .navigationTitle(Words.t("Settings"))
             .scrollDismissesKeyboard(.immediately)
             .toolbar {
@@ -145,7 +150,7 @@ struct SettingsTab: View {
             problem = Words.t("{0} could not be kept: {1}", PhoneFolders.shownName(url), error.localizedDescription)
             return
         }
-        nasName = PhoneFolders.name(key)
+        nasName = PhoneFolders.path(key)
         Task { await model.useNASFolder() }
     }
 }

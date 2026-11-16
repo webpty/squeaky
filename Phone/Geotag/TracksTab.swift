@@ -42,6 +42,9 @@ struct TracksTab: View {
                         .padding(.horizontal).padding(.vertical, 4)
                 }
             }
+            .scrollContentBackground(.hidden)
+            // The last card's photo behind every tab, veiled (0.29.5, David, 16 November 2026).
+            .background(Backdrop(image: model.sidebarImage))
             .navigationTitle(Words.t("Tracks"))
             .refreshable { await model.refresh(pullStrava: true) }
         }

@@ -63,6 +63,7 @@
  "It arrived on the NAS different from the Mac's copy.": "Elle est arrivée sur le serveur différente de la copie de l'iPhone.",
  "It could not be copied from the card: {0}": "Impossible de la copier depuis la carte : {0}",
  "Key": "Clé",
+ "Latest track: {0}, starts {1}": "Dernière trace : {0}, début {1}",
  "Loading tracks": "Chargement des traces",
  "Loading tracks: {0} of {1}": "Chargement des traces : {0} sur {1}",
  "Location matched": "Position trouvée",

@@ -75,7 +75,7 @@ struct TrackCard: View {
                 withAnimation(.easeInOut(duration: 0.2)) { model.viewing = track.id }
             }
             .handCursor()
-            Text(track.name)
+            Text(model.trackTitle(track))
                 .font(.headline)
                 .lineLimit(1)
             Text(TrackText.date(track, weekday: false))
@@ -110,7 +110,7 @@ struct TrackRow: View {
                 }
                 .handCursor()
             VStack(alignment: .leading, spacing: 4) {
-                Text(track.name)
+                Text(model.trackTitle(track))
                     .font(.headline)
                     .lineLimit(1)
                 Text(TrackText.date(track))

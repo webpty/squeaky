@@ -63,6 +63,7 @@
  "It arrived on the NAS different from the Mac's copy.": "It arrived on the server different from the iPhone's copy.",
  "It could not be copied from the card: {0}": "It could not be copied from the card: {0}",
  "Key": "Key",
+ "Latest track: {0}, starts {1}": "Latest track: {0}, starts {1}",
  "Loading tracks": "Loading tracks",
  "Loading tracks: {0} of {1}": "Loading tracks: {0} of {1}",
  "Location matched": "Location matched",

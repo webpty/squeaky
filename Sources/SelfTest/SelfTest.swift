@@ -78,6 +78,7 @@ struct SelfTest {
                          raws: ProcessInfo.processInfo.environment["GEOTAG_RAWS"].map { URL(fileURLWithPath: $0) })
         }
         await serverList(scratch)
+        trackNames()
         await trackCheck(scratch)
         await settingsFeedback(scratch)
         await naming(scratch)
@@ -1465,6 +1466,21 @@ extension SelfTest {
         let started = Date()
         let none = await second.serverHistory(davidB)
         check("server list: a server that does not answer is not waited for", none.isEmpty && Date().timeIntervalSince(started) < 2)
+    }
+}
+
+extension SelfTest {
+    /// Tracks named by where they are (0.29.5).
+    static func trackNames() {
+        typealias S = TrackPlaces.Spot
+        let ronda = S(town: "Ronda", region: "Andalusia")
+        check("track names: one town gives the town and its region",
+              TrackPlaces.name(ronda, ronda, ronda) == "Ronda, Andalusia")
+        check("track names: several towns give the region it starts in",
+              TrackPlaces.name(S(town: "Quimper", region: "Brittany"), S(town: "Douarnenez", region: "Brittany"),
+                               S(town: "Crozon", region: "Brittany")) == "Brittany")
+        check("track names: no town anywhere gives the region",
+              TrackPlaces.name(S(town: nil, region: "Aragon"), S(town: nil, region: "Aragon"), S(town: nil, region: "Aragon")) == "Aragon")
     }
 }
 

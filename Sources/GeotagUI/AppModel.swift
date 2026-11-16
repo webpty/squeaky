@@ -84,6 +84,8 @@ public enum PhotosFix: Equatable {
 /// without a track, the track service answering or not.
 public enum TrackCheck: Equatable, Sendable {
     case checking
+    /// Every photo has a track: on the phone, still shown before saving (0.29.5).
+    case ready
     case noTrack(Int)
     case offline(Int)
 }
@@ -130,6 +132,12 @@ public final class AppModel: ObservableObject {
 
     // Tracks.
     @Published public private(set) var tracks: [Track] = []
+    /// Tracks named by where they are, by track id (0.29.5).
+    @Published public private(set) var trackPlaces: [String: String] = [:]
+    private var namingTracks = false
+
+    /// A track's name as Geotag shows it: where it is, once looked up.
+    public func trackTitle(_ track: Track) -> String { trackPlaces[track.id] ?? track.name }
     @Published public var tracksLine = ""
     @Published public private(set) var tracksBusy = false
     /// The check before a card is saved by itself, while some of its photos
@@ -644,6 +652,7 @@ public final class AppModel: ObservableObject {
             Windows.bringForward()
         }
         tracks = await library.listed()
+        trackPlaces = TrackPlaces.load(TrackPlaces.file(beside: (peopleStore as? PeopleStoreFile)?.url))
         await refresh()
         cloudTimer?.invalidate()
         cloudTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
@@ -1285,7 +1294,11 @@ public final class AppModel: ObservableObject {
         defer { photosBusy = false }
         photosLine = Words.t("Looking for photos")
         let url = source.url
-        let files = await Task.detached { PhotoScanner.files(in: url) }.value
+        var files = await Task.detached { PhotoScanner.files(in: url) }.value
+        #if os(iOS)
+        // Someone else's card: its JPGs only, the raws left on the card (0.29.5).
+        if personId == PhoneFolders.othersId { files = files.filter { ["jpg", "jpeg"].contains($0.pathExtension.lowercased()) } }
+        #endif
         let total = files.count
         readProgress = (0, total)
         defer { readProgress = nil }
@@ -1330,7 +1343,12 @@ public final class AppModel: ObservableObject {
             // Every camera set: nothing to line up, so the photos are saved straight
             // away, and the card comes out once they are on the Mac (David, 1 November 2026).
             if camerasReady, saveWhenReady, saveBlock == nil {
-                if noTrackCount > 0 {
+                #if os(iOS)
+                let ask = true
+                #else
+                let ask = noTrackCount > 0
+                #endif
+                if ask {
                     await checkTracksBeforeSave()
                 } else {
                     await savePhotos()
@@ -1775,8 +1793,13 @@ public final class AppModel: ObservableObject {
         guard trackCheck != nil else { return }
         let missing = noTrackCount
         if missing == 0 {
+            #if os(iOS)
+            // The phone shows the latest track before every save (0.29.5, David, 16 November 2026).
+            trackCheck = .ready
+            #else
             trackCheck = nil
             await savePhotos()
+            #endif
         } else {
             trackCheck = answered ? .noTrack(missing) : .offline(missing)
         }
@@ -2267,7 +2290,14 @@ public final class AppModel: ObservableObject {
         lastTidy = now
         sentSinceTidy = false
         let busy = Set(queueEntries.filter { $0.state != .sent }.map(\.localPath))
-        let plan = MacTidy.plan(sentRecords, keep: keepOnMac, busy: busy, now: now)
+        var plan = MacTidy.plan(sentRecords, keep: keepOnMac, busy: busy, now: now)
+        #if os(iOS)
+        // Raws leave the phone once they are on the server and checked; JPGs stay (0.29.5).
+        let raws = MacTidy.plan(sentRecords, keep: .untilOnNAS, busy: busy, now: now)
+        let isRaw: (Int) -> Bool = { !["jpg", "jpeg"].contains((self.sentRecords[$0].localPath as NSString).pathExtension.lowercased()) }
+        plan.remove = Array(Set(plan.remove + raws.remove.filter(isRaw))).sorted()
+        plan.gone = Array(Set(plan.gone + raws.gone.filter(isRaw))).sorted()
+        #endif
         guard !plan.remove.isEmpty || !plan.gone.isEmpty else { return }
         let fm = FileManager.default
         let roots = Set(book.people.compactMap { saveFolder(of: $0).map { URL(fileURLWithPath: $0).standardizedFileURL.path } })
@@ -2407,7 +2437,12 @@ public final class AppModel: ObservableObject {
         }
         if !sendPaused, !waiting { await closeOurMounts() }
         // Every ten minutes, and straight after a send when copies go as soon as they are on the NAS.
-        if lastTidy.map({ Date().timeIntervalSince($0) > 600 }) ?? true || (sentSinceTidy && keepOnMac == .untilOnNAS) { tidyMac() }
+        #if os(iOS)
+        let rawsGoAtOnce = true
+        #else
+        let rawsGoAtOnce = false
+        #endif
+        if lastTidy.map({ Date().timeIntervalSince($0) > 600 }) ?? true || (sentSinceTidy && (keepOnMac == .untilOnNAS || rawsGoAtOnce)) { tidyMac() }
     }
 
     /// "IMG_0001.JPG to nas, about 20 min left. Slow.", or with several
@@ -2673,6 +2708,7 @@ public final class AppModel: ObservableObject {
         }
         let answered = !report.offline && report.problems.isEmpty
         if answered { Task { await releaseHeld() } }
+        Task { await nameTracks() }
         return answered
     }
 
@@ -2689,6 +2725,30 @@ public final class AppModel: ObservableObject {
         }
         mapCredit = source.credit
         defaults.set(source.credit, forKey: "mapCredit")
+    }
+
+    /// Each track not named yet, named by where it is, one question a second
+    /// to OpenStreetMap; stops at the first that gets no answer. Only with the
+    /// real place names: the self-test's never go online.
+    func nameTracks() async {
+        guard !namingTracks, places is PlaceNames else { return }
+        namingTracks = true
+        defer { namingTracks = false }
+        let file = TrackPlaces.file(beside: (peopleStore as? PeopleStoreFile)?.url)
+        if trackPlaces.isEmpty { trackPlaces = TrackPlaces.load(file) }
+        for track in tracks where trackPlaces[track.id] == nil {
+            guard let points = await library.points(track.id), let first = points.lat.indices.first else { continue }
+            let mid = points.lat.count / 2, last = points.lat.count - 1
+            var spots: [TrackPlaces.Spot] = []
+            for i in [first, mid, last] {
+                try? await Task.sleep(for: .milliseconds(1100))
+                guard let spot = await TrackPlaces.spot(points.lat[i], points.lon[i]) else { return }
+                spots.append(spot)
+            }
+            guard let name = TrackPlaces.name(spots[0], spots[1], spots[2]) else { continue }
+            trackPlaces[track.id] = name
+            TrackPlaces.save(trackPlaces, file)
+        }
     }
 
     /// Shows what the library holds, without asking the service.

@@ -69,7 +69,7 @@ public struct TrackViewer: View {
         VStack(alignment: .leading, spacing: Style.gap) {
             HStack(alignment: .top, spacing: Style.gap) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(track.name)
+                    Text(model.trackTitle(track))
                         .font(.title2.weight(.semibold))
                         .lineLimit(1)
                     Text([TrackText.date(track), TrackText.duration(track), TrackText.distance(track), TrackText.source(track)]

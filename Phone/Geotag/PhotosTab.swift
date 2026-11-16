@@ -46,7 +46,7 @@ struct PhotosTab: View {
                                 Button(Words.t("Clear photos")) { model.clearPhotos() }
                             }
                         } else {
-                            Button(Words.t("Save photos")) { Task { await model.savePhotos() } }
+                            Button(Words.t("Save photos")) { Task { await model.checkTracksBeforeSave() } }
                                 .disabled(!model.canSave)
                             Button(Words.t("Done with this card")) { model.letGo() }
                                 .disabled(model.photosBusy)
@@ -54,7 +54,8 @@ struct PhotosTab: View {
                     }
                 }
                 // The photos to be saved, as squares (0.29.1, David, 16 November 2026).
-                let waiting = model.rows.filter { $0.willImport && model.results[$0.id] == nil }
+                // Only while the card is in: once out, its pictures cannot be read (0.29.5).
+                let waiting = model.source == nil ? [] : model.rows.filter { $0.willImport && model.results[$0.id] == nil }
                 if !waiting.isEmpty {
                     Section {
                         // Exact squares of one size, edge to edge (0.29.4).
@@ -68,6 +69,9 @@ struct PhotosTab: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            // The last card's photo behind every tab, veiled (0.29.5, David, 16 November 2026).
+            .background(Backdrop(image: model.sidebarImage))
             .navigationTitle(Words.t("Photos"))
             .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
                 switch result {

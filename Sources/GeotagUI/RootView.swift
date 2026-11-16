@@ -238,6 +238,9 @@ struct TrackCheckPanel: View {
                 LoaderDots()
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Style.gap)
+            case .ready:
+                // Only the phone stops here before saving.
+                EmptyView()
             case .noTrack(let count), .offline(let count):
                 if case .offline = check {
                     Text("The track service isn't answering.").font(.headline).lineLimit(1)

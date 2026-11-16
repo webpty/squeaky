@@ -38,6 +38,9 @@ struct QueueTab: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            // The last card's photo behind every tab, veiled (0.29.5, David, 16 November 2026).
+            .background(Backdrop(image: model.sidebarImage))
             .navigationTitle(Words.t("Queue"))
             .task { await model.checkNAS() }
             .refreshable { await model.checkNAS() }

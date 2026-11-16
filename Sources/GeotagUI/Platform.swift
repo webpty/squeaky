@@ -80,6 +80,26 @@ public enum PhoneFolders {
     /// The name of the folder kept under `key`, for Settings.
     public static func name(_ key: String) -> String? { folder(key).map(shownName) }
 
+    /// The whole path of the folder kept under `key`, from the shared folder
+    /// or drive down, as the Files app names them: "homes/david/Geotag" (0.29.5).
+    public static func path(_ key: String) -> String? {
+        guard let url = folder(key) else { return nil }
+        var names: [String] = []
+        var at = url
+        // Up through the folders the Files app shows, to the provider's own root.
+        for _ in 0..<12 {
+            let parent = at.deletingLastPathComponent()
+            names.insert(shownName(at), at: 0)
+            let up = parent.lastPathComponent
+            if parent.path == at.path || up.isEmpty || up == "/" || parent.path.hasSuffix("/LiveFiles")
+                || up.hasPrefix("com.apple.") || up == "File Provider Storage" || up == "Mobile Documents" { break }
+            // A provider's root folder is named by an id; the shared folder below it is the top.
+            if up.range(of: #"^[0-9A-Fa-f-]{20,}$"#, options: .regularExpression) != nil { break }
+            at = parent
+        }
+        return names.joined(separator: "/")
+    }
+
     /// A folder's name as the Files app shows it: a shared folder on the NAS
     /// comes with an internal name of its own ("Nm3Lvwhomes" for homes).
     public static func shownName(_ url: URL) -> String {

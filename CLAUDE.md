@@ -918,6 +918,28 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Version numbers: small changes raise the last digit (David, 16 November
   2026).
 
+## Raws, the panel before saving, track names, the background (0.29.5, David, 16 November 2026)
+
+- Raws on the server, not on the phone: CR3 copies from the person's own
+  card are removed from the phone as soon as they are on the server and
+  checked (tidy with "until on the server" for raws only); JPGs stay. A raw
+  saved without a location cannot be placed later once it has left.
+- Someone else's card on a phone: JPGs only; its raws are left on the card.
+- The phone shows a panel before every save (`TrackCheck.ready`): tracks
+  checked first, then "Latest track: <name>, starts <date>", "Not all
+  photos have a track" when it applies, and Save photos, Check tracks
+  again, Don't save. The Mac keeps its panel for missing tracks only.
+- Tracks are named by where they are (`TrackPlaces`, Mac and phone): start,
+  middle and end looked up on OpenStreetMap in English at zoom 10; one town
+  for all three gives "Ronda, Andalusia", else the region it starts in. Kept
+  in trackplaces.json beside people.json; never looked up in the self-test.
+  The map data has regions, not landscapes ("Aragon", not "Pyrénées").
+- The phone's background is the newest JPG of the last card (the Mac's
+  sidebar photo), filling the screen behind every tab, under a dark layer in
+  dark mode and a light one in light mode.
+- Settings shows the server folder's whole path, as the Files app names it.
+- The Photos tab's squares show only while the card is in.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

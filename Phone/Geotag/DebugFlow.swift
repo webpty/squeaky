@@ -52,9 +52,13 @@ extension DebugHooks {
         }
         if landed.count != model.rows.count { ok = false }
         model.tidyMac(now: Date().addingTimeInterval(90 * 86_400))
-        let kept = model.queueEntries.filter { FileManager.default.fileExists(atPath: $0.localPath) }.count
-        print("  kept on the phone 90 days on: \(kept) of \(model.queueEntries.count)")
-        if kept != model.queueEntries.count { ok = false }
+        let isJPG = { (path: String) in ["jpg", "jpeg"].contains((path as NSString).pathExtension.lowercased()) }
+        let jpgs = model.queueEntries.filter { isJPG($0.localPath) }
+        let raws = model.queueEntries.filter { !isJPG($0.localPath) }
+        let keptJPG = jpgs.filter { FileManager.default.fileExists(atPath: $0.localPath) }.count
+        let keptRaw = raws.filter { FileManager.default.fileExists(atPath: $0.localPath) }.count
+        print("  90 days on: \(keptJPG) of \(jpgs.count) JPGs kept on the phone, \(keptRaw) of \(raws.count) raws left on it")
+        if keptJPG != jpgs.count || keptRaw != 0 || raws.isEmpty { ok = false }
         // Someone else's card: saved with locations on the phone, never sent.
         let before = model.queueEntries.count
         let theirs = PhotoSource(id: "flow-card-theirs", name: "THEIRCARD", url: card, isCard: true)
@@ -69,7 +73,9 @@ extension DebugHooks {
         let others = PhotoScanner.files(in: PhoneFolders.documents.appendingPathComponent("Others"))
         let placedThere = others.filter { (try? NativeMetadata.read($0))?.lat != nil }.count
         print("  someone else's card: \(placedThere) of \(others.count) with a location in Others, queue \(before) then \(model.queueEntries.count)")
-        if others.count != model.rows.count || placedThere != others.count || model.queueEntries.count != before { ok = false }
+        let otherRaws = others.filter { !isJPG($0.path) }.count
+        print("  someone else's card: \(otherRaws) raws saved")
+        if others.count != model.rows.count || placedThere != others.count || model.queueEntries.count != before || otherRaws != 0 { ok = false }
         // Remembered: the same card again is not asked about.
         model.choose(theirs)
         if model.askingWhose != nil { ok = false; print("  asked again about a card it knows") }
@@ -125,6 +131,13 @@ extension DebugHooks {
         people["show-card"] = owner.uuidString
         UserDefaults.standard.set(people, forKey: "cardPeople")
         let source = PhotoSource(id: "show-card", name: "EOS_DIGITAL", url: URL(fileURLWithPath: args[i + 1]), isCard: true)
+        // With a track file after it: the camera set and the panel before saving shown.
+        if args.count > i + 2, args[i + 2].hasSuffix(".gpx") {
+            await model.importFiles([URL(fileURLWithPath: args[i + 2])])
+            var camera = Camera(personId: owner, model: "Canon EOS R5m2", zone: .fromPhoto, offsetSeconds: 0)
+            camera.offsetSet = Date()
+            model.save(camera)
+        }
         model.choose(source)
     }
 }

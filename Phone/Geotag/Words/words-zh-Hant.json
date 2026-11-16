@@ -63,6 +63,7 @@
  "It arrived on the NAS different from the Mac's copy.": "伺服器收到的檔案與 iPhone 上的副本不同。",
  "It could not be copied from the card: {0}": "無法從記憶卡拷貝：{0}",
  "Key": "金鑰",
+ "Latest track: {0}, starts {1}": "最新軌跡：{0}，開始於 {1}",
  "Loading tracks": "正在載入軌跡",
  "Loading tracks: {0} of {1}": "正在載入軌跡：{0}/{1}",
  "Location matched": "位置已配對",
