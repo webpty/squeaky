@@ -28,6 +28,7 @@ struct GeotagPhoneApp: App {
                     if await DebugHooks.flow(model) { exit(0) }
                     if await DebugHooks.watch(model) { exit(0) }
                     if await DebugHooks.pull(model) { exit(0) }
+                    if await DebugHooks.list(model) { exit(0) }
                     await DebugHooks.show(model)
                     #endif
                     await model.start()
@@ -159,8 +160,14 @@ struct TrackCheckSheet: View {
                 if check != .ready {
                     Text(Words.t("Not all photos have a track. Make sure this is correct."))
                 }
+                if let problem = model.savedListProblem {
+                    Text(Words.t("The list of photos already saved couldn't be read: {0} Photos already saved on the Mac may be saved again.", problem))
+                        .foregroundStyle(.orange)
+                }
                 VStack(spacing: 10) {
-                    Button { model.saveAnyway() } label: { Text(Words.t("Save photos")).frame(maxWidth: .infinity) }
+                    Button { model.saveAnyway() } label: {
+                        Text(model.savedListProblem == nil ? Words.t("Save photos") : Words.t("Save anyway")).frame(maxWidth: .infinity)
+                    }
                         .buttonStyle(.borderedProminent)
                     Button { model.checkTracksAgain() } label: { Text(Words.t("Check tracks again")).frame(maxWidth: .infinity) }
                         .buttonStyle(.bordered)

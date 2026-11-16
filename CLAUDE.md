@@ -1050,6 +1050,16 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   "Making maps: 3 of 40" (phone), "Reading the sync files" and "Saving the
   sync file" in place of the sync line, and the card-reading steps.
 
+## The list of saved photos read before a card (0.29.17, David, 16 November 2026)
+
+- 0.29.12 made card reading use the device's copy of the sync files only,
+  and nothing filled that copy after the update: the phone found it empty
+  and saved photos the Mac had saved long ago again. Now a missing or empty
+  copy is read from the server first ("Reading the list of photos already
+  saved, from the server"); if that fails, the panel before saving says why
+  and that photos saved on the Mac may be saved again, and its button reads
+  Save anyway.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

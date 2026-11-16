@@ -1492,7 +1492,22 @@ public final class AppModel: ObservableObject {
             // The camera offsets set on the person's other devices, then what
             // any Mac or phone saved before, from the lists on the server.
             // What the sync files held when last read, kept here: no wait on the server (0.29.12).
-            let copy = loadServerCopy(personId)
+            // Never read yet (0.29.12 left it empty after the update): read from the server
+            // first, as before, or said that it couldn't be (0.29.17).
+            var copy = loadServerCopy(personId)
+            savedListProblem = nil
+            if goesToServer(personId), NASFolder(book.person(personId)?.nasFolder) != nil, copy?.entries.isEmpty ?? true {
+                photosLine = Words.t("Reading the list of photos already saved, from the server")
+                switch await openServerFolder(personId) {
+                case .success(let folder):
+                    if let problem = await refreshServerCopy(personId, folder: folder) { savedListProblem = problem }
+                    copy = loadServerCopy(personId)
+                    if copy == nil { savedListProblem = savedListProblem ?? Words.t("No sync file on the server yet.") }
+                case .failure(let why):
+                    savedListProblem = why.localizedDescription
+                }
+                guard readingRound == round else { return }
+            }
             if let cameras = copy?.cameras { applyCameras(cameras, personId: personId) }
             let past = ((try? history.load(personId)) ?? []) + (copy?.entries ?? [])
             guard readingRound == round, self.source?.id == source.id else { return }
@@ -2140,6 +2155,10 @@ public final class AppModel: ObservableObject {
             return .failure(why)
         }
     }
+
+    /// Why the list of photos already saved could not be read for the card now
+    /// read; shown before saving, since photos saved elsewhere may then be saved again.
+    @Published public private(set) var savedListProblem: String?
 
     /// Said on the sync line: "Sync file not saved:" and why.
     private func syncFailed(_ why: String) {

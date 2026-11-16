@@ -191,3 +191,29 @@ extension DebugHooks {
     }
 }
 #endif
+
+#if DEBUG
+extension DebugHooks {
+    /// `--list-test <card> <server>`: a phone that never read the sync files
+    /// reads them before deciding what is new on the card (0.29.17).
+    @MainActor
+    static func list(_ model: AppModel) async -> Bool {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--list-test"), args.count > i + 2 else { return false }
+        let card = URL(fileURLWithPath: args[i + 1]), server = URL(fileURLWithPath: args[i + 2])
+        model.setPhonePerson(name: "List")
+        guard let owner = model.macOwner else { return true }
+        try? PhoneFolders.remember(server, as: PhoneFolders.nasKey)
+        var people = UserDefaults.standard.dictionary(forKey: "cardPeople") as? [String: String] ?? [:]
+        people["list-card"] = owner.uuidString
+        UserDefaults.standard.set(people, forKey: "cardPeople")
+        model.choose(PhotoSource(id: "list-card", name: "LISTCARD", url: card, isCard: true))
+        try? await Task.sleep(for: .seconds(1))
+        while model.photosBusy { try? await Task.sleep(for: .milliseconds(100)) }
+        let before = model.rows.filter { $0.status == .alreadyImported }.count
+        print("  \(before) of \(model.rows.count) already saved; problem: \(model.savedListProblem ?? "none")")
+        print(before == model.rows.count && model.savedListProblem == nil ? "list: all passed" : "list: FAILED")
+        return true
+    }
+}
+#endif
