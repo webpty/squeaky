@@ -63,13 +63,33 @@ public enum PhoneFolders {
     private static let lock = NSLock()
 
     /// The folder kept under `key`, opened for Geotag; nil when none was chosen.
-    public static func folder(_ key: String) -> URL? {
+    public static func folder(_ key: String) -> URL? { try? open(key) }
+
+    /// Why a chosen folder cannot be had (0.29.11, David: "dont fail silently").
+    public enum Problem: Error, LocalizedError {
+        case notChosen
+        case gone(String)
+        public var errorDescription: String? {
+            switch self {
+            case .notChosen: return Words.t("No server folder chosen.")
+            case .gone(let why): return Words.t("The folder chosen can't be found any more. Choose it again.") + (why.isEmpty ? "" : " " + why)
+            }
+        }
+    }
+
+    /// The folder kept under `key`, opened for Geotag, or why it cannot be.
+    public static func open(_ key: String) throws -> URL {
         lock.lock()
         defer { lock.unlock() }
         if let url = opened[key] { return url }
-        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+        guard let data = UserDefaults.standard.data(forKey: key) else { throw Problem.notChosen }
         var stale = false
-        guard let url = try? URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale) else { return nil }
+        let url: URL
+        do {
+            url = try URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale)
+        } catch {
+            throw Problem.gone(error.localizedDescription)
+        }
         _ = url.startAccessingSecurityScopedResource()
         if stale, let fresh = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
             UserDefaults.standard.set(fresh, forKey: key)
@@ -87,11 +107,36 @@ public enum PhoneFolders {
         UserDefaults.standard.string(forKey: key + "Path")
     }
 
-    /// Works the path out, off the main thread, and saves it.
-    public static func savePath(_ key: String) async -> String? {
-        let path = await Task.detached { PhoneFolders.path(key) }.value
-        if let path { UserDefaults.standard.set(path, forKey: key + "Path") }
-        return path
+    /// Works the path out, off the main thread, and saves it; or why it cannot
+    /// be: the folder gone, the server not answering, or no answer in 15 s.
+    public static func savePath(_ key: String) async -> Result<String, Error> {
+        let found = await withTaskGroup(of: Result<String, Error>?.self) { group in
+            group.addTask {
+                await Task.detached { () -> Result<String, Error> in
+                    do {
+                        let url = try PhoneFolders.open(key)
+                        do {
+                            _ = try FileManager.default.contentsOfDirectory(atPath: url.path)
+                        } catch {
+                            return .failure(NASError.offline(Words.t("The NAS isn't answering. Check that the Files app is still connected to it.")
+                                                             + " " + error.localizedDescription))
+                        }
+                        guard let path = PhoneFolders.path(key), !path.isEmpty else {
+                            return .failure(NASError.failed(Words.t("The folder's name can't be read:") + " " + url.path))
+                        }
+                        return .success(path)
+                    } catch {
+                        return .failure(error)
+                    }
+                }.value
+            }
+            group.addTask { try? await Task.sleep(for: .seconds(15)); return nil }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first ?? .failure(NASError.offline(Words.t("No answer from the NAS within 15 seconds.")))
+        }
+        if case .success(let path) = found { UserDefaults.standard.set(path, forKey: key + "Path") }
+        return found
     }
 
     /// Whether a folder is kept under `key`, without opening it.
@@ -190,11 +235,23 @@ public struct NASThroughFiles: NASPort {
     }
 
     public func connect(share: String) async throws -> NASConnection {
-        guard let chosen = PhoneFolders.folder(PhoneFolders.nasKey) else {
-            throw NASError.failed(Words.t("Choose the server in Settings."))
+        let chosen: URL
+        do {
+            chosen = try PhoneFolders.open(PhoneFolders.nasKey)
+        } catch {
+            throw NASError.failed(error.localizedDescription)
         }
-        let answers = await Task.detached { (try? FileManager.default.contentsOfDirectory(atPath: chosen.path)) != nil }.value
-        guard answers else { throw NASError.offline(Words.t("The server isn't answering.")) }
+        let problem = await Task.detached { () -> String? in
+            do {
+                _ = try FileManager.default.contentsOfDirectory(atPath: chosen.path)
+                return nil
+            } catch {
+                return error.localizedDescription
+            }
+        }.value
+        if let problem {
+            throw NASError.offline(Words.t("The NAS isn't answering. Check that the Files app is still connected to it.") + " " + problem)
+        }
         return NASConnection(folder: chosen, address: PhoneFolders.shownName(chosen), ours: false)
     }
 

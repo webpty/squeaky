@@ -1952,28 +1952,63 @@ public final class AppModel: ObservableObject {
         #endif
     }
 
-    /// The person's folder on the server, open; nil when it has none or does not answer within 15 s.
+    /// The person's folder on the server, open; nil when it has none or cannot be had.
     private func serverFolder(_ personId: UUID) async -> URL? {
+        try? await openServerFolder(personId).get()
+    }
+
+    /// The person's folder on the server, or why not, in words to show
+    /// (0.29.11, David: "dont fail silently").
+    private func openServerFolder(_ personId: UUID) async -> Result<URL, NASError> {
+        guard goesToServer(personId), let place = NASFolder(book.person(personId)?.nasFolder) else {
+            return .failure(.failed(Words.t("No NAS folder chosen.")))
+        }
         // Known not to answer just now: no wait for it while a card is read.
-        guard goesToServer(personId), nasReach != .unreachable, let place = NASFolder(book.person(personId)?.nasFolder) else { return nil }
+        guard nasReach != .unreachable else { return .failure(.offline(Words.t("The NAS isn't answering."))) }
         let port = nas
-        let connection = await withTaskGroup(of: NASConnection?.self) { group in
-            group.addTask { try? await port.connect(share: place.share) }
+        let outcome = await withTaskGroup(of: Result<NASConnection, NASError>?.self) { group in
+            group.addTask {
+                do {
+                    return .success(try await port.connect(share: place.share))
+                } catch {
+                    return .failure(error as? NASError ?? .failed(error.localizedDescription))
+                }
+            }
             group.addTask { try? await Task.sleep(for: .seconds(15)); return nil }
             let first = await group.next() ?? nil
             group.cancelAll()
-            return first
+            return first ?? .failure(.offline(Words.t("No answer from the NAS within 15 seconds.")))
         }
-        guard let connection else { return nil }
-        if connection.ours { ourMounts[connection.folder.path] = connection }
-        return place.folder(in: connection.folder)
+        switch outcome {
+        case .success(let connection):
+            if connection.ours { ourMounts[connection.folder.path] = connection }
+            return .success(place.folder(in: connection.folder))
+        case .failure(let why):
+            return .failure(why)
+        }
+    }
+
+    /// Said on the sync line: "Sync file not saved:" and why.
+    private func syncFailed(_ why: String) {
+        sharedProblem = why
     }
 
     /// The photos any device saved for this person, as listed on the server.
     public func serverHistory(_ personId: UUID) async -> [HistoryEntry] {
-        guard let folder = await serverFolder(personId) else { return [] }
+        let folder: URL
+        switch await openServerFolder(personId) {
+        case .success(let found): folder = found
+        case .failure(let why):
+            if goesToServer(personId), NASFolder(book.person(personId)?.nasFolder) != nil {
+                syncFailed(why.localizedDescription)
+                if photosBusy { photosLine = Words.t("Checking the server for photos already saved: {0} Going on with this phone's own list.", why.localizedDescription) }
+            }
+            return []
+        }
         await noteLastSave(folder, personId)
-        return await Task.detached { ServerList.read(from: folder) }.value
+        let read = await Task.detached { ServerList.readChecked(from: folder) }.value
+        if let problem = read.problem { syncFailed(Words.t("the other devices' sync files couldn't be read:") + " " + problem) }
+        return read.entries
     }
 
     /// This device's list of photos saved for a person, put on the server.
@@ -2028,8 +2063,11 @@ public final class AppModel: ObservableObject {
         defer { sharing = false }
         var problem: String?
         for person in people {
-            guard let folder = await serverFolder(person.id) else {
-                problem = Words.t("The NAS isn't answering.")
+            let folder: URL
+            switch await openServerFolder(person.id) {
+            case .success(let found): folder = found
+            case .failure(let why):
+                problem = why.localizedDescription
                 continue
             }
             await pullCameras(person.id)
@@ -2045,7 +2083,7 @@ public final class AppModel: ObservableObject {
                     return error.localizedDescription
                 }
             }.value
-            if let failure { problem = failure }
+            if let failure { problem = Words.t("it couldn't be written:") + " " + failure }
             // The phone's person, or this Mac's owner, or the first: the line on the Photos page.
             if person.id == (macOwner ?? people.first?.id) {
                 lastSave = await Task.detached { ServerList.lastSave(in: folder) }.value
@@ -2070,7 +2108,16 @@ public final class AppModel: ObservableObject {
     /// Offsets set more recently on another device taken here; a camera
     /// another device knows and this one not yet, added.
     public func pullCameras(_ personId: UUID) async {
-        guard let folder = await serverFolder(personId) else { return }
+        let folder: URL
+        switch await openServerFolder(personId) {
+        case .success(let found): folder = found
+        case .failure(let why):
+            if goesToServer(personId), NASFolder(book.person(personId)?.nasFolder) != nil {
+                syncFailed(why.localizedDescription)
+                if photosBusy { photosLine = Words.t("Checking the server for camera offsets: {0} Going on without them.", why.localizedDescription) }
+            }
+            return
+        }
         let shared = await Task.detached { ServerList.readCameras(from: folder) }.value
         var taken = false
         var next = book

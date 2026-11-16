@@ -11,6 +11,8 @@ struct SettingsTab: View {
     @State private var choosing = false
     @State private var problem: String?
     @State private var nasName = PhoneFolders.savedPath(PhoneFolders.nasKey)
+    /// Why the server folder cannot be opened, when it cannot (0.29.11).
+    @State private var folderProblem: String?
     @State private var name = ""
     /// Offsets typed, by camera, until the checkmark saves them.
     @State private var offsets: [UUID: String] = [:]
@@ -67,6 +69,9 @@ struct SettingsTab: View {
                     LabeledContent(Words.t("Folder")) {
                         Text(nasName ?? (PhoneFolders.isChosen(PhoneFolders.nasKey) ? "" : Words.t("Not chosen"))).lineLimit(1).truncationMode(.middle)
                     }
+                    if let folderProblem {
+                        Text(folderProblem).foregroundStyle(.orange)
+                    }
                     Button(PhoneFolders.isChosen(PhoneFolders.nasKey) ? Words.t("Change") : Words.t("Choose")) {
                         problem = nil
                         choosing = true
@@ -74,6 +79,7 @@ struct SettingsTab: View {
                     if PhoneFolders.isChosen(PhoneFolders.nasKey) {
                         Button(Words.t("Remove"), role: .destructive) {
                             nasName = nil
+                            folderProblem = nil
                             Task { await model.forgetNASFolder() }
                         }
                     }
@@ -101,7 +107,15 @@ struct SettingsTab: View {
             }
             .task {
                 // A folder chosen before 0.29.8 has no saved path: worked out once, in the background.
-                if nasName == nil, PhoneFolders.isChosen(PhoneFolders.nasKey) { nasName = await PhoneFolders.savePath(PhoneFolders.nasKey) }
+                // Every time Settings opens: the folder tried, in the background, and why not said.
+                guard PhoneFolders.isChosen(PhoneFolders.nasKey) else { folderProblem = nil; return }
+                switch await PhoneFolders.savePath(PhoneFolders.nasKey) {
+                case .success(let path):
+                    nasName = path
+                    folderProblem = nil
+                case .failure(let why):
+                    folderProblem = why.localizedDescription
+                }
             }
             .onAppear {
                 name = owner?.name ?? ""
@@ -155,7 +169,13 @@ struct SettingsTab: View {
             return
         }
         nasName = PhoneFolders.shownName(url)
-        Task { nasName = await PhoneFolders.savePath(key) ?? nasName }
+        folderProblem = nil
+        Task {
+            switch await PhoneFolders.savePath(key) {
+            case .success(let path): nasName = path
+            case .failure(let why): folderProblem = why.localizedDescription
+            }
+        }
         Task { await model.useNASFolder() }
     }
 }

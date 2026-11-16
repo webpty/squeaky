@@ -979,6 +979,16 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - The sync line's last save is remembered between launches and noted
   whenever Geotag reads the server folder, not only when it writes.
 
+## No silent failures (0.29.11, David, 16 November 2026: "dont fail silently")
+
+- Every way of not reaching the server folder says why: in Settings under
+  Folder, on the sync line ("Sync file not saved:" and why), and on the step
+  lines while a card is read ("...: <why> Going on with this phone's own
+  list."). Reasons: no folder chosen; the folder chosen can't be found any
+  more (the bookmark no longer resolves); the server isn't answering (the
+  Files app's connection is down), with the phone's own words; no answer
+  within 15 seconds; a sync file that couldn't be written or read.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

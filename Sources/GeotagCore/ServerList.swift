@@ -76,18 +76,32 @@ public enum ServerList {
     }
 
     /// Every device's list, together; a list that cannot be read is left out.
-    public static func read(from personFolder: URL) -> [HistoryEntry] {
+    public static func read(from personFolder: URL) -> [HistoryEntry] { readChecked(from: personFolder).entries }
+
+    /// The same, with why a list could not be read, when one could not (0.29.11).
+    public static func readChecked(from personFolder: URL) -> (entries: [HistoryEntry], problem: String?) {
         let folder = personFolder.appendingPathComponent(folderName, isDirectory: true)
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        var problem: String?
+        let names: [String]
+        do {
+            names = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+        } catch {
+            // No sync folder yet is no problem; anything else is said.
+            if (error as NSError).code != NSFileReadNoSuchFileError { problem = error.localizedDescription }
+            names = []
+        }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .secondsSince1970
         var seen = Set<String>()
         var out: [HistoryEntry] = []
         for name in names.sorted() where name.hasPrefix("saved-") && name.hasSuffix(".json") {
-            guard let data = try? Data(contentsOf: folder.appendingPathComponent(name)),
-                  let list = try? decoder.decode([HistoryEntry].self, from: data) else { continue }
-            for entry in list where seen.insert(entry.key).inserted { out.append(entry) }
+            do {
+                let list = try decoder.decode([HistoryEntry].self, from: Data(contentsOf: folder.appendingPathComponent(name)))
+                for entry in list where seen.insert(entry.key).inserted { out.append(entry) }
+            } catch {
+                problem = "\(name): \(error.localizedDescription)"
+            }
         }
-        return out
+        return (out, problem)
     }
 }
