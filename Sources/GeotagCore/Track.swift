@@ -64,6 +64,8 @@ public struct Track: Codable, Identifiable, Equatable, Sendable {
     public var status: TrackStatus
     /// For an uploaded file: the service's id for the same track.
     public var serviceId: String?
+    /// Where it is, named by the track service (0.29.20).
+    public var place: String?
 
     public init(id: String, source: TrackSource, name: String, sport: String?, fileName: String?,
                 start: Date, end: Date, timeZone: String?, pointCount: Int, distance: Double?,

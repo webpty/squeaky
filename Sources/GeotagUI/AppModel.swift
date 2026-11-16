@@ -137,7 +137,9 @@ public final class AppModel: ObservableObject {
     private var namingTracks = false
 
     /// A track's name as Geotag shows it: where it is, once looked up.
-    public func trackTitle(_ track: Track) -> String { trackPlaces[track.id] ?? track.name }
+    /// The track service's name first (0.29.20), so every site shows the same;
+    /// Geotag's own only for a track the service does not hold.
+    public func trackTitle(_ track: Track) -> String { track.place ?? trackPlaces[track.id] ?? track.name }
     @Published public var tracksLine = ""
     @Published public private(set) var tracksBusy = false
     /// The check before a card is saved by itself, while some of its photos
@@ -3130,7 +3132,8 @@ public final class AppModel: ObservableObject {
         defer { namingTracks = false }
         let file = TrackPlaces.file(beside: (peopleStore as? PeopleStoreFile)?.url)
         if trackPlaces.isEmpty { trackPlaces = TrackPlaces.load(file) }
-        let unnamed = tracks.filter { trackPlaces[$0.id] == nil }
+        // The service names its own tracks (tracks 0.4.1): only those it does not hold are named here.
+        let unnamed = tracks.filter { trackPlaces[$0.id] == nil && $0.place == nil && $0.status != .onService }
         guard !unnamed.isEmpty else { return }
         let before = tracksLine
         var said = ""

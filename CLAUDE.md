@@ -934,6 +934,9 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   checked first, then "Latest track: <name>, starts <date>", "Not all
   photos have a track" when it applies, and Save photos, Check tracks
   again, Don't save. The Mac keeps its panel for missing tracks only.
+- Since 0.29.20 the track service names its tracks (tracks 0.4.1, field
+  `place`), so every site shows the same; Geotag shows that name and names
+  only tracks the service does not hold itself.
 - Tracks are named by where they are (`TrackPlaces`, Mac and phone): start,
   middle and end looked up on OpenStreetMap in English at zoom 10; one town
   for all three gives "Ronda, Andalusia", else the region it starts in. Kept

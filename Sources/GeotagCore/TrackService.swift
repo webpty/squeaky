@@ -32,13 +32,17 @@ public struct ServiceTrack: Codable, Equatable, Sendable {
     public var pointCount: Int
     public var distance: Double?
     public var bounds: Bounds
+    /// Where it is, "Ronda, Andalusia", named by the service (tracks 0.4.1).
+    public var place: String?
 
     public var track: Track {
-        Track(id: id, source: source, name: name, sport: sport, fileName: fileName,
-              start: Date(timeIntervalSince1970: TimeInterval(start)),
-              end: Date(timeIntervalSince1970: TimeInterval(end)),
-              timeZone: timeZone, pointCount: pointCount, distance: distance,
-              bounds: bounds, status: .onService)
+        var t = Track(id: id, source: source, name: name, sport: sport, fileName: fileName,
+                      start: Date(timeIntervalSince1970: TimeInterval(start)),
+                      end: Date(timeIntervalSince1970: TimeInterval(end)),
+                      timeZone: timeZone, pointCount: pointCount, distance: distance,
+                      bounds: bounds, status: .onService)
+        t.place = place
+        return t
     }
 }
 
