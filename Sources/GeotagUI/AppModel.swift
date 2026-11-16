@@ -1922,6 +1922,8 @@ public final class AppModel: ObservableObject {
     /// last try failed: shown on the Queue page (0.29.2, David, 16 November 2026).
     @Published public private(set) var sharedAt: Date?
     @Published public private(set) var sharedProblem: String?
+    /// Who wrote into the server folder last, and when, any device (0.29.3).
+    @Published public private(set) var lastSave: ServerList.LastSave?
     private var sharing = false
 
     /// Every person's lists, read and written: as Geotag opens, whenever the
@@ -1952,6 +1954,10 @@ public final class AppModel: ObservableObject {
                 }
             }.value
             if let failure { problem = failure }
+            // The phone's person, or this Mac's owner, or the first: the line on the Photos page.
+            if person.id == (macOwner ?? people.first?.id) {
+                lastSave = await Task.detached { ServerList.lastSave(in: folder) }.value
+            }
         }
         if let problem {
             sharedProblem = problem

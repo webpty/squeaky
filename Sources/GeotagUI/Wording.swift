@@ -65,11 +65,13 @@ public enum PhotoText {
 }
 
 public enum QueueText {
-    /// "Shared with the NAS: 14:32" (the server, on the phone), or why not.
-    public static func shared(at: Date?, problem: String?) -> String {
-        if let problem { return Words.t("Shared with the NAS: no. {0}", problem) }
-        guard let at else { return Words.t("Shared with the NAS: not yet") }
-        return Words.t("Shared with the NAS: {0}", When.current.time(at))
+    /// "Sync file saved on NAS. Last save: Mac app @ 20:03" (the server, on
+    /// the phone), or why not (0.29.3, David's words, 16 November 2026).
+    public static func sync(_ last: ServerList.LastSave?, problem: String?) -> String {
+        if let problem { return Words.t("Sync file not saved: {0}", problem) }
+        guard let last else { return Words.t("Sync file not saved yet.") }
+        return Words.t("Sync file saved on NAS. Last save: {0} @ {1}", last.byPhone ? Words.t("iPhone app") : Words.t("Mac app"),
+                       When.current.time(last.at))
     }
 
     public static func status(_ entry: QueueEntry) -> String {

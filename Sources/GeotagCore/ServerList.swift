@@ -52,6 +52,29 @@ public enum ServerList {
         return newest.values.sorted { $0.model < $1.model }
     }
 
+    /// The device that wrote last into the folder, and when (0.29.3).
+    public struct LastSave: Equatable, Sendable {
+        public var byPhone: Bool
+        public var at: Date
+        public init(byPhone: Bool, at: Date) {
+            self.byPhone = byPhone
+            self.at = at
+        }
+    }
+
+    public static func lastSave(in personFolder: URL) -> LastSave? {
+        let folder = personFolder.appendingPathComponent(folderName, isDirectory: true)
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        var newest: LastSave?
+        for name in names where name.hasSuffix(".json") && (name.hasPrefix("saved-") || name.hasPrefix("cameras-")) {
+            guard let at = (try? FileManager.default.attributesOfItem(atPath: folder.appendingPathComponent(name).path))?[.modificationDate] as? Date
+            else { continue }
+            if let known = newest, known.at >= at { continue }
+            newest = LastSave(byPhone: name.contains("-iphone-"), at: at)
+        }
+        return newest
+    }
+
     /// Every device's list, together; a list that cannot be read is left out.
     public static func read(from personFolder: URL) -> [HistoryEntry] {
         let folder = personFolder.appendingPathComponent(folderName, isDirectory: true)

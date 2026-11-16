@@ -128,6 +128,7 @@ struct PhotosScreen: View {
                     .keyboardShortcut(.defaultAction)
                     .disabled(!model.canSave)
                 }
+                StatusLine(text: QueueText.sync(model.lastSave, problem: model.sharedProblem), lines: 1)
             }
 
             if model.cards.count > 1 {

@@ -1452,14 +1452,16 @@ extension SelfTest {
         }
         // Shared when asked, and the time it happened shown.
         await second.shareWithServer()
-        check("server list: sharing says when it happened", second.sharedAt != nil && second.sharedProblem == nil
-              && QueueText.shared(at: second.sharedAt, problem: nil).hasPrefix("Shared with the NAS: "))
+        let line = QueueText.sync(second.lastSave, problem: second.sharedProblem)
+        check("server list: sharing says who saved last and when", second.sharedAt != nil && second.sharedProblem == nil
+              && line.hasPrefix("Sync file saved on NAS. Last save: Mac app @ "), line)
         // Server away: no wait, and the card reads as new.
         nas.online = false
         await second.checkNAS()
         await second.shareWithServer()
-        check("server list: sharing with the server away says why", second.sharedProblem != nil,
-              QueueText.shared(at: second.sharedAt, problem: second.sharedProblem))
+        check("server list: sharing with the server away says why", second.sharedProblem != nil
+              && QueueText.sync(second.lastSave, problem: second.sharedProblem).hasPrefix("Sync file not saved: "),
+              QueueText.sync(second.lastSave, problem: second.sharedProblem))
         let started = Date()
         let none = await second.serverHistory(davidB)
         check("server list: a server that does not answer is not waited for", none.isEmpty && Date().timeIntervalSince(started) < 2)
