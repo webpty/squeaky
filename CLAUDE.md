@@ -887,8 +887,10 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   made here (his rule, 16 October 2026). Ask in the chat first. The one
   exception he gave: each new build replaces the previous Geotag in
   Applications and in `build/`.
-- Raise `appVersion` in `Sources/GeotagCore/Version.swift` with every push, and
-  start the commit subject with that number.
+- Raise `appVersion` in `Sources/GeotagCore/Version.swift` with every change
+  that is committed or installed, the phone's included, and start the
+  commit subject with that number (David, 16 November 2026: six phone
+  changes went out as 0.28.0 and he could not tell he had the latest).
 - Commit locally as often as it is worth, and push to GitHub without asking
   (David, 6 November 2026: a push here only saves versions; nothing goes
   live from it). Installing a new build on his Mac still needs his yes.
