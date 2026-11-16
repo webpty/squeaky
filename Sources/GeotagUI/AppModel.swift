@@ -1915,10 +1915,49 @@ public final class AppModel: ObservableObject {
     /// Everyone's lists, as Geotag opens: the photos saved before this
     /// version count on the other devices straight away.
     func publishAllHistory() async {
-        for person in book.people {
+        await shareWithServer()
+    }
+
+    /// When the lists were last written to the server, and why not, when the
+    /// last try failed: shown on the Queue page (0.29.2, David, 16 November 2026).
+    @Published public private(set) var sharedAt: Date?
+    @Published public private(set) var sharedProblem: String?
+    private var sharing = false
+
+    /// Every person's lists, read and written: as Geotag opens, whenever the
+    /// server answers and they were not written since, and after each batch sent.
+    public func shareWithServer() async {
+        guard !sharing else { return }
+        let people = book.people.filter { goesToServer($0.id) && NASFolder($0.nasFolder) != nil }
+        guard !people.isEmpty else { return }
+        sharing = true
+        defer { sharing = false }
+        var problem: String?
+        for person in people {
+            guard let folder = await serverFolder(person.id) else {
+                problem = Words.t("The NAS isn't answering.")
+                continue
+            }
             await pullCameras(person.id)
-            await publishHistory(person.id)
-            await publishCameras(person.id)
+            let entries = (try? history.load(person.id)) ?? []
+            let cameras = book.cameras(of: person.id).filter { $0.offsetSeconds != nil }
+            let device = deviceId
+            let failure: String? = await Task.detached {
+                do {
+                    if !entries.isEmpty { try ServerList.write(entries, into: folder, device: device) }
+                    if !cameras.isEmpty { try ServerList.writeCameras(cameras, into: folder, device: device) }
+                    return nil
+                } catch {
+                    return error.localizedDescription
+                }
+            }.value
+            if let failure { problem = failure }
+        }
+        if let problem {
+            sharedProblem = problem
+        } else {
+            sharedAt = Date()
+            sharedProblem = nil
         }
     }
 
@@ -2052,6 +2091,8 @@ public final class AppModel: ObservableObject {
             }
         }
         if nasReach != answered { nasReach = answered }
+        // The server answers and the lists were not written since Geotag opened.
+        if case .through = answered, sharedAt == nil { Task { await shareWithServer() } }
     }
 
     private func startSending() {
@@ -2354,6 +2395,7 @@ public final class AppModel: ObservableObject {
         // one notification for the whole batch.
         if !sendPaused, !waiting, !saving, !placingLater, batchSent + batchFailed > 0 {
             notifier.post(Self.batchText(sent: batchSent, failed: batchFailed))
+            await shareWithServer()
             batchSent = 0
             batchFailed = 0
         }
@@ -2547,7 +2589,8 @@ public final class AppModel: ObservableObject {
 
     /// Shared folders Geotag opened, closed again once nothing is waiting.
     private func closeOurMounts() async {
-        guard !ourMounts.isEmpty else { return }
+        // Never while the lists are being written into one of them.
+        guard !ourMounts.isEmpty, !sharing else { return }
         let open = Array(ourMounts.values)
         ourMounts = [:]
         cleanedFolders = []

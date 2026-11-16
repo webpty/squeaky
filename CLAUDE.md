@@ -882,6 +882,11 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   device writes its own whole list as it opens and after each save; a card
   being read is checked against all of them, once per card, so a card one
   Mac or phone handled reads as saved before on every other.
+- Written as Geotag opens, whenever the server answers and they were not
+  written since it opened, and after each batch sent (0.29.2). The Queue
+  page (Mac) and tab (phone) say when: "Shared with the NAS: 14:32" ("the
+  server" on the phone), "not yet", or why not. Geotag's own openings of
+  the NAS are not closed while the lists are written.
 - A server known not to answer is not waited for; then only the device's
   own list counts. Someone else's card on a phone is never checked.
 - This is Geotag's own record on the server, read only to know what was

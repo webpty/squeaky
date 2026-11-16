@@ -137,6 +137,8 @@ struct QueueScreen: View {
                 Tile(label: "Freed on this Mac", value: ByteCountFormatter.string(fromByteCount: model.freedOnMac, countStyle: .file))
             }
 
+            StatusLine(text: QueueText.shared(at: model.sharedAt, problem: model.sharedProblem), lines: 1)
+
             if model.nasAway {
                 HStack(alignment: .firstTextBaseline, spacing: Style.gap) {
                     StatusLine(text: AppModel.nasAwayText, lines: 2)

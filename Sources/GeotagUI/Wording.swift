@@ -65,6 +65,13 @@ public enum PhotoText {
 }
 
 public enum QueueText {
+    /// "Shared with the NAS: 14:32" (the server, on the phone), or why not.
+    public static func shared(at: Date?, problem: String?) -> String {
+        if let problem { return Words.t("Shared with the NAS: no. {0}", problem) }
+        guard let at else { return Words.t("Shared with the NAS: not yet") }
+        return Words.t("Shared with the NAS: {0}", When.current.time(at))
+    }
+
     public static func status(_ entry: QueueEntry) -> String {
         switch entry.state {
         case .waiting: return Words.t("Waiting")

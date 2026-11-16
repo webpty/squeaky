@@ -1450,9 +1450,16 @@ extension SelfTest {
         } else {
             check("server list: a camera to set", false)
         }
+        // Shared when asked, and the time it happened shown.
+        await second.shareWithServer()
+        check("server list: sharing says when it happened", second.sharedAt != nil && second.sharedProblem == nil
+              && QueueText.shared(at: second.sharedAt, problem: nil).hasPrefix("Shared with the NAS: "))
         // Server away: no wait, and the card reads as new.
         nas.online = false
         await second.checkNAS()
+        await second.shareWithServer()
+        check("server list: sharing with the server away says why", second.sharedProblem != nil,
+              QueueText.shared(at: second.sharedAt, problem: second.sharedProblem))
         let started = Date()
         let none = await second.serverHistory(davidB)
         check("server list: a server that does not answer is not waited for", none.isEmpty && Date().timeIntervalSince(started) < 2)

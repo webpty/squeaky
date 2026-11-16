@@ -21,6 +21,8 @@ struct QueueTab: View {
                     if held > 0 { LabeledContent(Words.t("Waiting for the tracks"), value: held.formatted()) }
                     LabeledContent(Words.t("On the NAS"), value: sent.formatted())
                     LabeledContent(Words.t("Not sent"), value: failed.count.formatted())
+                    Text(QueueText.shared(at: model.sharedAt, problem: model.sharedProblem))
+                        .foregroundStyle(.secondary)
                 }
                 Section {
                     Button(model.sendPaused ? Words.t("Resume") : Words.t("Pause")) { model.setSendPaused(!model.sendPaused) }
