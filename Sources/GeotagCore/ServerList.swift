@@ -2,11 +2,29 @@ import Foundation
 
 /// The photos already saved from cards, kept on the server in each person's
 /// folder so every Mac and phone knows them (David, 16 November 2026): a
-/// hidden ".geotag" folder with one list per device, so two never write over
+/// "Geotag sync" folder (hidden ".geotag" before 0.29.23) with one list per device, so two never write over
 /// each other. Each device writes its own whole list; a card being read is
 /// checked against all of them.
 public enum ServerList {
-    public static let folderName = ".geotag"
+    /// Visible (0.29.23): the phone reaches the NAS through the Files app,
+    /// which hides a folder whose name starts with a dot, so ".geotag" looked
+    /// absent there and the Mac's list was never read.
+    public static let folderName = "Geotag sync"
+    static let oldFolderName = ".geotag"
+
+    /// Once per folder: the files of the hidden ".geotag" moved to "Geotag sync".
+    public static func moveFromHidden(in personFolder: URL) {
+        let fm = FileManager.default
+        let old = personFolder.appendingPathComponent(oldFolderName, isDirectory: true)
+        let new = personFolder.appendingPathComponent(folderName, isDirectory: true)
+        guard let names = try? fm.contentsOfDirectory(atPath: old.path), !names.isEmpty else { return }
+        try? fm.createDirectory(at: new, withIntermediateDirectories: true)
+        for name in names where name.hasSuffix(".json") {
+            let to = new.appendingPathComponent(name)
+            if !fm.fileExists(atPath: to.path) { try? fm.moveItem(at: old.appendingPathComponent(name), to: to) }
+        }
+        if ((try? fm.contentsOfDirectory(atPath: old.path)) ?? []).isEmpty { try? fm.removeItem(at: old) }
+    }
 
     public static func file(in personFolder: URL, device: String) -> URL {
         let safe = device.replacingOccurrences(of: "/", with: "-")

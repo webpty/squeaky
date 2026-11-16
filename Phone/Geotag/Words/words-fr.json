@@ -109,6 +109,7 @@
  "No photos without a location from {0}.": "Aucune photo sans position de {0}.",
  "No server folder chosen.": "Aucun dossier de serveur choisi.",
  "No sync file on the server yet.": "Pas encore de fichier de synchronisation sur le serveur.",
+ "No sync files found on the server.": "Aucun fichier de synchronisation trouvé sur le serveur.",
  "No time": "Pas d'heure",
  "No time in the photo": "Pas d'heure dans la photo",
  "No time zone in the photo": "Pas de fuseau horaire dans la photo",

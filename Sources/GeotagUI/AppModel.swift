@@ -1549,9 +1549,11 @@ public final class AppModel: ObservableObject {
                 photosLine = Words.t("Reading the list of photos already saved, from the server")
                 switch await openServerFolder(personId) {
                 case .success(let folder):
+                    await Task.detached { ServerList.moveFromHidden(in: folder) }.value
                     if let problem = await refreshServerCopy(personId, folder: folder) { savedListProblem = problem }
                     copy = loadServerCopy(personId)
-                    if copy == nil { savedListProblem = savedListProblem ?? Words.t("No sync file on the server yet.") }
+                    // Nothing listed is said, never taken as "nothing saved yet" (0.29.23).
+                    if copy?.entries.isEmpty ?? true { savedListProblem = savedListProblem ?? Words.t("No sync files found on the server.") }
                 case .failure(let why):
                     savedListProblem = why.localizedDescription
                 }
@@ -2284,6 +2286,7 @@ public final class AppModel: ObservableObject {
                 problem = why.localizedDescription
                 continue
             }
+            await Task.detached { ServerList.moveFromHidden(in: folder) }.value
             if let refreshed = await refreshServerCopy(person.id, folder: folder) { problem = refreshed }
             let entries = (try? history.load(person.id)) ?? []
             let cameras = book.cameras(of: person.id).filter { $0.offsetSeconds != nil }
@@ -2322,6 +2325,8 @@ public final class AppModel: ObservableObject {
             }
         }
         syncActivity = nil
+        // No sync file seen at all, not even this device's own: a problem, said (0.29.23).
+        if problem == nil, lastSave == nil { problem = Words.t("No sync files found on the server.") }
         if let problem {
             sharedProblem = problem
         } else {

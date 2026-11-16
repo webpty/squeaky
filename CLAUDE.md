@@ -887,7 +887,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 ## The list of photos saved, on the server (0.29.0, David, 16 November 2026)
 
 - Each person's server folder (their NAS folder on the Mac, the chosen
-  folder on the phone) holds a hidden `.geotag` folder with one list per
+  folder on the phone) holds a `Geotag sync` folder (`.geotag` before 0.29.23) with one list per
   device, `saved-<device>.json` (the Mac's id, or a phone's own), of the
   photos it saved from cards: name, size, time taken (`ServerList`). Each
   device writes its own whole list as it opens and after each save; a card
@@ -1086,6 +1086,16 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   are not affected, you can carry on." ("server" on the phone).
 - The one-off reset of SD cards marked someone else's runs as Geotag starts,
   before any card is read.
+
+## The sync folder made visible (0.29.23, David, 17 November 2026)
+
+- The phone reaches the NAS through the Files app, which hides folders
+  whose name starts with a dot: ".geotag" looked absent, so the phone never
+  saw the Mac's list and said "not saved yet". The sync files now live in
+  "Geotag sync" in each person's server folder; each device moves the old
+  hidden folder's files there the first time (`ServerList.moveFromHidden`).
+  Finding no sync file at all is said ("No sync files found on the server."),
+  never shown as "not saved yet".
 
 ## Architecture
 

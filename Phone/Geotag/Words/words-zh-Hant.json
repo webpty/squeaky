@@ -109,6 +109,7 @@
  "No photos without a location from {0}.": "{0} 中沒有缺少位置的照片。",
  "No server folder chosen.": "尚未選擇伺服器資料夾。",
  "No sync file on the server yet.": "伺服器上還沒有同步檔案。",
+ "No sync files found on the server.": "伺服器上找不到同步檔案。",
  "No time": "無時間",
  "No time in the photo": "照片中沒有時間",
  "No time zone in the photo": "照片中沒有時區",
