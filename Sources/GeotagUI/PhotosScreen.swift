@@ -100,6 +100,9 @@ struct PhotosScreen: View {
         VStack(alignment: .leading, spacing: Style.gap) {
             HStack(spacing: Style.gap) {
                 ScreenTitle(text: "Photos")
+                // The sync line beside the title, the buttons at the right (0.29.4, David, 16 November 2026).
+                StatusLine(text: QueueText.sync(model.lastSave, problem: model.sharedProblem), lines: 1)
+                Spacer(minLength: Style.gap)
                 // A button that can't do anything now is dimmed (David, 6 November 2026).
                 Button {
                     model.openMap()
@@ -128,7 +131,6 @@ struct PhotosScreen: View {
                     .keyboardShortcut(.defaultAction)
                     .disabled(!model.canSave)
                 }
-                StatusLine(text: QueueText.sync(model.lastSave, problem: model.sharedProblem), lines: 1)
             }
 
             if model.cards.count > 1 {

@@ -57,12 +57,14 @@ struct PhotosTab: View {
                 let waiting = model.rows.filter { $0.willImport && model.results[$0.id] == nil }
                 if !waiting.isEmpty {
                     Section {
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 3), spacing: 2) {
+                        // Exact squares of one size, edge to edge (0.29.4).
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 3), spacing: 0) {
                             ForEach(waiting) { row in
                                 Square(url: model.pictureURL(row))
                             }
                         }
                         .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
                     }
                 }
             }
@@ -133,7 +135,13 @@ struct Square: View {
             .aspectRatio(1, contentMode: .fit)
             .overlay {
                 if let image {
-                    Image(uiImage: image).resizable().scaledToFill()
+                    GeometryReader { box in
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: box.size.width, height: box.size.height)
+                            .clipped()
+                    }
                 }
             }
             .clipped()

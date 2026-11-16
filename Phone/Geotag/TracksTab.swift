@@ -1,6 +1,7 @@
 import GeotagCore
 import GeotagUI
 import SwiftUI
+import UIKit
 
 /// The watch's tracks, from the track service.
 struct TracksTab: View {
@@ -16,19 +17,29 @@ struct TracksTab: View {
                 }
                 Section {
                     ForEach(model.tracks.sorted { $0.start > $1.start }) { track in
-                        VStack(alignment: .leading, spacing: 4) {
-                            TrackPicture(model: model, id: track.id)
-                                .frame(height: 110)
-                                .padding(.bottom, 4)
-                            Text(track.name)
-                            Text(Self.line(track)).font(.caption).foregroundStyle(.secondary)
-                            Button(Words.t("Recheck photos for this track")) { Task { await model.recheckPhotos(for: track) } }
-                                .font(.caption)
-                                .buttonStyle(.bordered)
-                                .disabled(model.tracksBusy || model.saving || model.placingLater)
+                        // The map on the left, the words on the right (0.29.4).
+                        HStack(alignment: .top, spacing: 12) {
+                            TrackPicture(model: model, track: track)
+                                .frame(width: MapThumbnails.size.width, height: MapThumbnails.size.height)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(track.name)
+                                Text(Self.line(track)).font(.caption).foregroundStyle(.secondary)
+                                Button(Words.t("Recheck photos for this track")) { Task { await model.recheckPhotos(for: track) } }
+                                    .font(.caption)
+                                    .buttonStyle(.bordered)
+                                    .disabled(model.tracksBusy || model.saving || model.placingLater)
+                            }
+                            .lineLimit(1)
                         }
-                        .lineLimit(1)
                     }
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                // The map's licence asks for its credit to show with it.
+                if !model.mapCredit.isEmpty {
+                    Text(model.mapCredit).font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.6)
+                        .padding(.horizontal).padding(.vertical, 4)
                 }
             }
             .navigationTitle(Words.t("Tracks"))
@@ -47,28 +58,40 @@ struct TracksTab: View {
     }
 }
 
-/// A track's route as a blue line, drawn from its own points, so it shows
-/// with no internet (David, 15 November 2026).
+/// A track's map, as on the Mac: tiles with no words and the route in blue,
+/// kept on the phone once made. Until it can be made, the route alone, drawn
+/// from its own points. Tried again once the points or the maps come in.
 struct TrackPicture: View {
     @ObservedObject var model: AppModel
-    let id: String
+    let track: Track
+    @Environment(\.colorScheme) private var scheme
     @State private var points: [CGPoint] = []
+    @State private var map: UIImage?
 
     var body: some View {
-        GeometryReader { box in
-            Path { path in
-                let fitted = Self.fit(points, in: box.size.insetBy(8))
-                guard let first = fitted.first else { return }
-                path.move(to: first)
-                for p in fitted.dropFirst() { path.addLine(to: p) }
+        ZStack {
+            Color(.secondarySystemBackground)
+            if let map {
+                Image(uiImage: map).resizable().scaledToFill()
+            } else {
+                GeometryReader { box in
+                    Path { path in
+                        let fitted = Self.fit(points, in: box.size.insetBy(8))
+                        guard let first = fitted.first else { return }
+                        path.move(to: first)
+                        for p in fitted.dropFirst() { path.addLine(to: p) }
+                    }
+                    .offset(x: 8, y: 8)
+                    .stroke(Color.blue, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                }
             }
-            .offset(x: 8, y: 8)
-            .stroke(Color.blue, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
         }
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color(.secondarySystemBackground)))
-        .task(id: id) {
-            guard points.isEmpty, let track = await model.points(id) else { return }
-            points = Self.flatten(track)
+        .task(id: "\(track.id)-\(model.tracksBusy)-\(model.mapsRound)-\(scheme == .dark)") {
+            let dark = scheme == .dark
+            if let known = model.thumbnails.cached(track.id, dark: dark) { map = known; return }
+            guard let loaded = await model.points(track.id) else { return }
+            if points.isEmpty { points = Self.flatten(loaded) }
+            map = await model.thumbnails.make(track, points: loaded, dark: dark)
         }
     }
 

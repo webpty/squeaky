@@ -850,8 +850,14 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   everything typed (name, track service, camera offsets) and closes the
   keyboard; no Save buttons in the sections (David, 16 November 2026).
   Dragging the page also closes the keyboard.
-- Tracks on the phone show their route as a blue line drawn from their own
-  points (David: nothing in Geotag is orange; blue on the phone).
+- Tracks on the phone show a map as the Mac does (0.29.4): CARTO's wordless
+  tiles through the service's map source, the route on top in blue (David:
+  nothing in Geotag is orange; blue on the phone), kept in Geotag/Maps as
+  `<id>-phone-<light|dark>.png`; the bare line until a map can be made. Map
+  on the left, words on the right; the map credit under the list.
+- The Photos tab's squares are exact, one size, edge to edge (0.29.4).
+- On the Mac's Photos page the sync line follows the title and the buttons
+  sit at the right edge (0.29.4).
 - The server (David, 15 November 2026): "NAS" is "server" on the phone,
   and the server is any folder the Files app reaches (a file server such as
   the NAS, a USB drive, a storage app). The day folders go straight into the
