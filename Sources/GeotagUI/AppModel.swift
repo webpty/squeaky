@@ -636,6 +636,7 @@ public final class AppModel: ObservableObject {
         Task {
             await checkNAS()
             announceNASAway()
+            await publishAllHistory()
         }
         // A click on a notification opens the Queue page.
         MacNotifier.onOpen = { [weak self] in
@@ -1000,6 +1001,7 @@ public final class AppModel: ObservableObject {
         }
         rows = marked
         if historyPerson == personId { historyEntries = past }
+        Task { await publishHistory(personId) }
         // Ejected or another card chosen meanwhile: that line stands.
         guard readingRound == round else { return }
         let stopped = saveDone < saveTotal
@@ -1295,7 +1297,8 @@ public final class AppModel: ObservableObject {
                 case .native: return NativeMetadata.scan(files, progress: progress)
                 }
             }.value
-            let past = (try? history.load(personId)) ?? []
+            // What any Mac or phone saved before, from the list on the server.
+            let past = ((try? history.load(personId)) ?? []) + (await serverHistory(personId))
             guard readingRound == round, self.source?.id == source.id else { return }
             #if os(iOS)
             addCameras(photos, personId: personId)
@@ -1852,6 +1855,57 @@ public final class AppModel: ObservableObject {
 
     /// Sending uses the NAS as last saved.
     private var nas: NASPort { nasPort ?? savedNAS.port }
+
+    // MARK: The list of photos saved, on the server (0.29.0, David, 16 November 2026)
+
+    /// This Mac or phone, for its own list on the server.
+    var deviceId: String {
+        #if os(iOS)
+        if let id = defaults.string(forKey: "deviceId") { return id }
+        let id = "iphone-" + UUID().uuidString
+        defaults.set(id, forKey: "deviceId")
+        return id
+        #else
+        return CloudCopy.macId
+        #endif
+    }
+
+    /// The person's folder on the server, open; nil when it has none or does not answer within 15 s.
+    private func serverFolder(_ personId: UUID) async -> URL? {
+        // Known not to answer just now: no wait for it while a card is read.
+        guard goesToServer(personId), nasReach != .unreachable, let place = NASFolder(book.person(personId)?.nasFolder) else { return nil }
+        let port = nas
+        let connection = await withTaskGroup(of: NASConnection?.self) { group in
+            group.addTask { try? await port.connect(share: place.share) }
+            group.addTask { try? await Task.sleep(for: .seconds(15)); return nil }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+        guard let connection else { return nil }
+        if connection.ours { ourMounts[connection.folder.path] = connection }
+        return place.folder(in: connection.folder)
+    }
+
+    /// The photos any device saved for this person, as listed on the server.
+    public func serverHistory(_ personId: UUID) async -> [HistoryEntry] {
+        guard let folder = await serverFolder(personId) else { return [] }
+        return await Task.detached { ServerList.read(from: folder) }.value
+    }
+
+    /// This device's list of photos saved for a person, put on the server.
+    public func publishHistory(_ personId: UUID) async {
+        guard let entries = try? history.load(personId), !entries.isEmpty,
+              let folder = await serverFolder(personId) else { return }
+        let device = deviceId
+        _ = await Task.detached { try? ServerList.write(entries, into: folder, device: device) }.value
+    }
+
+    /// Everyone's lists, as Geotag opens: the photos saved before this
+    /// version count on the other devices straight away.
+    func publishAllHistory() async {
+        for person in book.people { await publishHistory(person.id) }
+    }
 
     /// Saves the NAS settings, says so at once, then what the NAS answers.
     public func saveNAS() async {

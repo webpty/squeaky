@@ -873,6 +873,20 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   service (address filled with https://geotrac.cc, key typed) and the NAS.
   Until a camera has an offset its photos are not saved by themselves.
 
+## The list of photos saved, on the server (0.29.0, David, 16 November 2026)
+
+- Each person's server folder (their NAS folder on the Mac, the chosen
+  folder on the phone) holds a hidden `.geotag` folder with one list per
+  device, `saved-<device>.json` (the Mac's id, or a phone's own), of the
+  photos it saved from cards: name, size, time taken (`ServerList`). Each
+  device writes its own whole list as it opens and after each save; a card
+  being read is checked against all of them, once per card, so a card one
+  Mac or phone handled reads as saved before on every other.
+- A server known not to answer is not waited for; then only the device's
+  own list counts. Someone else's card on a phone is never checked.
+- This is Geotag's own record on the server, read only to know what was
+  saved; it never decides anything about the photos there.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

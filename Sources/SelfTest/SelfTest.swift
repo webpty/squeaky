@@ -77,6 +77,7 @@ struct SelfTest {
             await clocks(scratch, samples: URL(fileURLWithPath: samples),
                          raws: ProcessInfo.processInfo.environment["GEOTAG_RAWS"].map { URL(fileURLWithPath: $0) })
         }
+        await serverList(scratch)
         await trackCheck(scratch)
         await settingsFeedback(scratch)
         await naming(scratch)
@@ -1375,6 +1376,67 @@ func familyFile(_ url: URL) -> PeopleStoreFile {
         try? file.save(.family())
     }
     return file
+}
+
+extension SelfTest {
+    /// The list of photos saved, on the server (0.29.0): what one Mac saved
+    /// from a card counts as saved on another reading the same card.
+    @MainActor
+    static func serverList(_ scratch: URL) async {
+        let fm = FileManager.default
+        let nas = FakeNAS(root: scratch.appendingPathComponent("SL-NAS"))
+        let root = scratch.appendingPathComponent("SL-CARD")
+        let folder = root.appendingPathComponent("DCIM/100CANON")
+        try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        for i in 0..<4 {
+            writePhoto(folder.appendingPathComponent(String(format: "IMG_%04d.JPG", i + 1)), model: "Canon EOS R5m2", zone: "-03:00",
+                       taken: String(format: "2026:10:16 18:%02d:00", i * 5))
+        }
+        let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+        func model(_ tag: String) -> AppModel {
+            let people = familyFile(scratch.appendingPathComponent("sl-\(tag)-people.json"))
+            if var book = try? people.load() {
+                for i in book.people.indices { book.people[i].nasFolder = "homes/\(book.people[i].name.lowercased())/Geotag" }
+                try? people.save(book)
+            }
+            return AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("sl-\(tag)-tracks"))),
+                            peopleStore: people, history: HistoryStoreFolder(folder: scratch.appendingPathComponent("sl-\(tag)-history")),
+                            queue: QueueStoreFile(url: scratch.appendingPathComponent("sl-\(tag)-queue.json")),
+                            unplaced: UnplacedStoreFile(url: scratch.appendingPathComponent("sl-\(tag)-unplaced.json")),
+                            secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("sl-\(tag)-maps")),
+                            exifTool: tool, nas: nas, notifier: RecordingNotifier(), places: FakePlaces())
+        }
+        let first = model("a"), second = model("b")
+        guard let davidA = first.book.people.first(where: { $0.name == "David" })?.id,
+              let davidB = second.book.people.first(where: { $0.name == "David" })?.id else {
+            check("server list: people", false)
+            return
+        }
+        // The first Mac has saved the card's photos before.
+        let photos = (try? PhotoScanner(exifTool: tool).scan(PhotoScanner.files(in: root)) { _ in }) ?? []
+        let saved = photos.map { HistoryEntry(fileName: $0.fileName, size: $0.size, taken: $0.taken, subSeconds: $0.subSeconds, imported: Date()) }
+        try? HistoryStoreFolder(folder: scratch.appendingPathComponent("sl-a-history")).save(davidA, saved)
+        await first.publishHistory(davidA)
+        let listed = fm.fileExists(atPath: scratch.appendingPathComponent("SL-NAS/homes/david/Geotag/.geotag").path)
+        let onServer = await second.serverHistory(davidB)
+        check("server list: one Mac's photos saved are listed on the server for the other", listed && onServer.count == 4,
+              "\(onServer.count) listed")
+        // The second Mac reads the same card: nothing new on it.
+        let card = scratchCard(root)
+        second.saveWhenReady = false
+        second.choose(card)
+        second.askingWhose = nil
+        await second.read(card, for: davidB)
+        for _ in 0..<100 where second.rows.isEmpty || second.photosBusy { try? await Task.sleep(for: .milliseconds(100)) }
+        check("server list: the other Mac counts them as saved before", second.rows.count == 4
+              && second.rows.allSatisfy { $0.status == .alreadyImported }, "\(second.rows.map(\.status))")
+        // Server away: no wait, and the card reads as new.
+        nas.online = false
+        await second.checkNAS()
+        let started = Date()
+        let none = await second.serverHistory(davidB)
+        check("server list: a server that does not answer is not waited for", none.isEmpty && Date().timeIntervalSince(started) < 2)
+    }
 }
 
 final class FakeNAS: NASPort, @unchecked Sendable {
