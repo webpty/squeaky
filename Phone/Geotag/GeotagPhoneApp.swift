@@ -15,6 +15,7 @@ struct GeotagPhoneApp: App {
     init() {
         PhoneWords.load()
         #if DEBUG
+        DebugHooks.time()
         DebugHooks.run()
         #endif
     }
@@ -179,7 +180,8 @@ struct StatusRow: View {
 
     var body: some View {
         if busy || !text.isEmpty {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            // The wheel centred on the text beside it (0.29.9).
+            HStack(alignment: .center, spacing: 8) {
                 if busy { ProgressView() }
                 Text(text).foregroundStyle(.secondary)
             }

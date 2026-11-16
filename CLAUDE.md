@@ -942,6 +942,14 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   NAS, which froze the tab while it answered. Nothing on the main thread
   opens the server folder.
 - The Photos tab's squares show only while the card is in.
+- Saving on the phone reads the card once (0.29.9): the copy is made with
+  the location and dates written on the way and fingerprinted
+  (`NativeMetadata.copyPatched`), then the copy alone is read and checked
+  against that fingerprint (`checkCopy`). The Mac's saving is unchanged.
+- Squares (0.29.9): one per frame (the JPG of a RAW+JPG pair), 3-point
+  gaps, 4-point corners, filled to their edges. Made from the JPG itself:
+  the preview inside a JPG is 160x120 with black bands. A raw's own preview
+  has none. Made one after another in the photos' order.
 
 ## Bursts (0.29.6, David, 16 November 2026)
 

@@ -149,6 +149,70 @@ public enum NativeMetadata {
         return list
     }
 
+    /// The card's file copied once, the location and dates written into the
+    /// bytes on their way (0.29.9, David, 16 November 2026: 800 photos took 26
+    /// minutes, the card read twice for each). Answers the fingerprint of
+    /// what was meant to be written, for `checkCopy`.
+    public static func copyPatched(from original: URL, to copy: URL, position: Position?, shift: Int) throws -> String {
+        let list = try patches(for: original, position: position, shift: shift).sorted { $0.offset < $1.offset }
+        let input = try FileHandle(forReadingFrom: original)
+        defer { try? input.close() }
+        guard FileManager.default.createFile(atPath: copy.path, contents: nil) else {
+            throw Failure(Words.t("It could not be copied from the card: {0}", copy.lastPathComponent))
+        }
+        let output = try FileHandle(forWritingTo: copy)
+        defer { try? output.close() }
+        var hasher = SHA256()
+        var at = 0
+        while let chunk = try input.read(upToCount: 4 << 20), !chunk.isEmpty {
+            var bytes = [UInt8](chunk)
+            let range = at..<(at + bytes.count)
+            for p in list where p.range.overlaps(range) {
+                for i in max(p.offset, range.lowerBound)..<min(p.range.upperBound, range.upperBound) {
+                    bytes[i - at] = p.bytes[i - p.offset]
+                }
+            }
+            let data = Data(bytes)
+            try output.write(contentsOf: data)
+            hasher.update(data: data)
+            at += bytes.count
+        }
+        try output.synchronize()
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// The copy made by `copyPatched`: its bytes are what was meant (it is
+    /// read, the card is not), it opens, and the location and dates read back.
+    public static func checkCopy(_ copy: URL, expected: String, position: Position?, shift: Int, taken: String?) -> String? {
+        guard Saver.sha256(copy) == expected else {
+            return position == nil && shift == 0 ? Words.t("The copy differs from the card's file.") : Words.t("Other details changed in the copy.")
+        }
+        guard let src = CGImageSourceCreateWithURL(copy as CFURL, nil), CGImageSourceGetCount(src) > 0,
+              CGImageSourceCreateThumbnailAtIndex(src, 0, [kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                                                           kCGImageSourceThumbnailMaxPixelSize: 256] as CFDictionary) != nil else {
+            return Words.t("The copy does not open.")
+        }
+        guard position != nil || shift != 0 else { return nil }
+        let after: Details
+        do { after = try read(copy) } catch { return Words.t("The copy could not be read back: {0}", error.localizedDescription) }
+        if let position {
+            guard let lat = after.lat, let lon = after.lon else { return Words.t("The location is not in the copy.") }
+            if abs(lat - position.lat) > 1e-6 || abs(lon - position.lon) > 1e-6 { return Words.t("The location in the copy is not the one written.") }
+            if let alt = position.alt {
+                guard let a = after.alt else { return Words.t("The altitude is not in the copy.") }
+                if abs(a - alt) > 0.5 { return Words.t("The altitude in the copy is not the one written.") }
+            }
+            guard after.gpsDate != nil, after.gpsTime?.count == 3 else { return Words.t("The GPS time is not in the copy.") }
+            guard after.processingMethod == Saver.processingMethod else {
+                return Words.t("The note that Geotag added the location is not in the copy.")
+            }
+        }
+        if shift != 0, let was = taken {
+            guard let want = Saver.shiftedProbe(was, by: shift), after.taken == want else { return Words.t("The date in the copy was not corrected.") }
+        }
+        return nil
+    }
+
     /// The copy opens, the location and dates read back as written, and every
     /// other byte is the card's. Nil when all is well; else what failed.
     public static func check(copy: URL, original: URL, position: Position?, shift: Int) -> String? {
@@ -191,7 +255,7 @@ public enum NativeMetadata {
     }
 
     /// Byte for byte: the copy is the original with `patches` applied.
-    static func compare(copy: URL, original: URL, patches: [Patch]) -> String? {
+    public static func compare(copy: URL, original: URL, patches: [Patch]) -> String? {
         guard let a = try? FileHandle(forReadingFrom: original), let b = try? FileHandle(forReadingFrom: copy) else {
             return Words.t("The copy could not be read back.")
         }

@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 struct PhotosTab: View {
     @ObservedObject var model: AppModel
     @State private var choosing = false
+    @StateObject private var pictures = Pictures()
 
     var body: some View {
         NavigationStack {
@@ -55,18 +56,20 @@ struct PhotosTab: View {
                 }
                 // The photos to be saved, as squares (0.29.1, David, 16 November 2026).
                 // Only while the card is in: once out, its pictures cannot be read (0.29.5).
-                let waiting = model.source == nil ? [] : model.rows.filter { $0.willImport && model.results[$0.id] == nil }
+                let waiting = shown
                 if !waiting.isEmpty {
                     Section {
-                        // Exact squares of one size, edge to edge (0.29.4).
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 3), spacing: 0) {
+                        // Squares of one size, a small gap between them, corners rounded (0.29.9).
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 3), spacing: 3) {
                             ForEach(waiting) { row in
-                                Square(url: model.pictureURL(row))
+                                Square(image: model.pictureURL(row).flatMap { pictures.made[$0] })
                             }
                         }
                         .listRowInsets(EdgeInsets())
                         .listRowBackground(Color.clear)
                     }
+                    .onAppear { pictures.make(waiting.compactMap { model.pictureURL($0) }) }
+                    .onChange(of: waiting.map(\.id)) { _, _ in pictures.make(waiting.compactMap { model.pictureURL($0) }) }
                 }
             }
             .scrollContentBackground(.hidden)
@@ -95,6 +98,24 @@ struct PhotosTab: View {
         .sheet(isPresented: Binding(get: { model.askingWhose != nil }, set: { if !$0 { model.askingWhose = nil } })) {
             WhoseCard(model: model)
         }
+    }
+
+    /// The photos still to be saved, one square per frame: the JPG of a RAW+JPG pair.
+    var shown: [ImportRow] {
+        guard model.source != nil else { return [] }
+        let waiting = model.rows.filter { $0.willImport && model.results[$0.id] == nil }
+        var seen = Set<String>()
+        let jpgFirst = waiting.sorted { a, b in
+            let ja = ["jpg", "jpeg"].contains((a.photo.fileName as NSString).pathExtension.lowercased())
+            let jb = ["jpg", "jpeg"].contains((b.photo.fileName as NSString).pathExtension.lowercased())
+            return ja && !jb
+        }
+        var keep = Set<String>()
+        for row in jpgFirst {
+            let frame = (row.photo.fileName as NSString).deletingPathExtension + "|" + (row.photo.taken ?? "")
+            if seen.insert(frame).inserted { keep.insert(row.id) }
+        }
+        return waiting.filter { keep.contains($0.id) }
     }
 
     /// "8 photos: Camera time offset not set".
@@ -127,44 +148,57 @@ struct PhotosTab: View {
     }
 }
 
-/// A photo as a square picture, made from its own file and kept while
-/// Geotag runs.
+/// The squares' pictures, made one after another in the photos' order, so
+/// they appear from the first to the last (0.29.9), and kept while Geotag runs.
+@MainActor
+final class Pictures: ObservableObject {
+    @Published private(set) var made: [URL: UIImage] = [:]
+    private var queue: [URL] = []
+    private var running = false
+
+    func make(_ urls: [URL]) {
+        queue = urls.filter { made[$0] == nil }
+        guard !running else { return }
+        running = true
+        Task {
+            while !queue.isEmpty {
+                let url = queue.removeFirst()
+                if made[url] != nil { continue }
+                if let image = await Task.detached(priority: .userInitiated, operation: { Pictures.picture(url) }).value {
+                    made[url] = image
+                }
+            }
+            running = false
+        }
+    }
+
+    /// A JPG's own picture, not the small preview inside it, which carries
+    /// black bands; a raw's preview, which has none and is quick.
+    nonisolated static func picture(_ url: URL) -> UIImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let jpg = ["jpg", "jpeg"].contains(url.pathExtension.lowercased())
+        let options: [CFString: Any] = [
+            jpg ? kCGImageSourceCreateThumbnailFromImageAlways : kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 360,
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary).map(UIImage.init(cgImage:))
+    }
+}
+
+/// A photo as a square, filled to its edges, cropped from the middle.
 struct Square: View {
-    let url: URL?
-    @State private var image: UIImage?
-    static let made = NSCache<NSURL, UIImage>()
+    let image: UIImage?
 
     var body: some View {
         Color(.secondarySystemBackground)
             .aspectRatio(1, contentMode: .fit)
             .overlay {
                 if let image {
-                    GeometryReader { box in
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: box.size.width, height: box.size.height)
-                            .clipped()
-                    }
+                    Image(uiImage: image).resizable().scaledToFill()
                 }
             }
-            .clipped()
-            .task(id: url) {
-                guard let url else { return }
-                if let known = Self.made.object(forKey: url as NSURL) { image = known; return }
-                let picture = await Task.detached { Self.picture(url) }.value
-                if let picture { Self.made.setObject(picture, forKey: url as NSURL) }
-                image = picture
-            }
-    }
-
-    nonisolated static func picture(_ url: URL) -> UIImage? {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-                                                                       kCGImageSourceCreateThumbnailWithTransform: true,
-                                                                       kCGImageSourceThumbnailMaxPixelSize: 360] as CFDictionary)
-        else { return nil }
-        return UIImage(cgImage: cg)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }
 

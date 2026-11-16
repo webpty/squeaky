@@ -165,15 +165,27 @@ public struct Saver: Sendable {
             return .failed(why)
         }
 
-        do {
-            try fm.copyItem(at: source, to: work)
-        } catch {
-            if (error as NSError).code == NSFileWriteOutOfSpaceError { return fail(Self.diskFull) }
-            return fail(Words.t("It could not be copied from the card: {0}", error.localizedDescription))
+        // Geotag's own writer: the card read once, copied with the location written on the way (0.29.9).
+        var expected: String?
+        if case .native = engine {
+            do {
+                expected = try NativeMetadata.copyPatched(from: source, to: work, position: item.position, shift: item.shift)
+            } catch {
+                if (error as NSError).code == NSFileWriteOutOfSpaceError { return fail(Self.diskFull) }
+                return fail(item.position == nil ? Words.t("It could not be copied from the card: {0}", error.localizedDescription)
+                                                 : Words.t("The location could not be written: {0}", error.localizedDescription))
+            }
+        } else {
+            do {
+                try fm.copyItem(at: source, to: work)
+            } catch {
+                if (error as NSError).code == NSFileWriteOutOfSpaceError { return fail(Self.diskFull) }
+                return fail(Words.t("It could not be copied from the card: {0}", error.localizedDescription))
+            }
         }
 
         // The location, and the dates moved, in one go.
-        if item.position != nil || item.shift != 0 {
+        if expected == nil, item.position != nil || item.shift != 0 {
             do {
                 try write(work, original: source, position: item.position, shift: item.shift)
             } catch {
@@ -190,9 +202,9 @@ public struct Saver: Sendable {
             return fail(Words.t("The card's dates could not be kept: {0}", error.localizedDescription))
         }
 
-        if let problem = check(copy: work, original: source, position: item.position, shift: item.shift) {
-            return fail(problem)
-        }
+        let problem = expected.map { NativeMetadata.checkCopy(work, expected: $0, position: item.position, shift: item.shift, taken: item.photo.taken) }
+            ?? check(copy: work, original: source, position: item.position, shift: item.shift)
+        if let problem { return fail(problem) }
 
         // The final name: the wanted one, unless another photo has it.
         var n = 1
