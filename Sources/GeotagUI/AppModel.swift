@@ -539,6 +539,16 @@ public final class AppModel: ObservableObject {
             sentRecords = seeded
         }
 
+        #if os(iOS)
+        // Once (0.29.19), before any card is read (0.29.21): cards switched to someone
+        // else's by a tap on the old Card row go back to the phone's person.
+        if !defaults.bool(forKey: "cardOwnersReset"), let owner = macOwner {
+            var owners = defaults.dictionary(forKey: "cardPeople") as? [String: String] ?? [:]
+            for (card, person) in owners where person == PhoneFolders.othersId.uuidString { owners[card] = owner.uuidString }
+            defaults.set(owners, forKey: "cardPeople")
+            defaults.set(true, forKey: "cardOwnersReset")
+        }
+        #endif
         #if os(macOS)
         let active = NSApplication.didBecomeActiveNotification
         #else
@@ -631,14 +641,6 @@ public final class AppModel: ObservableObject {
         guard !started else { return }
         started = true
         #if os(iOS)
-        // Once (0.29.19): cards switched to someone else's by a tap on the old Card row
-        // go back to the phone's person (David, 16 November 2026).
-        if !defaults.bool(forKey: "cardOwnersReset"), let owner = macOwner {
-            var owners = defaults.dictionary(forKey: "cardPeople") as? [String: String] ?? [:]
-            for (card, person) in owners where person == PhoneFolders.othersId.uuidString { owners[card] = owner.uuidString }
-            defaults.set(owners, forKey: "cardPeople")
-            defaults.set(true, forKey: "cardOwnersReset")
-        }
         // Anyone else left on the phone from before is removed, and a NAS
         // folder kept from before gives way to the server chosen in Settings.
         if let owner = macOwner.flatMap({ book.person($0) }),
@@ -683,6 +685,8 @@ public final class AppModel: ObservableObject {
             Task { @MainActor in
                 await self?.syncWithCloud()
                 if self?.queueEntries.contains(where: \.held) == true { await self?.refresh() }
+                // Not on the server yet: tried again each minute, in the background (0.29.21).
+                if self?.sharedProblem != nil { await self?.shareWithServer() }
             }
         }
         timer?.invalidate()
@@ -2281,10 +2285,17 @@ public final class AppModel: ObservableObject {
                 continue
             }
             if let refreshed = await refreshServerCopy(person.id, folder: folder) { problem = refreshed }
-            syncActivity = Words.t("Saving the sync file")
             let entries = (try? history.load(person.id)) ?? []
             let cameras = book.cameras(of: person.id).filter { $0.offsetSeconds != nil }
             let device = deviceId
+            // Written only when something is new since the last write (0.29.21).
+            let fingerprint = "\(entries.count)|\(entries.last?.key ?? "")|" + cameras.map { "\($0.model)=\($0.offsetSeconds ?? 0)@\($0.offsetDate.timeIntervalSince1970)" }.joined(separator: ",")
+            let writtenKey = "syncWritten-" + person.id.uuidString + "-" + folder.path
+            if defaults.string(forKey: writtenKey) == fingerprint {
+                syncActivity = nil
+                continue
+            }
+            syncActivity = Words.t("Saving this phone's sync file to the server")
             // Given up after 30 seconds rather than hanging (0.29.18).
             let failure: String? = await withTaskGroup(of: String??.self) { group in
                 group.addTask {
@@ -2304,7 +2315,7 @@ public final class AppModel: ObservableObject {
                 return first ?? nil
             }
             syncActivity = nil
-            if let failure { problem = Words.t("it couldn't be written:") + " " + failure }
+            if let failure { problem = Words.t("it couldn't be written:") + " " + failure } else { defaults.set(fingerprint, forKey: writtenKey) }
             // The phone's person, or this Mac's owner, or the first: the line on the Photos page.
             if person.id == (macOwner ?? people.first?.id) {
                 lastSave = await Task.detached { ServerList.lastSave(in: folder) }.value

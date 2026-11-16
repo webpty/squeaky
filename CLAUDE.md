@@ -1075,6 +1075,18 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   first time a card is read. 0.29.19 set cards marked someone else's back
   to the phone's person once.
 
+## Sync files written safely (0.29.21, David, 17 November 2026)
+
+- Sync files are written through a coordinated write (`ServerList.put`),
+  as they are read, since a plain write could hang on the NAS through the
+  Files app; only when something is new since the device's last write
+  (a fingerprint of its list and offsets); in the background, never holding
+  up a card; tried again each minute while it fails. The line then says
+  "Not synced with the NAS yet: <why> Trying again each minute; your photos
+  are not affected, you can carry on." ("server" on the phone).
+- The one-off reset of SD cards marked someone else's runs as Geotag starts,
+  before any card is read.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

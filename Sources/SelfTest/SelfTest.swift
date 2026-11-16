@@ -1462,7 +1462,7 @@ extension SelfTest {
         await second.checkNAS()
         await second.shareWithServer()
         check("server list: sharing with the server away says why", second.sharedProblem != nil
-              && QueueText.sync(second.lastSave, problem: second.sharedProblem).hasPrefix("Sync file not saved: "),
+              && QueueText.sync(second.lastSave, problem: second.sharedProblem).hasPrefix("Not synced with the NAS yet: "),
               QueueText.sync(second.lastSave, problem: second.sharedProblem))
         let started = Date()
         let kept = await second.serverHistory(davidB)

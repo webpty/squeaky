@@ -20,7 +20,20 @@ public enum ServerList {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .secondsSince1970
         encoder.outputFormatting = [.sortedKeys]
-        try encoder.encode(entries).write(to: url, options: .atomic)
+        try put(encoder.encode(entries), at: url)
+    }
+
+    /// Bytes written through a coordinated write, as the Files app expects
+    /// of a file provider (the NAS on the phone), where a plain write can
+    /// wait on it for ever (0.29.21).
+    public static func put(_ bytes: Data, at url: URL) throws {
+        var result: Result<Void, Error> = .success(())
+        var coordination: NSError?
+        NSFileCoordinator().coordinate(writingItemAt: url, options: .forReplacing, error: &coordination) { writable in
+            result = Result { try bytes.write(to: writable, options: .atomic) }
+        }
+        if let coordination { throw coordination }
+        try result.get()
     }
 
     /// This device's cameras and their offsets (0.29.1).
@@ -31,7 +44,7 @@ public enum ServerList {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .secondsSince1970
         encoder.outputFormatting = [.sortedKeys]
-        try encoder.encode(cameras).write(to: url, options: .atomic)
+        try put(encoder.encode(cameras), at: url)
     }
 
     /// For each camera model, the one whose offset was set most recently on any device.

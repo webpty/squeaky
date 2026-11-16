@@ -68,7 +68,8 @@ public enum QueueText {
     /// "Sync file saved on NAS. Last save: Mac app @ 20:03" (the server, on
     /// the phone), or why not (0.29.3, David's words, 16 November 2026).
     public static func sync(_ last: ServerList.LastSave?, problem: String?) -> String {
-        if let problem { return Words.t("Sync file not saved: {0}", problem) }
+        // Said so it is clear nothing is held up (0.29.21, David: "of course it blocks me from trusting its safe to proceed").
+        if let problem { return Words.t("Not synced with the NAS yet: {0} Trying again each minute; your photos are not affected, you can carry on.", problem) }
         guard let last else { return Words.t("Sync file not saved yet.") }
         return Words.t("Sync file saved on NAS. Last save: {0} @ {1}", last.byPhone ? Words.t("iPhone app") : Words.t("Mac app"),
                        When.current.time(last.at))
