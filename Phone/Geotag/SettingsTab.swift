@@ -1,6 +1,7 @@
 import GeotagCore
 import GeotagUI
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 /// The phone's own settings: its one person, their cameras, the track
@@ -11,6 +12,8 @@ struct SettingsTab: View {
     @State private var problem: String?
     @State private var nasName = PhoneFolders.name(PhoneFolders.nasKey)
     @State private var name = ""
+    /// Offsets typed, by camera, until the checkmark saves them.
+    @State private var offsets: [UUID: String] = [:]
 
     var owner: Person? { model.macOwner.flatMap { model.book.person($0) } }
 
@@ -28,21 +31,18 @@ struct SettingsTab: View {
                             .textContentType(.name)
                             .multilineTextAlignment(.trailing)
                     }
-                    if personUnsaved {
-                        Button(Words.t("Save")) { model.setPhonePerson(name: name) }
-                    }
                 }
                 if let owner, !model.book.cameras(of: owner.id).isEmpty {
                     Section(Words.t("Cameras")) {
                         ForEach(model.book.cameras(of: owner.id)) { camera in
-                            CameraRow(model: model, camera: camera)
+                            CameraRow(camera: camera, text: offset(camera))
                         }
                     }
                 }
                 if !model.book.cameras(of: PhoneFolders.othersId).isEmpty {
                     Section(Words.t("Other cameras")) {
                         ForEach(model.book.cameras(of: PhoneFolders.othersId)) { camera in
-                            CameraRow(model: model, camera: camera)
+                            CameraRow(camera: camera, text: offset(camera))
                         }
                     }
                 }
@@ -58,10 +58,6 @@ struct SettingsTab: View {
                     LabeledContent(Words.t("Key")) {
                         SecureField("", text: $model.serviceKey)
                             .multilineTextAlignment(.trailing)
-                    }
-                    if model.serviceUnsaved {
-                        Button(Words.t("Save")) { Task { await model.saveService() } }
-                            .disabled(model.settingsBusy)
                     }
                     StatusRow(text: model.settingsLine, busy: model.settingsBusy)
                 }
@@ -88,6 +84,14 @@ struct SettingsTab: View {
                 }
             }
             .navigationTitle(Words.t("Settings"))
+            .scrollDismissesKeyboard(.immediately)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { saveAll() } label: { Image(systemName: "checkmark") }
+                        .accessibilityLabel(Words.t("Save"))
+                        .disabled(model.settingsBusy)
+                }
+            }
             .onAppear { name = owner?.name ?? "" }
             .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
                 switch result {
@@ -96,6 +100,30 @@ struct SettingsTab: View {
                 }
             }
         }
+    }
+
+    /// What is typed for a camera's offset: its saved offset until changed.
+    func offset(_ camera: Camera) -> Binding<String> {
+        Binding(get: { offsets[camera.id] ?? camera.offsetSeconds.map(String.init) ?? "" },
+                set: { offsets[camera.id] = $0 })
+    }
+
+    /// The checkmark (David, 16 November 2026): everything typed is saved,
+    /// and the keyboard closes.
+    func saveAll() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        if personUnsaved { model.setPhonePerson(name: name) }
+        for camera in model.book.cameras {
+            guard let text = offsets[camera.id] else { continue }
+            let typed = Int(text.trimmingCharacters(in: .whitespaces))
+            if let typed, typed != camera.offsetSeconds {
+                var changed = camera
+                changed.offsetSeconds = typed
+                model.save(changed)
+            }
+        }
+        offsets = [:]
+        if model.serviceUnsaved { Task { await model.saveService() } }
     }
 
     /// The NAS folder kept for next time, and tried at once.
@@ -114,11 +142,10 @@ struct SettingsTab: View {
 }
 
 /// A camera and its clock offset, in seconds ahead (negative behind), set
-/// by the offset code or typed here.
+/// by the offset code or typed here and saved with the checkmark.
 struct CameraRow: View {
-    @ObservedObject var model: AppModel
     let camera: Camera
-    @State private var text = ""
+    @Binding var text: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -128,24 +155,9 @@ struct CameraRow: View {
                 TextField(Words.t("Seconds"), text: $text)
                     .keyboardType(.numbersAndPunctuation)
                     .multilineTextAlignment(.trailing)
-                    .onSubmit(save)
             }
             Text(OffsetText.describe(camera.offsetSeconds)).font(.caption).foregroundStyle(.secondary)
-            if typed != camera.offsetSeconds, typed != nil {
-                Button(Words.t("Save"), action: save)
-            }
         }
-        .onAppear { text = camera.offsetSeconds.map(String.init) ?? "" }
-        .onChange(of: camera.offsetSeconds) { _, now in text = now.map(String.init) ?? "" }
-    }
-
-    var typed: Int? { Int(text.trimmingCharacters(in: .whitespaces)) }
-
-    func save() {
-        guard let typed else { return }
-        var changed = camera
-        changed.offsetSeconds = typed
-        model.save(changed)
     }
 }
 

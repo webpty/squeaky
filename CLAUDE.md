@@ -846,6 +846,10 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   else's photos are tagged as usual and saved under the person "Others"
   (`PhoneFolders.othersId`, folder Others), never put on the queue, never
   sent. Their cameras are kept apart, under Other cameras in Settings.
+- Settings on the phone has one checkmark at the top right that saves
+  everything typed (name, track service, camera offsets) and closes the
+  keyboard; no Save buttons in the sections (David, 16 November 2026).
+  Dragging the page also closes the keyboard.
 - Tracks on the phone show their route as a blue line drawn from their own
   points (David: nothing in Geotag is orange; blue on the phone).
 - The server (David, 15 November 2026): "NAS" is "server" on the phone,
