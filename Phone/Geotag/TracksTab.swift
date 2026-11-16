@@ -30,7 +30,7 @@ struct TracksTab: View {
                                 .frame(width: MapThumbnails.size.width, height: MapThumbnails.size.height)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(track.name)
+                                Text(model.trackTitle(track))
                                 Text(Self.line(track)).font(.caption).foregroundStyle(.secondary)
                                 Button(Words.t("Recheck photos for this track")) { Task { await model.recheckPhotos(for: track) } }
                                     .font(.caption)
