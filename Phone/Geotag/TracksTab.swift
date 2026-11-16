@@ -12,8 +12,6 @@ struct TracksTab: View {
             List {
                 Section {
                     StatusRow(text: model.tracksLine, busy: model.tracksBusy)
-                    Button(Words.t("Refresh")) { Task { await model.refresh(pullStrava: true) } }
-                        .disabled(model.tracksBusy)
                 }
                 Section {
                     ForEach(model.tracks.sorted { $0.start > $1.start }) { track in
@@ -46,6 +44,14 @@ struct TracksTab: View {
             // The last card's photo behind every tab, veiled (0.29.5, David, 16 November 2026).
             .background(Backdrop(image: model.sidebarImage))
             .navigationTitle(Words.t("Tracks"))
+            // Refresh at the top right (0.29.7, David, 16 November 2026).
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { Task { await model.refresh(pullStrava: true) } } label: { Image(systemName: "arrow.clockwise") }
+                        .accessibilityLabel(Words.t("Refresh"))
+                        .disabled(model.tracksBusy)
+                }
+            }
             .refreshable { await model.refresh(pullStrava: true) }
         }
     }
