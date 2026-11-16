@@ -35,9 +35,11 @@ public enum OffsetCode {
     /// The moment held by an offset code in this photo, or nil when it shows
     /// none. Raw files are read from the picture the Mac makes of them.
     public static func find(in url: URL) -> Date? {
+        // A raw's own large preview, quicker than the raw decoded; a JPG itself (0.29.10).
+        let jpg = ["jpg", "jpeg"].contains(url.pathExtension.lowercased())
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let picture = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                jpg ? kCGImageSourceCreateThumbnailFromImageAlways : kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
                 kCGImageSourceThumbnailMaxPixelSize: 3000,
               ] as CFDictionary) else { return nil }

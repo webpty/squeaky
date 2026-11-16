@@ -968,6 +968,17 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - No real burst has been tried yet: the stand-in was a copy with its drive
   mode and times changed.
 
+## Saying what it is doing (0.29.10, David, 16 November 2026: "i like transparency")
+
+- After the card is read, each step has its line: "Checking the server for
+  camera offsets", "Checking the server for photos already saved", "Looking
+  for offset codes: 3 of 10 photos", "Loading tracks", "Matching photos to
+  tracks". Any new slow step gets its own line.
+- Offset codes are looked for in one file per frame, the JPG of a RAW+JPG
+  pair; a raw alone in its own large preview, not decoded.
+- The sync line's last save is remembered between launches and noted
+  whenever Geotag reads the server folder, not only when it writes.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

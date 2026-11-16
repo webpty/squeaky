@@ -1336,7 +1336,11 @@ public final class AppModel: ObservableObject {
             }.value
             // The camera offsets set on the person's other devices, then what
             // any Mac or phone saved before, from the lists on the server.
+            // Each step said as it happens (0.29.10, David: "i like transparency").
+            photosLine = Words.t("Checking the server for camera offsets")
             await pullCameras(personId)
+            guard readingRound == round else { return }
+            photosLine = Words.t("Checking the server for photos already saved")
             let past = ((try? history.load(personId)) ?? []) + (await serverHistory(personId))
             guard readingRound == round, self.source?.id == source.id else { return }
             #if os(iOS)
@@ -1347,9 +1351,13 @@ public final class AppModel: ObservableObject {
             Task { await chooseSidebarPhoto(photos) }
             noteFirmware(photos, personId: personId)
             noteLenses(photos, personId: personId)
-            let codes = await readOffsetCodes(photos, personId: personId)
+            let codes = await readOffsetCodes(photos, personId: personId, round: round)
             guard readingRound == round, self.source?.id == source.id else { return }
+            photosLine = Words.t("Loading tracks")
             await loadTimeline()
+            guard readingRound == round else { return }
+            photosLine = Words.t("Matching photos to tracks")
+            await Task.yield()
             rematch()
             photosLine = rows.isEmpty ? Words.t("No photos on {0}.", source.name) : codes
             #if os(macOS)
@@ -1402,13 +1410,17 @@ public final class AppModel: ObservableObject {
         }
     }
 
+    static func isJPG(_ photo: ScannedPhoto) -> Bool {
+        ["jpg", "jpeg"].contains((photo.fileName as NSString).pathExtension.lowercased())
+    }
+
     /// How many photos at each end of a camera's run are looked at for an offset code.
     static let codeEnds = 5
 
     /// Offset codes among the first and last photos of each camera on the
     /// card: each sets its camera's offset, to the hundredth, and adds a
     /// reading to its drift. Says what was set; empty when nothing was.
-    func readOffsetCodes(_ photos: [ScannedPhoto], personId: UUID) async -> String {
+    func readOffsetCodes(_ photos: [ScannedPhoto], personId: UUID, round: Int? = nil) async -> String {
         var byModel: [String: [ScannedPhoto]] = [:]
         for photo in photos where photo.taken != nil {
             if let model = photo.model { byModel[model, default: []].append(photo) }
@@ -1416,11 +1428,27 @@ public final class AppModel: ObservableObject {
         var candidates: [ScannedPhoto] = []
         for (_, list) in byModel {
             let sorted = list.sorted { (Moments.clockReading($0) ?? .distantPast) < (Moments.clockReading($1) ?? .distantPast) }
-            candidates += sorted.count <= Self.codeEnds * 2 ? sorted : Array(sorted.prefix(Self.codeEnds) + sorted.suffix(Self.codeEnds))
+            // One file per frame: the JPG of a RAW+JPG pair, quicker to search (0.29.10).
+            var frames: [String: ScannedPhoto] = [:]
+            var order: [String] = []
+            for photo in sorted {
+                let frame = (photo.fileName as NSString).deletingPathExtension + "|" + (photo.taken ?? "") + (photo.subSeconds ?? "")
+                if let known = frames[frame] {
+                    if !Self.isJPG(known), Self.isJPG(photo) { frames[frame] = photo }
+                } else {
+                    frames[frame] = photo
+                    order.append(frame)
+                }
+            }
+            let each = order.compactMap { frames[$0] }
+            candidates += each.count <= Self.codeEnds * 2 ? each : Array(each.prefix(Self.codeEnds) + each.suffix(Self.codeEnds))
         }
-        let found: [(ScannedPhoto, Date)] = await Task.detached {
-            candidates.compactMap { photo in OffsetCode.find(in: photo.url).map { (photo, $0) } }
-        }.value
+        var found: [(ScannedPhoto, Date)] = []
+        for (i, photo) in candidates.enumerated() {
+            if let round, readingRound != round { return "" }
+            photosLine = Words.t("Looking for offset codes: {0} of {1} photos", i + 1, candidates.count)
+            if let moment = await Task.detached(operation: { OffsetCode.find(in: photo.url) }).value { found.append((photo, moment)) }
+        }
         var said: [String] = []
         for (photo, moment) in found {
             guard let model = photo.model, var camera = book.camera(personId: personId, model: model),
@@ -1944,6 +1972,7 @@ public final class AppModel: ObservableObject {
     /// The photos any device saved for this person, as listed on the server.
     public func serverHistory(_ personId: UUID) async -> [HistoryEntry] {
         guard let folder = await serverFolder(personId) else { return [] }
+        await noteLastSave(folder, personId)
         return await Task.detached { ServerList.read(from: folder) }.value
     }
 
@@ -1965,8 +1994,28 @@ public final class AppModel: ObservableObject {
     /// last try failed: shown on the Queue page (0.29.2, David, 16 November 2026).
     @Published public private(set) var sharedAt: Date?
     @Published public private(set) var sharedProblem: String?
-    /// Who wrote into the server folder last, and when, any device (0.29.3).
-    @Published public private(set) var lastSave: ServerList.LastSave?
+    /// Who wrote into the server folder last, and when, any device (0.29.3);
+    /// remembered between launches (0.29.10).
+    @Published public private(set) var lastSave: ServerList.LastSave? = {
+        let d = UserDefaults.standard
+        guard let at = d.object(forKey: "lastSaveAt") as? Date else { return nil }
+        return ServerList.LastSave(byPhone: d.bool(forKey: "lastSaveByPhone"), at: at)
+    }() {
+        didSet {
+            guard let lastSave else { return }
+            UserDefaults.standard.set(lastSave.at, forKey: "lastSaveAt")
+            UserDefaults.standard.set(lastSave.byPhone, forKey: "lastSaveByPhone")
+        }
+    }
+
+    /// The last save in a person's server folder, noted whenever Geotag looks there.
+    private func noteLastSave(_ folder: URL, _ personId: UUID) async {
+        guard personId == (macOwner ?? book.people.first(where: { goesToServer($0.id) && NASFolder($0.nasFolder) != nil })?.id) else { return }
+        if let found = await Task.detached(operation: { ServerList.lastSave(in: folder) }).value, found != lastSave {
+            lastSave = found
+            sharedProblem = nil
+        }
+    }
     private var sharing = false
 
     /// Every person's lists, read and written: as Geotag opens, whenever the
