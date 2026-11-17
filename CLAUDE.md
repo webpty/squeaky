@@ -1401,6 +1401,12 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   whose photos were all copied before start folded, and their pictures are
   made only when opened. Simulator: `--tab photos --show-card <folder>`.
 
+## Queue rows that stay put (0.31.1, David, 18 November 2026)
+
+- The Sending rows animate on `meter.order`: one done fades and the rest
+  slide up; their separator starts at the row's left edge. Uploads picked
+  up again after a reopen are listed in the queue's order, not a set's.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

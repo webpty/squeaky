@@ -3562,10 +3562,9 @@ extension AppModel {
                 for i in all.indices where all[i].state == .sending && !flying.contains(all[i].id) { all[i].state = .waiting }
             }
         }
-        for id in flying where meter.going[id] == nil {
-            if let entry = queueEntries.first(where: { $0.id == id }) {
-                meter.begin(id, name: (entry.relativePath as NSString).lastPathComponent)
-            }
+        // In the queue's own order, so the rows come back in the same places after a reopen.
+        for entry in queueEntries where flying.contains(entry.id) && meter.going[entry.id] == nil {
+            meter.begin(entry.id, name: (entry.relativePath as NSString).lastPathComponent)
         }
         var room = 30 - flying.count
         while room > 0, !sendPaused, let entry = nextToSend() {

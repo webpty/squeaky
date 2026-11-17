@@ -42,6 +42,8 @@ struct QueueTab: View {
                                     Spacer()
                                     Text(going.percent).monospacedDigit().foregroundStyle(.secondary)
                                 }
+                                // The line between rows from the left edge, under the wheel (0.31.1).
+                                .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
                                 .listRowBackground(ProgressFill(fraction: going.fraction))
                             }
                         }
@@ -97,6 +99,8 @@ struct QueueTab: View {
                     }
                 }
             }
+            // Rows keep their places; one done fades and the rest slide up (0.31.1, David).
+            .animation(.easeInOut(duration: 0.35), value: meter.order)
             .scrollContentBackground(.hidden)
             // The last card's photo behind every tab, veiled (0.29.5, David, 16 November 2026).
             .background(Backdrop(image: model.sidebarImage))
