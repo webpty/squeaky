@@ -15,12 +15,13 @@ struct QueueTab: View {
         NavigationStack {
             List {
                 Section {
+                    if let note = model.backgroundNote { StatusRow(text: note, busy: false) }
                     StatusRow(text: model.queueLine, busy: model.meter.count > 0)
                     LabeledContent(Words.t("NAS"), value: QueueText.reach(model.nasReach))
                     LabeledContent(Words.t("Waiting"), value: waiting.formatted())
                     if held > 0 { LabeledContent(Words.t("Waiting for the tracks"), value: held.formatted()) }
                     LabeledContent(Words.t("On the NAS"), value: sent.formatted())
-                    LabeledContent(Words.t("Not sent"), value: failed.count.formatted())
+                    LabeledContent(Words.t("Failed"), value: failed.count.formatted())
                 }
                 Section {
                     Button(model.sendPaused ? Words.t("Resume") : Words.t("Pause")) { model.setSendPaused(!model.sendPaused) }
@@ -28,11 +29,11 @@ struct QueueTab: View {
                         .disabled(failed.isEmpty)
                 }
                 if !failed.isEmpty {
-                    Section(Words.t("Not sent")) {
+                    Section(Words.t("Failed")) {
                         ForEach(failed) { entry in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text((entry.relativePath as NSString).lastPathComponent)
-                                Text(QueueText.status(entry)).font(.caption).foregroundStyle(.secondary)
+                                Sentences(text: QueueText.status(entry)).font(.caption).foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -41,7 +42,8 @@ struct QueueTab: View {
             .scrollContentBackground(.hidden)
             // The last card's photo behind every tab, veiled (0.29.5, David, 16 November 2026).
             .background(Backdrop(image: model.sidebarImage))
-            .navigationTitle(Words.t("Queue"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { PageTitle(title: Words.t("Queue")) }
             .task { await model.checkNAS() }
             .refreshable { await model.checkNAS() }
         }

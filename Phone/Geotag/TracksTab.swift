@@ -52,9 +52,10 @@ struct TracksTab: View {
             .scrollContentBackground(.hidden)
             // The last card's photo behind every tab, veiled (0.29.5, David, 16 November 2026).
             .background(Backdrop(image: model.sidebarImage))
-            .navigationTitle(Words.t("Tracks"))
+            .navigationBarTitleDisplayMode(.inline)
             // Refresh at the top right (0.29.7, David, 16 November 2026).
             .toolbar {
+                PageTitle(title: Words.t("Tracks"))
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { Task { await model.refresh(pullStrava: true) } } label: { Image(systemName: "arrow.clockwise") }
                         .accessibilityLabel(Words.t("Refresh"))

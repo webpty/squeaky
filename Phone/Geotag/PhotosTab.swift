@@ -15,6 +15,7 @@ struct PhotosTab: View {
         NavigationStack {
             List {
                 Section {
+                    if let note = model.backgroundNote { StatusRow(text: note, busy: false) }
                     // A spinning wheel while the sync files are read or saved (0.29.18).
                     StatusRow(text: model.syncActivity ?? QueueText.sync(model.lastSave, problem: model.sharedProblem),
                               busy: model.syncActivity != nil)
@@ -33,7 +34,7 @@ struct PhotosTab: View {
                     }
                     // Why photos wait: one line for each reason, with how many.
                     ForEach(reasons, id: \.self) { line in
-                        Text(line).foregroundStyle(.secondary)
+                        Sentences(text: line).foregroundStyle(.secondary)
                     }
                 }
                 Section {
@@ -44,7 +45,8 @@ struct PhotosTab: View {
                             Button(Words.t("Open card")) { choosing = true }
                                 .disabled(model.photosBusy || model.macOwner == nil)
                             if !model.rows.isEmpty {
-                                Button(Words.t("Clear photos")) { model.clearPhotos() }
+                                Button(Words.t("Clear photos"), role: .destructive) { model.clearPhotos() }
+                                    .foregroundStyle(.red)
                             }
                         } else {
                             Button(Words.t("Save photos")) { Task { await model.checkTracksBeforeSave() } }
@@ -78,8 +80,9 @@ struct PhotosTab: View {
             .scrollContentBackground(.hidden)
             // The last card's photo behind every tab, veiled (0.29.5, David, 16 November 2026).
             .background(Backdrop(image: model.sidebarImage))
-            .navigationTitle(Words.t("Photos"))
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                PageTitle(title: Words.t("Photos"))
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { model.checkAgain() } label: { Image(systemName: "arrow.clockwise") }
                         .accessibilityLabel(Words.t("Check photos again"))

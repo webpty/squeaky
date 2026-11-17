@@ -307,6 +307,8 @@ public final class AppModel: ObservableObject {
     public let work = WorkStatus()
     @Published public private(set) var sendPaused = false
     @Published public private(set) var queueLine = ""
+    /// Said when the phone ended Geotag's background time with photos still to send (0.29.29).
+    @Published public var backgroundNote: String?
     @Published public private(set) var nasReach = NASReach.checking {
         didSet {
             // It answers again: the warning goes by itself.
@@ -2961,8 +2963,16 @@ public final class AppModel: ObservableObject {
         guard let address = sendingThrough, meter.count > 0, !sendPaused else { return }
         let host = Self.host(address)
         let going = meter.only.map { Words.t("{0} to {1}", $0.name, host) } ?? Words.t("{0} photos to {1} at once", meter.count, host)
+        #if os(iOS)
+        // "DAVL4150.CR3 to Geotag, ≈ 9 h 15 min left (speed: average)": no full stops, and
+        // where it does not fit, the comma becomes a new line (0.29.29, David, 17 November 2026).
+        var line = going
+        if let seconds = sendingSeconds() { line += LineBreaks.soft + Words.t("{0} left", Remaining.approx(seconds)) }
+        if let word = sendingSpeed() { line += " (" + Words.t("speed: " + word.rawValue.lowercased()) + ")" }
+        #else
         var line = going + (sendingLeft().map { Words.t(", {0} left.", $0) } ?? ".")
         if let word = sendingSpeed() { line += " " + Words.t(word.rawValue) + "." }
+        #endif
         say(line)
     }
 
@@ -3074,13 +3084,18 @@ public final class AppModel: ObservableObject {
     /// the photos going up included, at the recent pace through this address.
     /// Nil before a photo has been timed through it.
     public func sendingLeft() -> String? {
+        sendingSeconds().map(Remaining.text)
+    }
+
+    /// Seconds still to go for every photo waiting, at this address's pace.
+    public func sendingSeconds() -> TimeInterval? {
         guard let address = sendingThrough else { return nil }
         let ahead = queueEntries.filter { $0.state == .waiting && NASFolder(book.person($0.personId)?.nasFolder) != nil }
         var bytes = ahead.reduce(0.0) { $0 + Double(size(of: $1)) }
         for entry in queueEntries where entry.state == .sending {
             bytes += Double(size(of: entry)) * (1 - (meter.going[entry.id]?.fraction ?? 0))
         }
-        return sendSpeeds.seconds(for: bytes, through: address).map(Remaining.text)
+        return sendSpeeds.seconds(for: bytes, through: address)
     }
 
     /// What the menu bar icon shows while Geotag works: the Photos page's own

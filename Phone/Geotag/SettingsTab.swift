@@ -90,7 +90,7 @@ struct SettingsTab: View {
                         }
                     }
                     if let folderProblem {
-                        Text(folderProblem).foregroundStyle(.orange)
+                        Sentences(text: folderProblem).foregroundStyle(.orange)
                     }
                     Button(PhoneFolders.isChosen(PhoneFolders.nasKey) ? Words.t("Change") : Words.t("Choose")) {
                         problem = nil
@@ -107,7 +107,7 @@ struct SettingsTab: View {
                     NavigationLink(Words.t("How to connect a file server")) { ConnectServer() }
                 }
                 if let problem {
-                    Section { Text(problem).foregroundStyle(.secondary) }
+                    Section { Sentences(text: problem).foregroundStyle(.secondary) }
                 }
                 Section {
                     LabeledContent(Words.t("Version"), value: appVersion)
@@ -116,7 +116,7 @@ struct SettingsTab: View {
             .scrollContentBackground(.hidden)
             // The last card's photo behind every tab, veiled (0.29.5, David, 16 November 2026).
             .background(Backdrop(image: model.sidebarImage))
-            .navigationTitle(Words.t("Settings"))
+            .navigationBarTitleDisplayMode(.inline)
             .confirmationDialog(Words.t("Is this your card?"),
                                 isPresented: Binding(get: { changing != nil }, set: { if !$0 { changing = nil } }),
                                 titleVisibility: .visible) {
@@ -126,6 +126,7 @@ struct SettingsTab: View {
             }
             .scrollDismissesKeyboard(.immediately)
             .toolbar {
+                PageTitle(title: Words.t("Settings"))
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { saveAll() } label: {
                         Image(systemName: "checkmark").foregroundStyle(unsaved ? Color.blue : Color.secondary)

@@ -34,9 +34,26 @@ public enum Remaining {
     public static func text(_ seconds: TimeInterval) -> String {
         let minutes = Int((seconds / 60).rounded())
         if minutes < 1 { return Words.t("less than a minute") }
-        if minutes < 60 { return Words.t("about {0} min", minutes) }
         let h = minutes / 60, m = minutes % 60
-        return m == 0 ? Words.t("about {0} h", h) : Words.t("about {0} h {1} min", h, m)
+        let said = minutes < 60 ? Words.t("about {0} min", minutes)
+            : m == 0 ? Words.t("about {0} h", h) : Words.t("about {0} h {1} min", h, m)
+        #if os(iOS)
+        // A time is never split over two lines on the phone (0.29.29).
+        return said.replacingOccurrences(of: " ", with: "\u{00A0}")
+        #else
+        return said
+        #endif
+    }
+
+    /// "≈ 9 h 15 min", never split over two lines: the phone's Queue line
+    /// (0.29.29, David, 17 November 2026).
+    public static func approx(_ seconds: TimeInterval) -> String {
+        let minutes = max(1, Int((seconds / 60).rounded()))
+        let h = minutes / 60, m = minutes % 60
+        var parts: [String] = []
+        if h > 0 { parts.append(Words.t("{0} h", h)) }
+        if m > 0 || h == 0 { parts.append(Words.t("{0} min", m)) }
+        return ("≈ " + parts.joined(separator: " ")).replacingOccurrences(of: " ", with: "\u{00A0}")
     }
 
     /// What is left at the pace so far: nil until enough has gone to tell.
@@ -44,6 +61,29 @@ public enum Remaining {
         let elapsed = now.timeIntervalSince(start)
         guard done >= 3, elapsed >= 5, total > done else { return nil }
         return elapsed / Double(done) * Double(total - done)
+    }
+}
+
+/// Where a phone line may break when it does not fit on one line: a soft
+/// break reads ", " on one line and starts a new line otherwise (0.29.29).
+public enum LineBreaks {
+    public static let soft = "\u{E000}"
+
+    /// The line as one line.
+    public static func oneLine(_ text: String) -> String {
+        text.replacingOccurrences(of: soft, with: ", ")
+    }
+
+    /// The line broken: at each soft break, and after each sentence.
+    public static func broken(_ text: String) -> String {
+        var out = text.replacingOccurrences(of: soft, with: "\n")
+        for end in [". ", "? ", "! "] {
+            out = out.replacingOccurrences(of: end, with: String(end.first!) + "\n")
+        }
+        // Chinese full stops have no space after them.
+        out = out.replacingOccurrences(of: "。", with: "。\n")
+        while out.hasSuffix("\n") { out.removeLast() }
+        return out
     }
 }
 

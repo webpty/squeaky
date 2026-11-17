@@ -1148,6 +1148,26 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   off and the phone is on mobile data only, sending waits for Wi-Fi and
   says so.
 
+## Sending while locked, line breaks, titles (0.29.29, David, 17 November 2026)
+
+- The phone stopped sending once locked (9 of 231 sent, none failed).
+  The background work's progress now moves with each part of a photo, not
+  once per photo; sending that starts without a save asks for background
+  time too (while Geotag is in front); when the phone ends it anyway, or the
+  server stops answering for a minute, the Photos and Queue tabs say
+  "Sending stopped while the phone was locked, after 9 of 231. Carrying on
+  now." when Geotag is back, until nothing is waiting. The cause is not
+  proven; this is the best reading.
+- Phone messages that do not fit on one line start each sentence on a new
+  line (`Sentences`, `LineBreaks`); a soft break (`LineBreaks.soft`) is ", "
+  on one line and a new line otherwise. A time never splits.
+- The phone's Queue line: "DAVL4150.CR3 to Geotag, ≈ 9 h 15 min left
+  (speed: average)", no full stops, broken at the comma when long. The Mac
+  keeps its own line.
+- Page titles sit in the top row on the left, smaller, level with the round
+  button (`PageTitle`). Clear photos is red. The line under a row with the
+  wheel starts at the wheel. Queue: "Not sent" is "Failed".
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

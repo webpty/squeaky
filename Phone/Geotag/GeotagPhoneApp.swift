@@ -203,9 +203,48 @@ struct StatusRow: View {
             // The wheel beside the first line (0.29.28).
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if busy { ProgressView().alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 } }
-                Text(text).foregroundStyle(.secondary)
+                Sentences(text: text).foregroundStyle(.secondary)
+            }
+            // The line under the row starts at the wheel, not at the words (0.29.29).
+            .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
+        }
+    }
+}
+
+/// A message that fits stays on one line; one that does not starts each
+/// sentence, and each soft break, on a new line, so the breaks look meant
+/// (0.29.29, David, 17 November 2026).
+struct Sentences: View {
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(text.components(separatedBy: "\n").enumerated()), id: \.offset) { _, part in
+                ViewThatFits(in: .horizontal) {
+                    Text(LineBreaks.oneLine(part)).lineLimit(1)
+                    Text(LineBreaks.broken(part))
+                }
             }
         }
+    }
+}
+
+/// The page's title in the top row, on the left, level with the round
+/// button on the right, smaller than the big title it replaces (0.29.29).
+struct PageTitle: ToolbarContent {
+    let title: String
+
+    var body: some ToolbarContent {
+        if #available(iOS 26, *) {
+            ToolbarItem(placement: .topBarLeading) { label }
+                .sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: .topBarLeading) { label }
+        }
+    }
+
+    var label: some View {
+        Text(title).font(.title3.weight(.bold)).lineLimit(1).fixedSize()
     }
 }
 
