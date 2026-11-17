@@ -3511,6 +3511,11 @@ extension AppModel {
             return false
         }
         let waiting = queueEntries.contains { ($0.state == .waiting || $0.state == .sending) && !$0.held }
+        #if os(iOS)
+        // No server folder chosen on this phone yet: the NAS can't be reached
+        // straight, so always through the buffer server (0.30.4, David).
+        if !PhoneFolders.isChosen(PhoneFolders.nasKey) { return true }
+        #endif
         if let asked = bufferAsked, Date().timeIntervalSince(asked.at) < 60 {
             if let atHome = asked.atHome { return !atHome }
             return false
@@ -3567,7 +3572,10 @@ extension AppModel {
             #if os(iOS)
             // The phone's folder as the Files app names it: "home/Geotag", the
             // logged-in user's home; the buffer server knows whose from the key.
-            let base = UserDefaults.standard.string(forKey: PhoneFolders.nasKey + "Path") ?? PhoneFolders.path(PhoneFolders.nasKey)
+            // No folder chosen yet: the owner's Geotag folder in their home (0.30.4, David).
+            let base: String? = PhoneFolders.isChosen(PhoneFolders.nasKey)
+                ? (UserDefaults.standard.string(forKey: PhoneFolders.nasKey + "Path") ?? PhoneFolders.path(PhoneFolders.nasKey))
+                : "home/Geotag"
             #else
             let base: String? = folder
             #endif

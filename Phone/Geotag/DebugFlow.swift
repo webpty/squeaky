@@ -14,7 +14,8 @@ extension DebugHooks {
         let card = URL(fileURLWithPath: args[i + 1]), gpx = URL(fileURLWithPath: args[i + 2]), nas = URL(fileURLWithPath: args[i + 3])
         model.setPhonePerson(name: "Flow")
         guard let owner = model.macOwner, model.book.people.filter({ $0.id != PhoneFolders.othersId }).count == 1 else { print("flow: FAILED, no person"); return true }
-        try? PhoneFolders.remember(nas, as: PhoneFolders.nasKey)
+        // `--no-folder`: a phone set up with the buffer key only (0.30.4).
+        if !args.contains("--no-folder") { try? PhoneFolders.remember(nas, as: PhoneFolders.nasKey) }
         await model.start()
         await model.importFiles([gpx])
         print("tracks: \(model.tracks.count) \(model.tracksLine)")

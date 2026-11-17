@@ -1366,6 +1366,10 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   photo's own time is its share of the line: "8 min per photo", "36 h
   left". `BufferUploads.pace()` counts the bytes of all of them over three
   minutes; `sendingSeconds` and the speeds recorded use it (0.30.3).
+- A phone with no server folder chosen yet sends through the buffer server,
+  as "home/Geotag/...", wherever it is: Amanda's phone until her folder is
+  chosen at home in Panama, over the home network with no Tailscale (0.30.4).
+  Once a folder is chosen, home goes straight to the NAS again.
 - A photo counts as sent once at bufr.cc. "Waiting on the buffer server"
   (Queue) is what the NAS has not fetched yet; "Connected to server" or
   "Connected to buffer server" says the route (David's words).
