@@ -80,7 +80,12 @@ struct SettingsTab: View {
                 }
                 Section(Words.t("Server")) {
                     LabeledContent(Words.t("Folder")) {
-                        Text(nasName ?? (PhoneFolders.isChosen(PhoneFolders.nasKey) ? "" : Words.t("Not chosen"))).lineLimit(1).truncationMode(.middle)
+                        // The path being worked out: the wheel (0.29.26).
+                        if nasName == nil, PhoneFolders.isChosen(PhoneFolders.nasKey), folderProblem == nil {
+                            ProgressView()
+                        } else {
+                            Text(nasName ?? Words.t("Not chosen")).lineLimit(1).truncationMode(.middle)
+                        }
                     }
                     if let folderProblem {
                         Text(folderProblem).foregroundStyle(.orange)

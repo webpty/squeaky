@@ -134,7 +134,7 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var tracks: [Track] = []
     /// Tracks named by where they are, by track id (0.29.5).
     @Published public private(set) var trackPlaces: [String: String] = [:]
-    private var namingTracks = false
+    @Published public private(set) var namingTracks = false
 
     /// A track's name as Geotag shows it: where it is, once looked up.
     /// The track service's name first (0.29.20), so every site shows the same;
@@ -1181,8 +1181,13 @@ public final class AppModel: ObservableObject {
     /// every JPG among them added to the Photos library, the records moved
     /// with them. Done again next launch until every JPG is in; nothing is
     /// deleted on the way.
+    /// True while photos are moved out of Files and into Photos: the wheel shows (0.29.26).
+    @Published public private(set) var movingOutOfFiles = false
+
     func moveOutOfFiles() async {
         guard !defaults.bool(forKey: "movedToLibrary") else { return }
+        movingOutOfFiles = true
+        defer { movingOutOfFiles = false }
         let fm = FileManager.default
         let old = PhoneFolders.documents, new = PhoneFolders.copies
         // Every step said as it happens (0.29.16, David: "it's really exhausting to have to ask for basic things like this").
@@ -2293,10 +2298,13 @@ public final class AppModel: ObservableObject {
         defer { sharing = false }
         var problem: String?
         for person in people {
+            // Reaching the NAS can take seconds: said, with the wheel (0.29.26).
+            syncActivity = Words.t("Reaching the NAS")
             let folder: URL
             switch await openServerFolder(person.id) {
             case .success(let found): folder = found
             case .failure(let why):
+                syncActivity = nil
                 problem = why.localizedDescription
                 continue
             }

@@ -17,7 +17,7 @@ struct TracksTab: View {
         NavigationStack {
             List {
                 Section {
-                    StatusRow(text: model.tracksLine, busy: model.tracksBusy)
+                    StatusRow(text: model.tracksLine, busy: model.tracksBusy || model.namingTracks)
                     if maps.asked > maps.made {
                         StatusRow(text: Words.t("Making maps: {0} of {1}", maps.made + 1, maps.asked), busy: true)
                     }

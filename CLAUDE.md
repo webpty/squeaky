@@ -1109,6 +1109,14 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Settings' checkmark turns blue when something typed is not saved yet;
   a tap outside the keyboard closes it.
 
+## The wheel (0.29.26, David, 17 November 2026)
+
+- Any wait longer than half a second shows the spinning wheel beside its
+  line, in Geotag (his rule for this project only): reaching the NAS on the
+  sync line ("Reaching the NAS"), moving photos out of Files, naming tracks
+  by place, working out the server folder's path in Settings, and every
+  step that already had one.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

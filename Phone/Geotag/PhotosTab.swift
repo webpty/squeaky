@@ -17,7 +17,7 @@ struct PhotosTab: View {
                     // A spinning wheel while the sync files are read or saved (0.29.18).
                     StatusRow(text: model.syncActivity ?? QueueText.sync(model.lastSave, problem: model.sharedProblem),
                               busy: model.syncActivity != nil)
-                    StatusRow(text: model.photosLine, busy: model.photosBusy || model.saving)
+                    StatusRow(text: model.photosLine, busy: model.photosBusy || model.saving || model.movingOutOfFiles)
                     // Who the SD card belongs to: said, not changed here (0.29.19); changed in Settings.
                     if let id = model.importPerson, model.book.person(id) != nil {
                         LabeledContent(Words.t("SD card belongs to"),

@@ -148,6 +148,7 @@
  "Photos": "照片",
  "Previously saved in another location": "之前已存储，位置不同",
  "Queue": "队列",
+ "Reaching the NAS": "正在连接服务器",
  "Reading 0 of {0}": "正在读取：第 0 个，共 {0} 个",
  "Reading key": "读取密钥",
  "Reading the list of photos already saved, from the server": "正在从服务器读取已存储照片的列表",
