@@ -1359,6 +1359,9 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   relaunch with the phone locked still has the key.
 - A NAS batch already going asks `useBuffer` before each next photo, so a
   key saved mid-batch, or leaving home, hands over without reopening (0.30.1).
+- Each buffer upload is timed from its first bytes going up, not from being
+  handed over: 30 are handed over and two go at a time, so the time spent
+  waiting its turn made 40 s read as 2 min 18 s (0.30.2).
 - A photo counts as sent once at bufr.cc. "Waiting on the buffer server"
   (Queue) is what the NAS has not fetched yet; "Connected to server" or
   "Connected to buffer server" says the route (David's words).

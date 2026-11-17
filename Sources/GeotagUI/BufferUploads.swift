@@ -45,7 +45,6 @@ public final class BufferUploads: NSObject, URLSessionDataDelegate, @unchecked S
     func send(_ entry: UUID, file: URL, request: URLRequest) {
         let task = session.uploadTask(with: request, fromFile: file)
         task.taskDescription = entry.uuidString
-        lock.withLock { started[task.taskIdentifier] = Date() }
         task.resume()
     }
 
@@ -56,6 +55,9 @@ public final class BufferUploads: NSObject, URLSessionDataDelegate, @unchecked S
 
     public func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64,
                            totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+        // The clock starts when the photo really starts going up, not when it was
+        // handed over to wait its turn (0.30.2, David: "2 min 18 s per photo").
+        lock.withLock { if started[task.taskIdentifier] == nil { started[task.taskIdentifier] = Date().addingTimeInterval(-0.5) } }
         guard let id = task.taskDescription.flatMap(UUID.init(uuidString:)), totalBytesExpectedToSend > 0 else { return }
         let fraction = Double(totalBytesSent) / Double(totalBytesExpectedToSend)
         Task { @MainActor [weak self] in self?.onProgress?(id, fraction) }
