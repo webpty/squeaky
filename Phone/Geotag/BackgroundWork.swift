@@ -14,6 +14,9 @@ final class BackgroundWork {
     private let model: AppModel
     private var watching: AnyCancellable?
     private var running: AnyObject?
+    /// A request handed to the phone and not finished yet: never a second one
+    /// beside it, so only one notification shows (0.29.32).
+    private var asked = false
     /// Set when the phone would not take the work, said on the Photos line.
     private(set) var refused: String?
     static let prefix = (Bundle.main.bundleIdentifier ?? "com.webpty.geotag") + ".work."
@@ -60,7 +63,7 @@ final class BackgroundWork {
     var isRunning: Bool { running != nil }
 
     private func begin() {
-        guard #available(iOS 26, *), running == nil else { return }
+        guard #available(iOS 26, *), running == nil, !asked else { return }
         let id = Self.prefix + UUID().uuidString
         let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: id, using: nil) { [weak self] task in
             guard let task = task as? BGContinuedProcessingTask else { task.setTaskCompleted(success: false); return }
@@ -77,7 +80,13 @@ final class BackgroundWork {
         request.strategy = .fail
         do {
             try BGTaskScheduler.shared.submit(request)
+            asked = true
             refused = nil
+            // Never started by the phone within ten seconds: free to ask again.
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(10))
+                if running == nil { asked = false }
+            }
         } catch {
             refused = Words.t("The phone won't let Geotag keep saving in the background; keep it open until it's done.") + " " + error.localizedDescription
         }
@@ -95,9 +104,15 @@ final class BackgroundWork {
             Task { @MainActor in
                 guard let self else { return }
                 stopped = true
-                if self.model.saving { self.model.stopSaving(); return }
+                if self.model.saving {
+                    self.model.stopSaving()
+                    self.finish(task, title: Words.t("Saving stopped"),
+                                detail: Words.t("{0} of {1} saved.", self.model.saveDone, self.model.saveTotal))
+                    return
+                }
                 let now = self.counts(since: startSent)
                 if now.waiting > 0 { self.noteStopped(sent: now.sent, total: now.sent + now.waiting, why: nil) }
+                self.paused(task, sent: now.sent, total: now.sent + now.waiting)
             }
         }
         Task { @MainActor in
@@ -119,7 +134,8 @@ final class BackgroundWork {
                 if model.meter.count == 0 { idle += 1 } else { idle = 0 }
                 if idle > 120 {
                     noteStopped(sent: sent, total: sent + waiting, why: Words.t("The NAS wasn't answering."))
-                    break
+                    paused(task, sent: sent, total: sent + waiting)
+                    return
                 }
                 // Moves with each part of a photo, not once per photo (0.29.29): progress
                 // that stands still for long can make the phone end the work.
@@ -128,9 +144,30 @@ final class BackgroundWork {
                 task.updateTitle(Words.t("Sending to the NAS"), subtitle: Words.t("{0} of {1}", sent, sent + waiting))
                 try? await Task.sleep(for: .milliseconds(500))
             }
+            // Stopped by the phone or on the Lock Screen: already ended above.
+            guard !stopped else { return }
             progress.completedUnitCount = progress.totalUnitCount
-            task.setTaskCompleted(success: !stopped)
-            running = nil
+            finish(task, title: nil, detail: nil)
         }
+    }
+
+    /// Sending ended before everything was sent: said as paused, with how
+    /// far it got, never as failed, since it carries on when Geotag is open
+    /// (0.29.32, David, 17 November 2026: "we need more details").
+    @available(iOS 26, *)
+    private func paused(_ task: BGContinuedProcessingTask, sent: Int, total: Int) {
+        finish(task, title: Words.t("Sending paused"),
+               detail: Words.t("{0} of {1} sent. It carries on when Geotag is open.", sent, total))
+    }
+
+    /// The one notification closed, with its last words when given; only
+    /// then may another start.
+    @available(iOS 26, *)
+    private func finish(_ task: BGContinuedProcessingTask, title: String?, detail: String?) {
+        guard running != nil else { return }
+        if let title { task.updateTitle(title, subtitle: detail ?? "") }
+        task.setTaskCompleted(success: true)
+        running = nil
+        asked = false
     }
 }

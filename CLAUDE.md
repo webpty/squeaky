@@ -1194,6 +1194,15 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   as Save photos would. With the card out, the button's place reads
   "Insert the card to try again"; never a dimmed button there.
 
+## One notification, paused not failed (0.29.32, David, 17 November 2026)
+
+- He saw "Sending 3 of 205" and "Task failed" side by side. Geotag now
+  hands the phone one background request at a time (`asked`), and ends
+  its work as finished with its last words: "Sending paused: 3 of 205
+  sent. It carries on when Geotag is open." or "Saving stopped: 40 of 300
+  saved.", never as failed. An install that closes Geotag mid-send still
+  leaves the phone's own "failed" notice: say so before each install.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.
