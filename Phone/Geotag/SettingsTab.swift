@@ -16,8 +16,6 @@ struct SettingsTab: View {
     @State private var showingCode = false
     @State private var changing: AppModel.KnownCard?
     /// The card being renamed, and the name typed (0.29.30).
-    @State private var renaming: AppModel.KnownCard?
-    @State private var newName = ""
     /// The track service's address and key open for editing (0.29.30).
     @State private var editingService = false
     @State private var showingFormat = false
@@ -62,9 +60,6 @@ struct SettingsTab: View {
                                         .foregroundStyle(.secondary).lineLimit(1)
                                 }
                                 HStack(spacing: 12) {
-                                    // Renamed only while that card is in (0.29.33).
-                                    HalfButton(Words.t("Rename")) { newName = card.name; renaming = card }
-                                        .disabled(model.source?.id != card.id)
                                     HalfButton(Words.t("Change")) { changing = card }
                                         // Opens from this button, not the top of the page (0.29.39).
                                         .confirmationDialog(Words.t("Is this your card?"),
@@ -75,6 +70,8 @@ struct SettingsTab: View {
                                             Button(Words.t("No")) { model.setOwner(of: card.id, to: PhoneFolders.othersId) }
                                             Button(Words.t("Cancel"), role: .cancel) {}
                                         }
+                                    // Rename removed: the iPhone cannot rename a card (0.29.44, David).
+                                    HalfSpace()
                                 }
                             }
                         }
@@ -179,14 +176,6 @@ struct SettingsTab: View {
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(isPresented: $showingFormat) { ServiceFormat() }
             .navigationDestination(isPresented: $showingHowTo) { ConnectServer() }
-            // The name Geotag shows for a card; the card itself is never changed (0.29.30).
-            .alert(Words.t("Rename SD card"),
-                   isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
-                TextField(Words.t("Name"), text: $newName)
-                Button(Words.t("Save")) { if let card = renaming { model.rename(card: card.id, to: newName) } }
-                    .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
-                Button(Words.t("Cancel"), role: .cancel) {}
-            }
             .scrollDismissesKeyboard(.immediately)
             .toolbar {
                 PageTitle(title: Words.t("Settings"))

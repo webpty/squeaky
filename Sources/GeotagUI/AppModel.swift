@@ -500,6 +500,9 @@ public final class AppModel: ObservableObject {
         if serviceAddress.isEmpty { serviceAddress = "https://geotrac.cc" }
         #endif
         role = defaults.string(forKey: "trackServiceRole").flatMap(KeyRole.init(rawValue:))
+        // Names given to cards in Geotag removed (0.29.44, David): the iPhone cannot
+        // rename a card, so each card shows its own name, as in Files.
+        defaults.removeObject(forKey: "cardNicknames")
         readSecrets()
         savedService = ServiceFields(address: serviceAddress, key: serviceKey)
         mapCredit = defaults.string(forKey: "mapCredit") ?? ""
@@ -1420,14 +1423,6 @@ public final class AppModel: ObservableObject {
     /// a new one asks whose it is first.
     public func choose(_ source: PhotoSource) {
         readingRound += 1
-        var source = source
-        // The card's own name kept; the name given in Settings shown (0.29.30).
-        if let nickname = cardNicknames[source.id] {
-            var names = defaults.dictionary(forKey: "cardNames") as? [String: String] ?? [:]
-            names[source.id] = source.name
-            defaults.set(names, forKey: "cardNames")
-            source.name = nickname
-        }
         self.source = source
         rows = []
         results = [:]
@@ -1572,32 +1567,12 @@ public final class AppModel: ObservableObject {
     public var knownCards: [KnownCard] {
         let owners = defaults.dictionary(forKey: "cardPeople") as? [String: String] ?? [:]
         let names = defaults.dictionary(forKey: "cardNames") as? [String: String] ?? [:]
-        let nicknames = cardNicknames
         return owners.compactMap { id, person in
             guard let person = UUID(uuidString: person), book.person(person) != nil else { return nil }
-            return KnownCard(id: id, name: nicknames[id] ?? names[id] ?? Words.t("SD card"), personId: person)
+            return KnownCard(id: id, name: names[id] ?? Words.t("SD card"), personId: person)
         }.sorted { $0.name < $1.name }
     }
 
-    /// Names given to cards in Settings, by card id: used inside Geotag only,
-    /// the card itself is never changed (0.29.30, David, 17 November 2026).
-    private var cardNicknames: [String: String] {
-        defaults.dictionary(forKey: "cardNicknames") as? [String: String] ?? [:]
-    }
-
-    /// A card renamed in Settings; an empty name goes back to the card's own.
-    public func rename(card: String, to name: String) {
-        var nicknames = cardNicknames
-        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        nicknames[card] = name.isEmpty ? nil : name
-        defaults.set(nicknames, forKey: "cardNicknames")
-        if var now = source, now.id == card {
-            let own = (defaults.dictionary(forKey: "cardNames") as? [String: String])?[card] ?? now.name
-            now.name = name.isEmpty ? own : name
-            source = now
-        }
-        objectWillChange.send()
-    }
 
     /// Who a card belongs to, changed in Settings; the card in now is read again for them.
     public func setOwner(of card: String, to personId: UUID) {
@@ -1634,11 +1609,9 @@ public final class AppModel: ObservableObject {
         saved[source.id] = personId.uuidString
         defaults.set(saved, forKey: "cardPeople")
         // The card's own name, for the list of SD cards in Settings (0.29.19).
-        if cardNicknames[source.id] == nil {
-            var names = defaults.dictionary(forKey: "cardNames") as? [String: String] ?? [:]
-            names[source.id] = source.name
-            defaults.set(names, forKey: "cardNames")
-        }
+        var names = defaults.dictionary(forKey: "cardNames") as? [String: String] ?? [:]
+        names[source.id] = source.name
+        defaults.set(names, forKey: "cardNames")
         askingWhose = nil
         importPerson = personId
         guard let engine else {

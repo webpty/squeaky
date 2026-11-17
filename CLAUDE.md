@@ -1320,6 +1320,14 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Each Sending row: the wheel, the name, the percentage on the right, over
   the blue bar ("the blue progress is too slow to feel it's doing something").
 
+## Card names: removed (0.29.44, David, 17 November 2026)
+
+- "Rename" for SD cards is removed, with its window and the names kept in
+  Geotag (`cardNicknames`, cleared at launch): the iPhone gives no app a way
+  to rename a card, so a name only Geotag showed was a pretend rename ("the
+  name was not applied to the card ... remove all that mambo jumbo"). Each
+  card shows its own name, as in Files.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.
