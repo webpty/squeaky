@@ -22,6 +22,8 @@ struct SettingsTab: View {
     @State private var editingService = false
     @State private var showingFormat = false
     @State private var showingHowTo = false
+    /// A field being typed in: only then does a tap anywhere close the keyboard (0.29.33).
+    @FocusState private var typing: Bool
 
     var owner: Person? { model.macOwner.flatMap { model.book.person($0) } }
 
@@ -52,16 +54,19 @@ struct SettingsTab: View {
                     Section(Words.t("SD cards")) {
                         ForEach(model.knownCards) { card in
                             VStack(alignment: .leading, spacing: 8) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(card.name)
-                                    Text(card.personId == PhoneFolders.othersId ? Words.t("Belongs to someone else") : Words.t("Belongs to you"))
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
+                                // Name and owner on one line (0.29.33).
                                 HStack {
-                                    Button(Words.t("Rename")) { newName = card.name; renaming = card }
-                                    Button(Words.t("Change")) { changing = card }
+                                    Text(card.name).lineLimit(1)
+                                    Spacer()
+                                    Text(card.personId == PhoneFolders.othersId ? Words.t("Belongs to someone else") : Words.t("Belongs to you"))
+                                        .foregroundStyle(.secondary).lineLimit(1)
                                 }
-                                .buttonStyle(.bordered)
+                                HStack(spacing: 12) {
+                                    // Renamed only while that card is in (0.29.33).
+                                    HalfButton(Words.t("Rename")) { newName = card.name; renaming = card }
+                                        .disabled(model.source?.id != card.id)
+                                    HalfButton(Words.t("Change")) { changing = card }
+                                }
                             }
                         }
                     }
@@ -70,6 +75,7 @@ struct SettingsTab: View {
                     if serviceFields {
                         LabeledContent(Words.t("Address")) {
                             TextField("", text: $model.serviceAddress)
+                                .focused($typing)
                                 .textContentType(.URL)
                                 .keyboardType(.URL)
                                 .textInputAutocapitalization(.never)
@@ -78,6 +84,7 @@ struct SettingsTab: View {
                         }
                         LabeledContent(Words.t("Key")) {
                             SecureField("", text: $model.serviceKey)
+                                .focused($typing)
                                 .multilineTextAlignment(.trailing)
                         }
                         if editingService, model.serviceKeySaved {
@@ -93,15 +100,13 @@ struct SettingsTab: View {
                             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                                 .accessibilityLabel(Words.t("Saved"))
                         }
-                        HStack {
-                            Button(Words.t("Change")) { editingService = true }
-                            Button(Words.t("Remove"), role: .destructive) {
+                        HStack(spacing: 12) {
+                            HalfButton(Words.t("Change")) { editingService = true }
+                            HalfButton(Words.t("Remove"), role: .destructive) {
                                 editingService = false
                                 Task { await model.removeService() }
                             }
-                            .tint(.red)
                         }
-                        .buttonStyle(.bordered)
                     }
                     StatusRow(text: model.settingsLine, busy: model.settingsBusy)
                 } header: {
@@ -122,21 +127,21 @@ struct SettingsTab: View {
                         Sentences(text: folderProblem).foregroundStyle(.orange)
                     }
                     // Change and Remove side by side, as buttons (0.29.30).
-                    HStack {
-                        Button(PhoneFolders.isChosen(PhoneFolders.nasKey) ? Words.t("Change") : Words.t("Choose")) {
+                    HStack(spacing: 12) {
+                        HalfButton(PhoneFolders.isChosen(PhoneFolders.nasKey) ? Words.t("Change") : Words.t("Choose")) {
                             problem = nil
                             choosing = true
                         }
                         if PhoneFolders.isChosen(PhoneFolders.nasKey) {
-                            Button(Words.t("Remove"), role: .destructive) {
+                            HalfButton(Words.t("Remove"), role: .destructive) {
                                 nasName = nil
                                 folderProblem = nil
                                 Task { await model.forgetNASFolder() }
                             }
-                            .tint(.red)
+                        } else {
+                            HalfSpace()
                         }
                     }
-                    .buttonStyle(.bordered)
                     StatusRow(text: model.nasLine, busy: model.nasBusy)
                 } header: {
                     // The steps to connect a file server, behind the i (0.29.30).
@@ -192,10 +197,9 @@ struct SettingsTab: View {
                     folderProblem = why.localizedDescription
                 }
             }
-            // A tap outside the keyboard closes it (0.29.25).
-            .simultaneousGesture(TapGesture().onEnded {
-                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-            })
+            // A tap outside the keyboard closes it (0.29.25), only while typing: always on, it
+            // caught the taps on plain buttons such as Show offset code (0.29.33).
+            .simultaneousGesture(TapGesture().onEnded { typing = false }, including: typing ? .all : .subviews)
             .onAppear {
                 #if DEBUG
                 if CommandLine.arguments.contains("--offset-code") { showingCode = true }

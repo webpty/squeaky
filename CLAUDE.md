@@ -1203,6 +1203,22 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   saved.", never as failed. An install that closes Geotag mid-send still
   leaves the phone's own "failed" notice: say so before each install.
 
+## Tracks, Queue and Settings tidied (0.29.33, David, 17 November 2026)
+
+- Tracks: a one-sentence line has no full stop on the phone ("No new
+  tracks"); the line sits close under the title; "Recheck photos"; the map
+  credit is the last row of the list, not laid over it.
+- Queue: "≈ 9 h 15 min left" in the top row, right of the title, while
+  photos go up; a "Sending" section with each photo's name and the wheel at
+  the right edge (the speed is no longer shown); the queue line shows only
+  when nothing is going up.
+- Every pair of buttons side by side is two `HalfButton`s, each half the
+  width less the gap; a lone one keeps half (`HalfSpace`); Remove is red.
+- SD cards: name and owner on one line; Rename only while that card is in.
+- Settings' tap-to-close-the-keyboard is active only while a field is being
+  typed in: always on, it swallowed taps on plain buttons (Show offset code
+  did nothing).
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

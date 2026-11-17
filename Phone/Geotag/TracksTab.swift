@@ -33,6 +33,8 @@ struct TracksTab: View {
                 }
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
+                // Little space around it, so the list starts right under it (0.29.33).
+                .listRowInsets(EdgeInsets(top: 2, leading: 20, bottom: 2, trailing: 20))
                 Section {
                     ForEach(model.tracks.sorted { $0.start > $1.start }) { track in
                         // The map on the left, the words on the right (0.29.4).
@@ -43,7 +45,7 @@ struct TracksTab: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(model.trackTitle(track))
                                 Text(Self.line(track)).font(.caption).foregroundStyle(.secondary)
-                                Button(Words.t("Recheck photos for this track")) { Task { await model.recheckPhotos(for: track) } }
+                                Button(Words.t("Recheck photos")) { Task { await model.recheckPhotos(for: track) } }
                                     .font(.caption)
                                     .buttonStyle(.bordered)
                                     .disabled(model.tracksBusy || model.saving || model.placingLater)
@@ -52,14 +54,18 @@ struct TracksTab: View {
                         }
                     }
                 }
-            }
-            .safeAreaInset(edge: .bottom) {
-                // The map's licence asks for its credit to show with it.
+                // The map's licence asks for its credit to show with it: under the last track (0.29.33).
                 if !model.mapCredit.isEmpty {
-                    Text(model.mapCredit).font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.6)
-                        .padding(.horizontal).padding(.vertical, 4)
+                    Section {
+                        Text(model.mapCredit).font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.6)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
             }
+            .listSectionSpacing(.compact)
+            .contentMargins(.top, 4, for: .scrollContent)
             .scrollContentBackground(.hidden)
             // The last card's photo behind every tab, veiled (0.29.5, David, 16 November 2026).
             .background(Backdrop(image: model.sidebarImage))

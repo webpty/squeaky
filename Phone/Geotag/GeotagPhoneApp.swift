@@ -229,6 +229,33 @@ struct Sentences: View {
     }
 }
 
+/// A button half the width of its row, less the gap, in a pair side by
+/// side (0.29.33, David, 17 November 2026). Remove and the like are red.
+struct HalfButton: View {
+    let title: String
+    var role: ButtonRole?
+    let action: () -> Void
+
+    init(_ title: String, role: ButtonRole? = nil, action: @escaping () -> Void) {
+        self.title = title
+        self.role = role
+        self.action = action
+    }
+
+    var body: some View {
+        Button(role: role, action: action) {
+            Text(title).lineLimit(1).minimumScaleFactor(0.8).frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .tint(role == .destructive ? .red : nil)
+    }
+}
+
+/// The empty half beside a button on its own, so it keeps half the width.
+struct HalfSpace: View {
+    var body: some View { Color.clear.frame(maxWidth: .infinity, maxHeight: 1) }
+}
+
 /// The page's title in the top row, on the left, level with the round
 /// button on the right, smaller than the big title it replaces (0.29.29).
 struct PageTitle: ToolbarContent {

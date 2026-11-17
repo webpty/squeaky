@@ -13,6 +13,10 @@ public struct RefreshReport: Equatable, Sendable {
         var parts: [String] = []
         parts.append(added == 0 ? Words.t("No new tracks.") : added == 1 ? Words.t("1 new track.") : Words.t("{0} new tracks.", added))
         if uploaded > 0 { parts.append(uploaded == 1 ? Words.t("1 track uploaded.") : Words.t("{0} tracks uploaded.", uploaded)) }
+        #if os(iOS)
+        // One sentence alone needs no full stop on the phone: "No new tracks" (0.29.33).
+        if parts.count == 1, let only = parts.first, only.hasSuffix(".") || only.hasSuffix("。") { return String(only.dropLast()) }
+        #endif
         return parts.joined(separator: " ")
     }
 }

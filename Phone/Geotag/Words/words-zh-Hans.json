@@ -176,6 +176,7 @@
  "Reading the sync list": "正在读取同步列表",
  "Reading {0} back from the NAS": "正在从服务器回读 {0}",
  "Reading {0} of {1}": "正在读取：第 {0} 个，共 {1} 个",
+ "Recheck photos": "重新检查照片",
  "Recheck photos for this track": "重新检查此轨迹的照片",
  "Refresh": "刷新",
  "Remove": "移除",
