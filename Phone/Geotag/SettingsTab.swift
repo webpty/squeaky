@@ -184,6 +184,7 @@ struct SettingsTab: View {
                    isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
                 TextField(Words.t("Name"), text: $newName)
                 Button(Words.t("Save")) { if let card = renaming { model.rename(card: card.id, to: newName) } }
+                    .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
                 Button(Words.t("Cancel"), role: .cancel) {}
             }
             .scrollDismissesKeyboard(.immediately)
@@ -194,7 +195,7 @@ struct SettingsTab: View {
                         Image(systemName: "checkmark").foregroundStyle(unsaved ? Color.blue : Color.secondary)
                     }
                         .accessibilityLabel(Words.t("Save"))
-                        .disabled(model.settingsBusy)
+                        .disabled(model.settingsBusy || !unsaved)
                 }
             }
             .task {

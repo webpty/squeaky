@@ -83,12 +83,13 @@ struct TracksTab: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { importing = true } label: { Image(systemName: "square.and.arrow.down") }
                         .accessibilityLabel(Words.t("Import GPX or FIT"))
-                        .disabled(model.tracksBusy)
+                        // Only an owner key may add tracks (0.29.42).
+                        .disabled(model.tracksBusy || !model.serviceKeySaved || model.role != .owner)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { Task { await model.refresh(pullStrava: true) } } label: { Image(systemName: "arrow.clockwise") }
                         .accessibilityLabel(Words.t("Refresh"))
-                        .disabled(model.tracksBusy)
+                        .disabled(model.tracksBusy || !model.serviceKeySaved)
                 }
             }
             .refreshable { await model.refresh(pullStrava: true) }

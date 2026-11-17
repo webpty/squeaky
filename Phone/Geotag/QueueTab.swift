@@ -33,8 +33,13 @@ struct QueueTab: View {
                     Section(Words.t("Sending")) {
                         ForEach(meter.order, id: \.self) { id in
                             if let going = meter.going[id] {
-                                Text(going.name).lineLimit(1).truncationMode(.middle)
-                                    .listRowBackground(ProgressFill(fraction: going.fraction))
+                                // How far it has got on the right, in fixed-width digits (0.29.42).
+                                HStack {
+                                    Text(going.name).lineLimit(1).truncationMode(.middle)
+                                    Spacer()
+                                    Text(going.percent).monospacedDigit().foregroundStyle(.secondary)
+                                }
+                                .listRowBackground(ProgressFill(fraction: going.fraction))
                             }
                         }
                     }
@@ -94,6 +99,9 @@ struct QueueTab: View {
                         Image(systemName: model.sendPaused ? "play.fill" : "pause.fill")
                     }
                     .accessibilityLabel(model.sendPaused ? Words.t("Resume") : Words.t("Pause"))
+                    // Nothing waiting or going: nothing to pause (0.29.42).
+                    .disabled(!model.sendPaused && meter.count == 0
+                              && !model.queueEntries.contains { ($0.state == .waiting || $0.state == .sending) && !$0.held })
                 }
             }
             .task { await model.checkNAS() }

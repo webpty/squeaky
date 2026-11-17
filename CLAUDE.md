@@ -1306,6 +1306,15 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   "Library/Application Support/Geotag/background-runs.log"` to find the
   cause of "Task failed".
 
+## Each photo's share on the right (0.29.42, David, 17 November 2026)
+
+- The Sending rows show `Going.percent` ("42%") on the right, over the blue bar.
+- Greyed out when they cannot be used (David: "all buttons should be greyed
+  out if they are in a situation where they cannot be used"): Pause with
+  nothing waiting or going; the Settings tick with nothing to save; Import
+  with no service or a reading key; Refresh with no service; Rename's Save
+  with an empty name.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.
