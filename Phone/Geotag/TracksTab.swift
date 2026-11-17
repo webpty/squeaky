@@ -2,11 +2,19 @@ import GeotagCore
 import GeotagUI
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// The watch's tracks, from the track service.
 struct TracksTab: View {
     @ObservedObject var model: AppModel
     @ObservedObject var maps: MapThumbnails
+    @State private var importing = false
+
+    /// GPX and FIT files; any file where the phone knows neither.
+    static let trackFiles: [UTType] = {
+        let known = ["gpx", "fit"].compactMap { UTType(filenameExtension: $0) }
+        return known.count == 2 ? known : [.data]
+    }()
 
     init(model: AppModel) {
         self.model = model
@@ -16,12 +24,15 @@ struct TracksTab: View {
     var body: some View {
         NavigationStack {
             List {
+                // Plain words above the list, no box: it looked like a field (0.29.30).
                 Section {
                     StatusRow(text: model.tracksLine, busy: model.tracksBusy || model.namingTracks)
                     if maps.asked > maps.made {
                         StatusRow(text: Words.t("Making maps: {0} of {1}", maps.made + 1, maps.asked), busy: true)
                     }
                 }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
                 Section {
                     ForEach(model.tracks.sorted { $0.start > $1.start }) { track in
                         // The map on the left, the words on the right (0.29.4).
@@ -56,6 +67,12 @@ struct TracksTab: View {
             // Refresh at the top right (0.29.7, David, 16 November 2026).
             .toolbar {
                 PageTitle(title: Words.t("Tracks"))
+                // A GPX or FIT file from the Files list, sent to the service as on the Mac (0.29.30).
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { importing = true } label: { Image(systemName: "square.and.arrow.down") }
+                        .accessibilityLabel(Words.t("Import GPX or FIT"))
+                        .disabled(model.tracksBusy)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { Task { await model.refresh(pullStrava: true) } } label: { Image(systemName: "arrow.clockwise") }
                         .accessibilityLabel(Words.t("Refresh"))
@@ -63,6 +80,12 @@ struct TracksTab: View {
                 }
             }
             .refreshable { await model.refresh(pullStrava: true) }
+            .fileImporter(isPresented: $importing, allowedContentTypes: Self.trackFiles, allowsMultipleSelection: true) { result in
+                switch result {
+                case .success(let urls): Task { await model.importFiles(urls) }
+                case .failure(let error): model.tracksLine = error.localizedDescription
+                }
+            }
         }
     }
 

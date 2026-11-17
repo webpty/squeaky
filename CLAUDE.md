@@ -1168,6 +1168,24 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   button (`PageTitle`). Clear photos is red. The line under a row with the
   wheel starts at the wheel. Queue: "Not sent" is "Failed".
 
+## Settings and Tracks reworked (0.29.30, David, 17 November 2026)
+
+- Cameras: one line each, the name and "Offset" with a small green check
+  once set ("Not set" otherwise). No figure and no typing: the offset code
+  is the only way to set it on the phone (David: the figure tells nothing,
+  and it drifts).
+- SD cards: Rename (a name kept by Geotag, `cardNicknames`; the card's own
+  name stays in `cardNames`; the card is never changed) and Change.
+- "GPS tracks service" (the phone's English messages say so too), with an
+  i in its heading opening `ServiceFormat`: what a service must answer, for
+  anyone running their own. Once a key is saved: the address, a green check
+  for the key, Change and Remove (red) side by side; Change opens the
+  fields, saved with the top checkmark.
+- Server: an i in its heading opens the steps to connect a file server
+  (the separate line is gone); Change and Remove side by side, Remove red.
+- Tracks: the status line has no box; an Import button at the top right
+  takes GPX or FIT files from the Files list, as the Mac's import does.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

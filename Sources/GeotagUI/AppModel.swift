@@ -130,6 +130,33 @@ public final class AppModel: ObservableObject {
         ServiceFields(address: serviceAddress, key: serviceKey) != savedService
     }
 
+    /// A key has been saved for the track service (0.29.30).
+    public var serviceKeySaved: Bool { !savedService.key.isEmpty }
+
+    /// The address and key put back as last saved: Change given up (0.29.30).
+    public func revertService() {
+        serviceAddress = savedService.address
+        serviceKey = savedService.key
+    }
+
+    /// The track service forgotten: address and key cleared (0.29.30).
+    public func removeService() async {
+        do {
+            try writeSecrets(serviceKey: "", nasPassword: savedNAS.password)
+        } catch {
+            settingsLine = error.localizedDescription
+            return
+        }
+        defaults.removeObject(forKey: "trackServiceAddress")
+        defaults.removeObject(forKey: "trackServiceRole")
+        serviceAddress = ""
+        serviceKey = ""
+        savedService = ServiceFields()
+        role = nil
+        serviceStatus = nil
+        settingsLine = ""
+    }
+
     // Tracks.
     @Published public private(set) var tracks: [Track] = []
     /// Tracks named by where they are, by track id (0.29.5).
@@ -1393,6 +1420,14 @@ public final class AppModel: ObservableObject {
     /// a new one asks whose it is first.
     public func choose(_ source: PhotoSource) {
         readingRound += 1
+        var source = source
+        // The card's own name kept; the name given in Settings shown (0.29.30).
+        if let nickname = cardNicknames[source.id] {
+            var names = defaults.dictionary(forKey: "cardNames") as? [String: String] ?? [:]
+            names[source.id] = source.name
+            defaults.set(names, forKey: "cardNames")
+            source.name = nickname
+        }
         self.source = source
         rows = []
         results = [:]
@@ -1524,10 +1559,31 @@ public final class AppModel: ObservableObject {
     public var knownCards: [KnownCard] {
         let owners = defaults.dictionary(forKey: "cardPeople") as? [String: String] ?? [:]
         let names = defaults.dictionary(forKey: "cardNames") as? [String: String] ?? [:]
+        let nicknames = cardNicknames
         return owners.compactMap { id, person in
             guard let person = UUID(uuidString: person), book.person(person) != nil else { return nil }
-            return KnownCard(id: id, name: names[id] ?? Words.t("SD card"), personId: person)
+            return KnownCard(id: id, name: nicknames[id] ?? names[id] ?? Words.t("SD card"), personId: person)
         }.sorted { $0.name < $1.name }
+    }
+
+    /// Names given to cards in Settings, by card id: used inside Geotag only,
+    /// the card itself is never changed (0.29.30, David, 17 November 2026).
+    private var cardNicknames: [String: String] {
+        defaults.dictionary(forKey: "cardNicknames") as? [String: String] ?? [:]
+    }
+
+    /// A card renamed in Settings; an empty name goes back to the card's own.
+    public func rename(card: String, to name: String) {
+        var nicknames = cardNicknames
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        nicknames[card] = name.isEmpty ? nil : name
+        defaults.set(nicknames, forKey: "cardNicknames")
+        if var now = source, now.id == card {
+            let own = (defaults.dictionary(forKey: "cardNames") as? [String: String])?[card] ?? now.name
+            now.name = name.isEmpty ? own : name
+            source = now
+        }
+        objectWillChange.send()
     }
 
     /// Who a card belongs to, changed in Settings; the card in now is read again for them.
@@ -1555,9 +1611,11 @@ public final class AppModel: ObservableObject {
         saved[source.id] = personId.uuidString
         defaults.set(saved, forKey: "cardPeople")
         // The card's own name, for the list of SD cards in Settings (0.29.19).
-        var names = defaults.dictionary(forKey: "cardNames") as? [String: String] ?? [:]
-        names[source.id] = source.name
-        defaults.set(names, forKey: "cardNames")
+        if cardNicknames[source.id] == nil {
+            var names = defaults.dictionary(forKey: "cardNames") as? [String: String] ?? [:]
+            names[source.id] = source.name
+            defaults.set(names, forKey: "cardNames")
+        }
         askingWhose = nil
         importPerson = personId
         guard let engine else {

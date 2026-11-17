@@ -13,72 +13,101 @@ struct SettingsTab: View {
     @State private var nasName = PhoneFolders.savedPath(PhoneFolders.nasKey)
     /// Why the server folder cannot be opened, when it cannot (0.29.11).
     @State private var folderProblem: String?
-    /// Offsets typed, by camera, until the checkmark saves them.
-    @State private var offsets: [UUID: String] = [:]
     @State private var showingCode = false
     @State private var changing: AppModel.KnownCard?
+    /// The card being renamed, and the name typed (0.29.30).
+    @State private var renaming: AppModel.KnownCard?
+    @State private var newName = ""
+    /// The track service's address and key open for editing (0.29.30).
+    @State private var editingService = false
+    @State private var showingFormat = false
+    @State private var showingHowTo = false
 
     var owner: Person? { model.macOwner.flatMap { model.book.person($0) } }
 
     /// Something typed and not saved yet: the checkmark turns blue (0.29.25).
-    var unsaved: Bool {
-        model.serviceUnsaved || model.book.cameras.contains { camera in
-            guard let text = offsets[camera.id] else { return false }
-            return Int(text.trimmingCharacters(in: .whitespaces)) != camera.offsetSeconds
-        }
-    }
+    var unsaved: Bool { model.serviceUnsaved }
+
+    /// The address and key as fields: none saved yet, or Change tapped.
+    var serviceFields: Bool { editingService || !model.serviceKeySaved }
 
     var body: some View {
         NavigationStack {
             Form {
+                // One line per camera: its name, and whether its offset is set (0.29.30, David:
+                // the figure itself tells nothing, and it drifts). Set by the offset code.
                 Section(Words.t("Cameras")) {
                     if let owner {
-                        ForEach(model.book.cameras(of: owner.id)) { camera in
-                            CameraRow(camera: camera, text: offset(camera))
-                        }
+                        ForEach(model.book.cameras(of: owner.id)) { CameraLine(camera: $0) }
                     }
                     Button(Words.t("Show offset code")) { showingCode = true }
                 }
                 if !model.book.cameras(of: PhoneFolders.othersId).isEmpty {
                     Section(Words.t("Other cameras")) {
-                        ForEach(model.book.cameras(of: PhoneFolders.othersId)) { camera in
-                            CameraRow(camera: camera, text: offset(camera))
-                        }
+                        ForEach(model.book.cameras(of: PhoneFolders.othersId)) { CameraLine(camera: $0) }
                     }
                 }
                 // Each SD card read, and who it belongs to; changed only here (0.29.19).
                 if !model.knownCards.isEmpty {
                     Section(Words.t("SD cards")) {
                         ForEach(model.knownCards) { card in
-                            HStack {
+                            VStack(alignment: .leading, spacing: 8) {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(card.name)
                                     Text(card.personId == PhoneFolders.othersId ? Words.t("Belongs to someone else") : Words.t("Belongs to you"))
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
-                                Spacer()
-                                Button(Words.t("Change")) { changing = card }
-                                    .buttonStyle(.bordered)
+                                HStack {
+                                    Button(Words.t("Rename")) { newName = card.name; renaming = card }
+                                    Button(Words.t("Change")) { changing = card }
+                                }
+                                .buttonStyle(.bordered)
                             }
                         }
                     }
                 }
-                Section(Words.t("Track service")) {
-                    LabeledContent(Words.t("Address")) {
-                        TextField("", text: $model.serviceAddress)
-                            .textContentType(.URL)
-                            .keyboardType(.URL)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .multilineTextAlignment(.trailing)
-                    }
-                    LabeledContent(Words.t("Key")) {
-                        SecureField("", text: $model.serviceKey)
-                            .multilineTextAlignment(.trailing)
+                Section {
+                    if serviceFields {
+                        LabeledContent(Words.t("Address")) {
+                            TextField("", text: $model.serviceAddress)
+                                .textContentType(.URL)
+                                .keyboardType(.URL)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .multilineTextAlignment(.trailing)
+                        }
+                        LabeledContent(Words.t("Key")) {
+                            SecureField("", text: $model.serviceKey)
+                                .multilineTextAlignment(.trailing)
+                        }
+                        if editingService, model.serviceKeySaved {
+                            Button(Words.t("Cancel")) { model.revertService(); editingService = false }
+                                .buttonStyle(.bordered)
+                        }
+                    } else {
+                        LabeledContent(Words.t("Address")) {
+                            Text(model.serviceAddress).lineLimit(1).truncationMode(.middle)
+                        }
+                        // A key saved: a green check, not its dots (0.29.30).
+                        LabeledContent(Words.t("Key")) {
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                                .accessibilityLabel(Words.t("Saved"))
+                        }
+                        HStack {
+                            Button(Words.t("Change")) { editingService = true }
+                            Button(Words.t("Remove"), role: .destructive) {
+                                editingService = false
+                                Task { await model.removeService() }
+                            }
+                            .tint(.red)
+                        }
+                        .buttonStyle(.bordered)
                     }
                     StatusRow(text: model.settingsLine, busy: model.settingsBusy)
+                } header: {
+                    InfoHeader(title: Words.t("GPS tracks service")) { showingFormat = true }
                 }
-                Section(Words.t("Server")) {
+                Section {
                     Toggle(Words.t("Allow backup over mobile data"),
                            isOn: Binding(get: { model.allowMobileData }, set: { model.setAllowMobileData($0) }))
                     LabeledContent(Words.t("Folder")) {
@@ -92,19 +121,26 @@ struct SettingsTab: View {
                     if let folderProblem {
                         Sentences(text: folderProblem).foregroundStyle(.orange)
                     }
-                    Button(PhoneFolders.isChosen(PhoneFolders.nasKey) ? Words.t("Change") : Words.t("Choose")) {
-                        problem = nil
-                        choosing = true
-                    }
-                    if PhoneFolders.isChosen(PhoneFolders.nasKey) {
-                        Button(Words.t("Remove"), role: .destructive) {
-                            nasName = nil
-                            folderProblem = nil
-                            Task { await model.forgetNASFolder() }
+                    // Change and Remove side by side, as buttons (0.29.30).
+                    HStack {
+                        Button(PhoneFolders.isChosen(PhoneFolders.nasKey) ? Words.t("Change") : Words.t("Choose")) {
+                            problem = nil
+                            choosing = true
+                        }
+                        if PhoneFolders.isChosen(PhoneFolders.nasKey) {
+                            Button(Words.t("Remove"), role: .destructive) {
+                                nasName = nil
+                                folderProblem = nil
+                                Task { await model.forgetNASFolder() }
+                            }
+                            .tint(.red)
                         }
                     }
+                    .buttonStyle(.bordered)
                     StatusRow(text: model.nasLine, busy: model.nasBusy)
-                    NavigationLink(Words.t("How to connect a file server")) { ConnectServer() }
+                } header: {
+                    // The steps to connect a file server, behind the i (0.29.30).
+                    InfoHeader(title: Words.t("Server")) { showingHowTo = true }
                 }
                 if let problem {
                     Section { Sentences(text: problem).foregroundStyle(.secondary) }
@@ -117,11 +153,20 @@ struct SettingsTab: View {
             // The last card's photo behind every tab, veiled (0.29.5, David, 16 November 2026).
             .background(Backdrop(image: model.sidebarImage))
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(isPresented: $showingFormat) { ServiceFormat() }
+            .navigationDestination(isPresented: $showingHowTo) { ConnectServer() }
             .confirmationDialog(Words.t("Is this your card?"),
                                 isPresented: Binding(get: { changing != nil }, set: { if !$0 { changing = nil } }),
                                 titleVisibility: .visible) {
                 Button(Words.t("Yes")) { if let card = changing, let me = model.macOwner { model.setOwner(of: card.id, to: me) } }
                 Button(Words.t("No")) { if let card = changing { model.setOwner(of: card.id, to: PhoneFolders.othersId) } }
+                Button(Words.t("Cancel"), role: .cancel) {}
+            }
+            // The name Geotag shows for a card; the card itself is never changed (0.29.30).
+            .alert(Words.t("Rename SD card"),
+                   isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+                TextField(Words.t("Name"), text: $newName)
+                Button(Words.t("Save")) { if let card = renaming { model.rename(card: card.id, to: newName) } }
                 Button(Words.t("Cancel"), role: .cancel) {}
             }
             .scrollDismissesKeyboard(.immediately)
@@ -154,6 +199,7 @@ struct SettingsTab: View {
             .onAppear {
                 #if DEBUG
                 if CommandLine.arguments.contains("--offset-code") { showingCode = true }
+                if CommandLine.arguments.contains("--service-format") { showingFormat = true }
                 #endif
             }
             .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
@@ -167,27 +213,16 @@ struct SettingsTab: View {
         .fullScreenCover(isPresented: $showingCode) { OffsetCodeScreen() }
     }
 
-    /// What is typed for a camera's offset: its saved offset until changed.
-    func offset(_ camera: Camera) -> Binding<String> {
-        Binding(get: { offsets[camera.id] ?? camera.offsetSeconds.map(String.init) ?? "" },
-                set: { offsets[camera.id] = $0 })
-    }
-
     /// The checkmark (David, 16 November 2026): everything typed is saved,
     /// and the keyboard closes.
     func saveAll() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        for camera in model.book.cameras {
-            guard let text = offsets[camera.id] else { continue }
-            let typed = Int(text.trimmingCharacters(in: .whitespaces))
-            if let typed, typed != camera.offsetSeconds {
-                var changed = camera
-                changed.offsetSeconds = typed
-                model.save(changed)
-            }
+        if model.serviceUnsaved {
+            editingService = false
+            Task { await model.saveService() }
+        } else if editingService {
+            editingService = false
         }
-        offsets = [:]
-        if model.serviceUnsaved { Task { await model.saveService() } }
     }
 
     /// The NAS folder kept for next time, and tried at once.
@@ -212,22 +247,36 @@ struct SettingsTab: View {
     }
 }
 
-/// A camera and its clock offset, in seconds ahead (negative behind), set
-/// by the offset code or typed here and saved with the checkmark.
-struct CameraRow: View {
+/// A camera on one line: its name, and "Offset" with a small green check
+/// once its offset is set, else "Not set" (0.29.30, David, 17 November 2026).
+struct CameraLine: View {
     let camera: Camera
-    @Binding var text: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        HStack {
             Text(camera.model)
-            HStack {
+            Spacer()
+            if camera.offsetSeconds != nil {
                 Text(Words.t("Offset")).foregroundStyle(.secondary)
-                TextField(Words.t("Seconds"), text: $text)
-                    .keyboardType(.numbersAndPunctuation)
-                    .multilineTextAlignment(.trailing)
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).imageScale(.small)
+            } else {
+                Text(Words.t("Not set")).foregroundStyle(.secondary)
             }
-            Text(OffsetText.describe(camera.offsetSeconds)).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// A section heading with a small i on the right that opens its page (0.29.30).
+struct InfoHeader: View {
+    let title: String
+    let open: () -> Void
+
+    var body: some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Button(action: open) { Image(systemName: "info.circle") }
+                .accessibilityLabel(Words.t("About {0}", title))
         }
     }
 }
