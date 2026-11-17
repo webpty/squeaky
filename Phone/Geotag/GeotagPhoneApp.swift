@@ -24,6 +24,7 @@ struct GeotagPhoneApp: App {
     var body: some Scene {
         WindowGroup {
             PhoneRoot(model: model)
+                .background(KeyboardCloser())
                 .task {
                     #if DEBUG
                     if await DebugHooks.flow(model) { exit(0) }
@@ -315,5 +316,41 @@ final class NetworkWatch {
         }
         monitor.start(queue: .global())
         self.monitor = monitor
+    }
+}
+
+
+/// A tap outside a text field closes the keyboard, anywhere in the app (0.29.36). A tap inside
+/// one is left alone, so the field keeps the keyboard and shows Paste. Taps still reach buttons.
+struct KeyboardCloser: UIViewRepresentable {
+    func makeUIView(context: Context) -> Watcher { Watcher() }
+    func updateUIView(_ view: Watcher, context: Context) {}
+
+    final class Watcher: UIView, UIGestureRecognizerDelegate {
+        private weak var watched: UIWindow?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard let window, window !== watched else { return }
+            watched = window
+            let tap = UITapGestureRecognizer(target: self, action: #selector(tapped))
+            tap.cancelsTouchesInView = false
+            tap.delegate = self
+            window.addGestureRecognizer(tap)
+        }
+
+        @objc private func tapped() { watched?.endEditing(true) }
+
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            var view = touch.view
+            while let v = view {
+                if v is UITextField || v is UITextView { return false }
+                view = v.superview
+            }
+            return true
+        }
+
+        func gestureRecognizer(_ g: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
     }
 }

@@ -1231,6 +1231,14 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   Nov 2026, 15:57" on separate lines when they do not fit on one; a line
   begun at a soft break starts with a capital.
 
+## Paste in every field (0.29.36, David, 17 November 2026)
+
+- A tap outside a text field closes the keyboard through `KeyboardCloser`, a
+  window-wide tap watcher that ignores touches inside a `UITextField` or
+  `UITextView` and never cancels touches. The Settings tap gesture of 0.29.25
+  and 0.29.33 is removed: it closed the keyboard on a tap inside the field
+  itself, so Paste never appeared ("i can't paste it").
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

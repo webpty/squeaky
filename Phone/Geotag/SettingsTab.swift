@@ -197,9 +197,6 @@ struct SettingsTab: View {
                     folderProblem = why.localizedDescription
                 }
             }
-            // A tap outside the keyboard closes it (0.29.25), only while typing: always on, it
-            // caught the taps on plain buttons such as Show offset code (0.29.33).
-            .simultaneousGesture(TapGesture().onEnded { typing = false }, including: typing ? .all : .subviews)
             .onAppear {
                 #if DEBUG
                 if CommandLine.arguments.contains("--offset-code") { showingCode = true }
