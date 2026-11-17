@@ -19,9 +19,9 @@ struct PhotosTab: View {
                               busy: model.syncActivity != nil)
                     StatusRow(text: model.photosLine, busy: model.photosBusy || model.saving)
                     // Who the SD card belongs to: said, not changed here (0.29.19); changed in Settings.
-                    if let id = model.importPerson, let person = model.book.person(id) {
+                    if let id = model.importPerson, model.book.person(id) != nil {
                         LabeledContent(Words.t("SD card belongs to"),
-                                       value: id == PhoneFolders.othersId ? Words.t("Someone else") : person.name)
+                                       value: id == PhoneFolders.othersId ? Words.t("someone else") : Words.t("you"))
                     }
                     if !model.rows.isEmpty {
                         LabeledContent(Words.t("Photos"), value: counts)
@@ -233,11 +233,9 @@ struct Square: View {
 struct WhoseCard: View {
     @ObservedObject var model: AppModel
 
-    var owner: String { model.macOwner.flatMap { model.book.person($0)?.name } ?? "" }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(Words.t("Does this SD card belong to {0}?", owner)).font(.headline)
+            Text(Words.t("Is this your card?")).font(.headline)
             HStack(spacing: 10) {
                 Button { pick(model.macOwner) } label: { Text(Words.t("Yes")).frame(maxWidth: .infinity) }
                     .buttonStyle(.borderedProminent)

@@ -13,7 +13,6 @@ struct SettingsTab: View {
     @State private var nasName = PhoneFolders.savedPath(PhoneFolders.nasKey)
     /// Why the server folder cannot be opened, when it cannot (0.29.11).
     @State private var folderProblem: String?
-    @State private var name = ""
     /// Offsets typed, by camera, until the checkmark saves them.
     @State private var offsets: [UUID: String] = [:]
     @State private var showingCode = false
@@ -21,21 +20,17 @@ struct SettingsTab: View {
 
     var owner: Person? { model.macOwner.flatMap { model.book.person($0) } }
 
-    var personUnsaved: Bool {
-        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !n.isEmpty && n != owner?.name
+    /// Something typed and not saved yet: the checkmark turns blue (0.29.25).
+    var unsaved: Bool {
+        model.serviceUnsaved || model.book.cameras.contains { camera in
+            guard let text = offsets[camera.id] else { return false }
+            return Int(text.trimmingCharacters(in: .whitespaces)) != camera.offsetSeconds
+        }
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section(Words.t("Person")) {
-                    LabeledContent(Words.t("Name")) {
-                        TextField("", text: $name)
-                            .textContentType(.name)
-                            .multilineTextAlignment(.trailing)
-                    }
-                }
                 Section(Words.t("Cameras")) {
                     if let owner {
                         ForEach(model.book.cameras(of: owner.id)) { camera in
@@ -58,8 +53,7 @@ struct SettingsTab: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(card.name)
-                                    Text(Words.t("Belongs to {0}", card.personId == PhoneFolders.othersId ? Words.t("someone else")
-                                                 : (model.book.person(card.personId)?.name ?? "")))
+                                    Text(card.personId == PhoneFolders.othersId ? Words.t("Belongs to someone else") : Words.t("Belongs to you"))
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -116,7 +110,7 @@ struct SettingsTab: View {
             // The last card's photo behind every tab, veiled (0.29.5, David, 16 November 2026).
             .background(Backdrop(image: model.sidebarImage))
             .navigationTitle(Words.t("Settings"))
-            .confirmationDialog(Words.t("Does this SD card belong to {0}?", owner?.name ?? ""),
+            .confirmationDialog(Words.t("Is this your card?"),
                                 isPresented: Binding(get: { changing != nil }, set: { if !$0 { changing = nil } }),
                                 titleVisibility: .visible) {
                 Button(Words.t("Yes")) { if let card = changing, let me = model.macOwner { model.setOwner(of: card.id, to: me) } }
@@ -126,7 +120,9 @@ struct SettingsTab: View {
             .scrollDismissesKeyboard(.immediately)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { saveAll() } label: { Image(systemName: "checkmark") }
+                    Button { saveAll() } label: {
+                        Image(systemName: "checkmark").foregroundStyle(unsaved ? Color.blue : Color.secondary)
+                    }
                         .accessibilityLabel(Words.t("Save"))
                         .disabled(model.settingsBusy)
                 }
@@ -143,8 +139,11 @@ struct SettingsTab: View {
                     folderProblem = why.localizedDescription
                 }
             }
+            // A tap outside the keyboard closes it (0.29.25).
+            .simultaneousGesture(TapGesture().onEnded {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            })
             .onAppear {
-                name = owner?.name ?? ""
                 #if DEBUG
                 if CommandLine.arguments.contains("--offset-code") { showingCode = true }
                 #endif
@@ -170,7 +169,6 @@ struct SettingsTab: View {
     /// and the keyboard closes.
     func saveAll() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        if personUnsaved { model.setPhonePerson(name: name) }
         for camera in model.book.cameras {
             guard let text = offsets[camera.id] else { continue }
             let typed = Int(text.trimmingCharacters(in: .whitespaces))

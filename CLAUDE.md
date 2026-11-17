@@ -1098,6 +1098,17 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   Finding no sync file at all is said ("No sync files found on the server."),
   never shown as "not saved yet".
 
+## No name on the phone (0.29.25, David, 17 November 2026)
+
+- The phone's person is set up by itself, tied to the ID the phone gives
+  Geotag (identifierForVendor; apps cannot read the IMEI), with no name: a
+  name typed and never saved left the phone with no person, and the sync
+  files were skipped without a word. The SD card question reads "Is this
+  your card?"; the Photos tab says the card belongs to "you" or "someone
+  else". The Name field is gone from Settings.
+- Settings' checkmark turns blue when something typed is not saved yet;
+  a tap outside the keyboard closes it.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

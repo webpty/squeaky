@@ -540,6 +540,20 @@ public final class AppModel: ObservableObject {
         }
 
         #if os(iOS)
+        // The phone's person, set up by itself and tied to the ID the phone gives Geotag
+        // (0.29.25, David: "just register it to the phone's ... unique ID"); no name needed.
+        if macOwner == nil {
+            let id = UIDevice.current.identifierForVendor ?? UUID()
+            var phone = Person(id: id, name: "")
+            phone.nasFolder = NASThroughFiles.share
+            var next = book
+            if next.person(id) == nil { next.save(phone) }
+            if next.person(PhoneFolders.othersId) == nil { next.save(Person(id: PhoneFolders.othersId, name: "Others")) }
+            try? peopleStore.save(next)
+            book = next
+            macOwner = id
+            defaults.set(id.uuidString, forKey: "macOwner")
+        }
         // Once (0.29.19), before any card is read (0.29.21): cards switched to someone
         // else's by a tap on the old Card row go back to the phone's person.
         if !defaults.bool(forKey: "cardOwnersReset"), let owner = macOwner {
