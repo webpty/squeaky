@@ -55,13 +55,14 @@ enum PhotoDays {
             .sorted { $0.id > $1.id }
     }
 
-    /// "Monday 20 June 2026", in the phone's own long form.
+    /// "17 Nov 2026", in the phone's own short form (0.31.3, David).
     static func title(_ day: PhotoDay) -> String {
         guard let date = day.date else { return Words.t("Date unknown") }
         let f = DateFormatter()
         f.locale = .autoupdatingCurrent
-        f.dateStyle = .full
-        f.timeStyle = .none
+        // Day, short month name and year, in the phone's own order: "17 Nov 2026".
+        // The phone's medium style can be all numbers ("2025-09-20").
+        f.setLocalizedDateFormatFromTemplate("dMMMy")
         return f.string(from: date)
     }
 
@@ -96,30 +97,26 @@ struct DayHeader: View {
 
     var body: some View {
         let all = !day.frames.isEmpty && day.frames.allSatisfy(\.ticked)
-        // The date on a line of its own, so a long one is never cut short;
-        // the count and Select all under it.
-        VStack(alignment: .leading, spacing: 6) {
+        let count = day.frames.count.formatted()
+        // The date, and one button with the count on the same line (0.31.3, David).
+        HStack(spacing: 8) {
             Button(action: toggleOpen) {
                 HStack(spacing: 6) {
                     Image(systemName: "chevron.right")
                         .font(.footnote.weight(.semibold))
                         .rotationEffect(.degrees(open ? 90 : 0))
                     Text(PhotoDays.title(day)).font(.headline).lineLimit(1)
-                    Spacer(minLength: 0)
+                    Spacer(minLength: 8)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            HStack(spacing: 8) {
-                Text(day.frames.count == 1 ? Words.t("1 photo") : Words.t("{0} photos", day.frames.count.formatted()))
-                    .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                Spacer(minLength: 8)
-                Button(all ? Words.t("Deselect all") : Words.t("Select all")) { selectAll(!all) }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .lineLimit(1)
-                    .disabled(!canChange)
-            }
+            Button(all ? Words.t("Deselect {0}", count) : Words.t("Select {0}", count)) { selectAll(!all) }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .lineLimit(1)
+                .fixedSize()
+                .disabled(!canChange)
         }
         .textCase(nil)
         .foregroundStyle(.primary)

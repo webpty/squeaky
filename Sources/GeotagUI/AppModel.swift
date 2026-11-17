@@ -1715,7 +1715,12 @@ public final class AppModel: ObservableObject {
                 HistoryEntry(fileName: $0.fileName, size: $0.size, taken: $0.taken, subSeconds: $0.subSeconds, imported: Date())
             }
             #endif
-            rows = ImportList.rows(photos, history: known, book: book, personId: personId)
+            var listed = ImportList.rows(photos, history: known, book: book, personId: personId)
+            #if os(iOS)
+            // On the phone nothing is selected to start with: chosen by hand (0.31.3, David).
+            for i in listed.indices { listed[i].ticked = false }
+            #endif
+            rows = listed
             refreshBreaks()
             Task { await chooseSidebarPhoto(photos) }
             noteFirmware(photos, personId: personId)

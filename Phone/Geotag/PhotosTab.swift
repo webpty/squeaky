@@ -16,7 +16,7 @@ struct PhotosTab: View {
     @State private var slide: Slide?
     @State private var ignoring = false
     @State private var fingerAt: CGPoint?
-    @State private var listHeight: CGFloat = 0
+    @State private var listFrame: CGRect = .zero
     @State private var rolling: Task<Void, Never>?
 
     var body: some View {
@@ -63,6 +63,12 @@ struct PhotosTab: View {
                                     .foregroundStyle(.red)
                             }
                         } else {
+                            // Every photo on the card at once (0.31.3, David).
+                            let everything = !model.rows.isEmpty && model.rows.allSatisfy(\.ticked)
+                            Button(everything ? Words.t("Deselect all photos") : Words.t("Select all photos")) {
+                                model.setTicked(Set(model.rows.map(\.id)), !everything)
+                            }
+                            .disabled(model.rows.isEmpty || model.photosBusy)
                             Button(Words.t("Save selected photos")) { Task { await model.checkTracksBeforeSave() } }
                                 .disabled(!model.canSave)
                             Button(Words.t("Done with this card")) { model.letGo() }
@@ -75,7 +81,12 @@ struct PhotosTab: View {
                 let _ = foldChanged
                 ForEach(days) { day in
                     let open = PhotoDays.isOpen(day)
+                    // Each day a card: the title and its photos together (0.31.3, David).
                     Section {
+                        DayHeader(day: day, open: open, canChange: canPick,
+                                  toggleOpen: { PhotoDays.setOpen(day, !open); foldChanged += 1 },
+                                  selectAll: { on in model.setTicked(Set(day.frames.flatMap { $0.rows.map(\.id) }), on) })
+                            .listRowSeparator(.hidden)
                         if open {
                             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 3), spacing: 3) {
                                 ForEach(day.frames) { frame in
@@ -84,7 +95,7 @@ struct PhotosTab: View {
                                                failed: frame.rows.contains { if case .failed? = model.results[$0.id] { return true }; return false })
                                         .id(frame.id)
                                         .background(GeometryReader { g in
-                                            Color.clear.preference(key: FrameSpots.self, value: [frame.id: g.frame(in: .named("photos"))])
+                                            Color.clear.preference(key: FrameSpots.self, value: [frame.id: g.frame(in: .global)])
                                         })
                                         .onTapGesture {
                                             guard canPick else { return }
@@ -92,20 +103,15 @@ struct PhotosTab: View {
                                         }
                                 }
                             }
-                            .listRowInsets(EdgeInsets())
-                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 10, trailing: 10))
+                            .listRowSeparator(.hidden)
                             .onAppear { pictures.make(day.frames.map(\.picture)) }
                         }
-                    } header: {
-                        DayHeader(day: day, open: open, canChange: canPick,
-                                  toggleOpen: { PhotoDays.setOpen(day, !open); foldChanged += 1 },
-                                  selectAll: { on in model.setTicked(Set(day.frames.flatMap { $0.rows.map(\.id) }), on) })
                     }
                 }
             }
-            .coordinateSpace(name: "photos")
             .onPreferenceChange(FrameSpots.self) { spots = $0 }
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { listFrame = $0 }
             .scrollDisabled(slide != nil)
             .simultaneousGesture(sliding(days: days(), scroller: scroller))
             .scrollContentBackground(.hidden)
@@ -183,7 +189,9 @@ struct PhotosTab: View {
     /// where the finger is; starting up or down it is left to the scrolling.
     /// Near the top or bottom tenth the page moves by itself (0.31.0).
     func sliding(days: [PhotoDay], scroller: ScrollViewProxy) -> some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .named("photos"))
+        // The finger and the squares in the same screen coordinates (0.31.3: a named
+        // space put the slide one row off).
+        DragGesture(minimumDistance: 12, coordinateSpace: .global)
             .onChanged { value in
                 guard canPick, !ignoring else { return }
                 fingerAt = value.location
@@ -239,12 +247,12 @@ struct PhotosTab: View {
         rolling = Task { @MainActor in
             while !Task.isCancelled, slide != nil {
                 try? await Task.sleep(for: .milliseconds(180))
-                guard let point = fingerAt, let s = slide, listHeight > 0 else { continue }
-                let visible = s.order.enumerated().filter { spots[$0.element].map { $0.maxY > 0 && $0.minY < listHeight } ?? false }.map(\.offset)
+                guard let point = fingerAt, let s = slide, listFrame.height > 0 else { continue }
+                let visible = s.order.enumerated().filter { spots[$0.element].map { $0.maxY > listFrame.minY && $0.minY < listFrame.maxY } ?? false }.map(\.offset)
                 guard let low = visible.min(), let high = visible.max() else { continue }
-                if point.y > listHeight * 0.9, high + 1 < s.order.count {
+                if point.y > listFrame.minY + listFrame.height * 0.9, high + 1 < s.order.count {
                     withAnimation(.linear(duration: 0.17)) { scroller.scrollTo(s.order[min(high + 3, s.order.count - 1)], anchor: .bottom) }
-                } else if point.y < listHeight * 0.1, low > 0 {
+                } else if point.y < listFrame.minY + listFrame.height * 0.1, low > 0 {
                     withAnimation(.linear(duration: 0.17)) { scroller.scrollTo(s.order[max(low - 3, 0)], anchor: .top) }
                 } else {
                     continue

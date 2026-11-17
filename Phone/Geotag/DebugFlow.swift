@@ -38,7 +38,7 @@ extension DebugHooks {
             await model.saveBuffer()
             print("buffer: \(model.bufferLine)")
         }
-        await model.savePhotos()
+        model.setTicked(Set(model.rows.map(\.id)), true); await model.savePhotos()
         while model.saving || model.photosBusy { try? await Task.sleep(for: .milliseconds(200)) }
         print("photos line: \(model.photosLine)")
         for row in model.rows {
@@ -84,7 +84,7 @@ extension DebugHooks {
             camera.offsetSeconds = 0
             model.save(camera)
         }
-        await model.savePhotos()
+        model.setTicked(Set(model.rows.map(\.id)), true); await model.savePhotos()
         while model.saving || model.photosBusy { try? await Task.sleep(for: .milliseconds(200)) }
         let others = PhotoScanner.files(in: PhoneFolders.copies.appendingPathComponent("Others"))
         let savedOthers = model.results.values.filter { $0.url != nil }.count
@@ -160,7 +160,7 @@ extension DebugHooks {
             try? await Task.sleep(for: .seconds(3))
             while model.photosBusy { try? await Task.sleep(for: .milliseconds(200)) }
             model.dontSave()
-            await model.savePhotos()
+            model.setTicked(Set(model.rows.map(\.id)), true); await model.savePhotos()
         }
     }
 }
@@ -190,7 +190,7 @@ extension DebugHooks {
         while model.photosBusy || model.trackCheck == .checking { try? await Task.sleep(for: .milliseconds(100)) }
         model.dontSave()
         guard model.source != nil, !model.rows.isEmpty else { print("pull: FAILED, the card was not read"); return true }
-        let saving = Task { await model.savePhotos() }
+        let saving = Task { model.setTicked(Set(model.rows.map(\.id)), true); await model.savePhotos() }
         let until = Date().addingTimeInterval(30)
         while model.results.isEmpty, Date() < until { try? await Task.sleep(for: .milliseconds(20)) }
         let away = card.deletingLastPathComponent().appendingPathComponent(card.lastPathComponent + "-away")

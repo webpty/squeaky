@@ -1414,6 +1414,17 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   The Sending bars are that blue, solid, with the words white where the bar
   lies under them (`SendingRow`).
 
+## Day cards, nothing selected to start (0.31.3, David, 18 November 2026)
+
+- On the phone every photo starts deselected; "Select all photos" above
+  "Save selected photos" selects the card's every photo.
+- Each day is a card: its title row ("17 Nov 2026", the template "dMMMy" in
+  the phone's order, since the medium style can be all numbers) with one
+  button, "Select 67" or "Deselect 67", then its photos.
+- The slide works in screen coordinates for both the finger and the
+  squares: a named coordinate space put it a row off.
+- The flow tests select every photo before saving.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.
