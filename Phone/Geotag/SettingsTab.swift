@@ -224,7 +224,7 @@ struct SettingsTab: View {
                 PageTitle(title: Words.t("Settings"))
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { saveAll() } label: {
-                        Image(systemName: "checkmark").foregroundStyle(unsaved ? Color.blue : Color.secondary)
+                        Image(systemName: "checkmark").foregroundStyle(unsaved ? Color.heroBlue : Color.secondary)
                     }
                         .accessibilityLabel(Words.t("Save"))
                         .disabled(model.settingsBusy || !unsaved)

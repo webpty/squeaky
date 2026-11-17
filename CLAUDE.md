@@ -1407,6 +1407,13 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   slide up; their separator starts at the row's left edge. Uploads picked
   up again after a reopen are listed in the queue's order, not a set's.
 
+## HeroUI's blue (0.31.2, David, 18 November 2026)
+
+- The phone app's accent is HeroUI's default blue, #0485F7
+  (`Color.heroBlue`, and the AccentColor asset for what the system draws).
+  The Sending bars are that blue, solid, with the words white where the bar
+  lies under them (`SendingRow`).
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

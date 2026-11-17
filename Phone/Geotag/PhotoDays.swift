@@ -139,7 +139,7 @@ struct PickSquare: View {
                 Image(systemName: ticked ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 22))
                     .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white, ticked ? Color.blue : Color.black.opacity(0.25))
+                    .foregroundStyle(.white, ticked ? Color.heroBlue : Color.black.opacity(0.25))
                     .shadow(color: .black.opacity(0.3), radius: 1)
                     .padding(5)
                     .accessibilityLabel(ticked ? Words.t("Selected") : Words.t("Not selected"))

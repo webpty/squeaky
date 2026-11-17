@@ -10,6 +10,12 @@ import UserNotifications
 /// and the NAS reached through the Files app.
 /// The one model, made before any screen: the phone may wake Geotag in the
 /// background to hand back photos sent to the buffer server (0.30.0).
+/// HeroUI's default blue, deeper than the iPhone's own (0.31.2, David):
+/// oklch(62.04% 0.195 253.83), #0485F7. Also the app's accent colour.
+extension Color {
+    static let heroBlue = Color(red: 0.0166, green: 0.5216, blue: 0.9685)
+}
+
 @MainActor
 enum PhoneModel {
     static let shared = AppModel()
@@ -52,6 +58,7 @@ struct GeotagPhoneApp: App {
     var body: some Scene {
         WindowGroup {
             PhoneRoot(model: model)
+                .tint(.heroBlue)
                 .background(KeyboardCloser())
                 .task {
                     #if DEBUG

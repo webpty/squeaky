@@ -152,7 +152,7 @@ struct TrackPicture: View {
                         for p in fitted.dropFirst() { path.addLine(to: p) }
                     }
                     .offset(x: 8, y: 8)
-                    .stroke(Color.blue, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                    .stroke(Color.heroBlue, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
                 }
             }
         }
@@ -216,7 +216,7 @@ struct TrackMapPage: View {
                             for p in fitted.dropFirst() { path.addLine(to: p) }
                         }
                         .offset(x: 16, y: 16)
-                        .stroke(Color.blue, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                        .stroke(Color.heroBlue, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
                         if making {
                             StatusRow(text: Words.t("Making the map"), busy: true)
                                 .padding(8).background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))

@@ -36,15 +36,11 @@ struct QueueTab: View {
                                 // How far it has got on the right, in fixed-width digits (0.29.42).
                                 // The wheel in front of the name: the bar alone moved too slowly to
                                 // show it was working (0.29.43, David).
-                                HStack {
-                                    ProgressView()
-                                    Text(going.name).lineLimit(1).truncationMode(.middle)
-                                    Spacer()
-                                    Text(going.percent).monospacedDigit().foregroundStyle(.secondary)
-                                }
-                                // The line between rows from the left edge, under the wheel (0.31.1).
-                                .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
-                                .listRowBackground(ProgressFill(fraction: going.fraction))
+                                // A solid blue bar, the words white where it lies under them (0.31.2, David).
+                                SendingRow(name: going.name, percent: going.percent, fraction: going.fraction)
+                                    .listRowInsets(EdgeInsets())
+                                    // The line between rows from the left edge, under the wheel (0.31.1).
+                                    .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] + 20 }
                             }
                         }
                     }
@@ -130,17 +126,39 @@ struct QueueTab: View {
     }
 }
 
-/// A row's background filled in blue from the left as far as the photo has got.
-private struct ProgressFill: View {
+/// A photo going up: the wheel, its name and how far it has got, over a
+/// solid blue bar filling from the left; where the bar lies under the words
+/// they turn white (0.31.2, David: a deeper blue).
+private struct SendingRow: View {
+    let name: String
+    let percent: String
     let fraction: Double
-    var body: some View {
-        GeometryReader { box in
-            ZStack(alignment: .leading) {
-                Color(uiColor: .secondarySystemGroupedBackground)
-                Color.blue.opacity(0.45)
-                    .frame(width: box.size.width * min(max(fraction, 0), 1))
-                    .animation(.linear(duration: 0.4), value: fraction)
-            }
+
+    private func words(_ colour: Color, secondary: Color) -> some View {
+        HStack {
+            ProgressView().tint(colour)
+            Text(name).lineLimit(1).truncationMode(.middle).foregroundStyle(colour)
+            Spacer()
+            Text(percent).monospacedDigit().foregroundStyle(secondary)
         }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 11)
+    }
+
+    var body: some View {
+        let share = min(max(fraction, 0), 1)
+        words(.primary, secondary: .secondary)
+            .overlay {
+                GeometryReader { box in
+                    ZStack(alignment: .leading) {
+                        Color.heroBlue
+                            .frame(width: box.size.width * share)
+                        words(.white, secondary: .white)
+                            .frame(width: box.size.width, alignment: .leading)
+                            .mask(alignment: .leading) { Rectangle().frame(width: box.size.width * share) }
+                    }
+                    .animation(.linear(duration: 0.4), value: share)
+                }
+            }
     }
 }

@@ -170,6 +170,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				INFOPLIST_KEY_CFBundleDisplayName = Geotag;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Geotag adds the photos it saves from your cards.";
@@ -177,7 +178,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 0.31.1;
+				MARKETING_VERSION = 0.31.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.webpty.geotag;
 				PRODUCT_NAME = Geotag;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -195,6 +196,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				INFOPLIST_KEY_CFBundleDisplayName = Geotag;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Geotag adds the photos it saves from your cards.";
@@ -202,7 +204,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				MARKETING_VERSION = 0.31.1;
+				MARKETING_VERSION = 0.31.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.webpty.geotag;
 				PRODUCT_NAME = Geotag;
 				SWIFT_EMIT_LOC_STRINGS = YES;
