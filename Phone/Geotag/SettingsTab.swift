@@ -113,8 +113,6 @@ struct SettingsTab: View {
                     InfoHeader(title: Words.t("GPS tracks service")) { showingFormat = true }
                 }
                 Section {
-                    Toggle(Words.t("Allow backup over mobile data"),
-                           isOn: Binding(get: { model.allowMobileData }, set: { model.setAllowMobileData($0) }))
                     LabeledContent(Words.t("Folder")) {
                         // The path being worked out: the wheel (0.29.26).
                         if nasName == nil, PhoneFolders.isChosen(PhoneFolders.nasKey), folderProblem == nil {
@@ -149,6 +147,18 @@ struct SettingsTab: View {
                 }
                 if let problem {
                     Section { Sentences(text: problem).foregroundStyle(.secondary) }
+                }
+                // What the iPhone keeps for Geotag, one tap away (0.29.38, David).
+                Section {
+                    Button {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(Words.t("Open iPhone Settings for Geotag"))
+                            Text(Words.t("Language, access to Photos, notifications and mobile data"))
+                                .font(.footnote).foregroundStyle(Color(uiColor: .secondaryLabel))
+                        }
+                    }
                 }
                 Section {
                     LabeledContent(Words.t("Version"), value: appVersion)

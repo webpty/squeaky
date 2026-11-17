@@ -2927,22 +2927,15 @@ public final class AppModel: ObservableObject {
     /// sending is paused. Called every few seconds from launch; the queue is
     /// on disk, so it carries on after a restart.
     #if os(iOS)
-    /// "Allow backup over mobile data", off to start with (0.29.28, David).
-    @Published public private(set) var allowMobileData = UserDefaults.standard.bool(forKey: "allowMobileData")
-    /// Set by the phone's app from the network it is on.
-    public var onMobileDataOnly = false
-
-    public func setAllowMobileData(_ on: Bool) {
-        allowMobileData = on
-        defaults.set(on, forKey: "allowMobileData")
-        nextTry = nil
-    }
+    /// Mobile data switched off for Geotag in the iPhone's Settings, and no
+    /// Wi-Fi: sending waits (0.29.38; Geotag's own switch is removed, David).
+    public var mobileDataBlocked = false
     #endif
 
     public func sendWaiting() async {
         guard !sendingNow, !sendPaused else { return }
         #if os(iOS)
-        if onMobileDataOnly, !allowMobileData {
+        if mobileDataBlocked {
             if queueEntries.contains(where: { $0.state == .waiting && !$0.held }) { say(Words.t("Waiting for Wi-Fi to back up to the server")) }
             return
         }

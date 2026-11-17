@@ -1255,6 +1255,22 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   simplified"): no `words-zh-Hans.json`, no `zh-Hans.lproj`; a phone in any
   Chinese gets Traditional.
 
+## The iPhone's own settings, linked (0.29.38, David, 17 November 2026)
+
+- Settings the iPhone keeps for Geotag stay there (Apple's convention): the
+  Settings page's last row before the version opens them
+  (`UIApplication.openSettingsURLString`), "Language, access to Photos,
+  notifications and mobile data" under it.
+- "Allow backup over mobile data" is removed (David: "it's clearly a settings
+  setting"); told that upload apps usually keep their own Wi-Fi-only switch,
+  he still chose the iPhone's. `NetworkWatch` now only notices the iPhone
+  keeping Geotag off mobile data with no Wi-Fi (`unsatisfiedReason ==
+  .cellularDenied`): sending waits and says "Waiting for Wi-Fi to back up to
+  the server" instead of failing.
+- Once on each phone (`mobileDataReminded`), an alert at launch: "Mobile
+  data", how to stop sending over it, "Open iPhone Settings" and "Close".
+  Not shown in the debug flow test.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

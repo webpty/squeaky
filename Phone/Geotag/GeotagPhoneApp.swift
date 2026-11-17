@@ -3,6 +3,7 @@ import GeotagUI
 import SwiftUI
 import UIKit
 import Network
+import UserNotifications
 
 /// Geotag on the iPhone (14 November 2026): the Mac's own model, with the
 /// card chosen in the Files list, CR3 and JPG written by Geotag's own writer,
@@ -59,6 +60,7 @@ struct PhoneRoot: View {
     @State private var cards: CardWatch?
     @State private var work: BackgroundWork?
     @State private var network = NetworkWatch()
+    @State private var remindMobileData = false
     @Environment(\.scenePhase) private var phase
 
     enum Tab { case photos, tracks, queue, settings }
@@ -113,7 +115,32 @@ struct PhoneRoot: View {
         .sheet(isPresented: Binding(get: { model.trackCheck != nil }, set: { _ in })) {
             if let check = model.trackCheck { TrackCheckSheet(model: model, check: check) }
         }
+        // Once on each phone: mobile data is the iPhone's to switch off (0.29.38).
+        .alert(Words.t("Mobile data"), isPresented: $remindMobileData) {
+            Button(Words.t("Open iPhone Settings")) {
+                UserDefaults.standard.set(true, forKey: Self.remindedKey)
+                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+            }
+            Button(Words.t("Close"), role: .cancel) { UserDefaults.standard.set(true, forKey: Self.remindedKey) }
+        } message: {
+            Text(Words.t("Geotag sends photos to your server over mobile data when there is no WiFi. To stop it, turn off Mobile Data for Geotag in the iPhone's Settings."))
+        }
+        .task {
+            #if DEBUG
+            if CommandLine.arguments.contains("--flow-test") { return }
+            #endif
+            guard !UserDefaults.standard.bool(forKey: Self.remindedKey) else { return }
+            // After the iPhone's own question about notifications, never on top of it.
+            for _ in 0..<240 {
+                if await UNUserNotificationCenter.current().notificationSettings().authorizationStatus != .notDetermined { break }
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            try? await Task.sleep(for: .milliseconds(600))
+            remindMobileData = true
+        }
     }
+
+    static let remindedKey = "mobileDataReminded"
 }
 
 /// Three dots rising in turn while something is waited for.
@@ -301,7 +328,8 @@ struct Backdrop: View {
     }
 }
 
-/// Whether the phone is on mobile data only, for "Allow backup over mobile data" (0.29.28).
+/// Whether the iPhone keeps Geotag off mobile data with no Wi-Fi about, so
+/// sending waits for Wi-Fi instead of failing (0.29.38).
 @MainActor
 final class NetworkWatch {
     private var monitor: NWPathMonitor?
@@ -310,9 +338,8 @@ final class NetworkWatch {
         guard monitor == nil else { return }
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { [weak model] path in
-            let mobileOnly = path.status == .satisfied && path.usesInterfaceType(.cellular)
-                && !path.usesInterfaceType(.wifi) && !path.usesInterfaceType(.wiredEthernet)
-            Task { @MainActor in model?.onMobileDataOnly = mobileOnly }
+            let blocked = path.status != .satisfied && path.unsatisfiedReason == .cellularDenied
+            Task { @MainActor in model?.mobileDataBlocked = blocked }
         }
         monitor.start(queue: .global())
         self.monitor = monitor
