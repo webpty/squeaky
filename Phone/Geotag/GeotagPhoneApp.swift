@@ -8,9 +8,36 @@ import UserNotifications
 /// Geotag on the iPhone (14 November 2026): the Mac's own model, with the
 /// card chosen in the Files list, CR3 and JPG written by Geotag's own writer,
 /// and the NAS reached through the Files app.
+/// The one model, made before any screen: the phone may wake Geotag in the
+/// background to hand back photos sent to the buffer server (0.30.0).
+@MainActor
+enum PhoneModel {
+    static let shared = AppModel()
+}
+
+/// The phone's call when every background transfer to the buffer server is
+/// done: the next photos are handed over, then the phone is told (0.30.0).
+final class PhoneAppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
+                     completionHandler: @escaping () -> Void) {
+        guard identifier == BufferUploads.identifier else { completionHandler(); return }
+        MainActor.assumeIsolated {
+            let model = PhoneModel.shared
+            model.bufferUploads.finishEvents = {
+                Task { @MainActor in
+                    await model.sendWaiting()
+                    completionHandler()
+                }
+            }
+            model.bufferUploads.wake()
+        }
+    }
+}
+
 @main
 struct GeotagPhoneApp: App {
-    @StateObject private var model = AppModel()
+    @UIApplicationDelegateAdaptor(PhoneAppDelegate.self) private var delegate
+    @StateObject private var model = PhoneModel.shared
     @Environment(\.scenePhase) private var phase
     @State private var finishing: UIBackgroundTaskIdentifier = .invalid
 

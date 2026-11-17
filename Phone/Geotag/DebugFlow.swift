@@ -29,6 +29,14 @@ extension DebugHooks {
         print("camera added from the card: \(camera.model), \(model.photosLine)")
         camera.offsetSeconds = 0
         model.save(camera)
+        // `--buffer <address> <key>`: sent through a stand-in buffer server instead (0.30.0).
+        let viaBuffer = args.firstIndex(of: "--buffer").flatMap { b in args.count > b + 2 ? (args[b + 1], args[b + 2]) : nil }
+        if let (address, key) = viaBuffer {
+            model.bufferAddress = address
+            model.bufferKey = key
+            await model.saveBuffer()
+            print("buffer: \(model.bufferLine)")
+        }
         await model.savePhotos()
         while model.saving || model.photosBusy { try? await Task.sleep(for: .milliseconds(200)) }
         print("photos line: \(model.photosLine)")
@@ -43,6 +51,12 @@ extension DebugHooks {
         for entry in model.queueEntries {
             print("  queue \(entry.relativePath): \(entry.state) \(entry.reason ?? "")")
             if entry.state != .sent { ok = false }
+        }
+        if viaBuffer != nil {
+            print("  route: \(String(describing: model.sendRoute)), waiting on the buffer server: \(String(describing: model.bufferWaiting))")
+            if model.sendRoute != .buffer { ok = false }
+            print(ok ? "flow: all passed" : "flow: FAILED")
+            return true
         }
         let landed = PhotoScanner.files(in: nas)
         for url in landed {

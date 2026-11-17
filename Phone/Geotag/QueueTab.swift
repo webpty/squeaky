@@ -48,12 +48,19 @@ struct QueueTab: View {
                     }
                 }
                 Section {
+                    // Which way photos go now (0.30.0, David).
+                    if let route = model.sendRoute {
+                        Text(route == .nas ? Words.t("Connected to server") : Words.t("Connected to buffer server"))
+                    }
                     if let note = model.backgroundNote { StatusRow(text: note, busy: false) }
                     // While photos go up, the Sending section says it; otherwise why nothing goes.
                     if meter.count == 0 { StatusRow(text: model.queueLine, busy: false) }
                     LabeledContent(Words.t("Waiting"), value: waiting.formatted())
                     if held > 0 { LabeledContent(Words.t("Waiting for the tracks"), value: held.formatted()) }
                     LabeledContent(Words.t("On the NAS"), value: sent.formatted())
+                    if model.bufferKeySaved, let held = model.bufferWaiting {
+                        LabeledContent(Words.t("Waiting on the buffer server"), value: held.formatted())
+                    }
                     // Retry as a round button beside the count, once one has failed (0.29.41).
                     HStack {
                         Text(Words.t("Failed"))
@@ -107,8 +114,14 @@ struct QueueTab: View {
                               && !model.queueEntries.contains { ($0.state == .waiting || $0.state == .sending) && !$0.held })
                 }
             }
-            .task { await model.checkNAS() }
-            .refreshable { await model.checkNAS() }
+            .task {
+                await model.checkNAS()
+                await model.checkBuffer()
+            }
+            .refreshable {
+                await model.checkNAS()
+                await model.checkBuffer()
+            }
         }
     }
 }

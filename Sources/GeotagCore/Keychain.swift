@@ -42,10 +42,16 @@ public struct Keychain: SecretStorePort {
     /// Replaces the value in place, so the item is never removed.
     public func write(_ account: String, _ value: String) throws {
         let data = Data(value.utf8)
-        let status = SecItemUpdate(query(account) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        var change: [String: Any] = [kSecValueData as String: data]
+        #if os(iOS)
+        // Readable once the phone has been unlocked after starting: Geotag woken
+        // with the phone locked hands the next photos to the buffer server (0.30.0).
+        change[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        #endif
+        let status = SecItemUpdate(query(account) as CFDictionary, change as CFDictionary)
         if status == errSecItemNotFound {
             var add = query(account)
-            add[kSecValueData as String] = data
+            add.merge(change) { $1 }
             let added = SecItemAdd(add as CFDictionary, nil)
             guard added == errSecSuccess else { throw KeychainError(status: added) }
         } else if status != errSecSuccess {

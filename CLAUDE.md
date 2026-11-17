@@ -1335,6 +1335,38 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   the time spent looking, sending, reading back and naming, with the sending
   speed. Nothing on screen ("no need to report on the app. at least not yet").
 
+## The buffer server, bufr.cc (0.30.0, David, 17 November 2026)
+
+- Away from home, photos go to bufr.cc (its own project, ../bufr.cc), and a
+  container on the NAS fetches them home; at home they go straight to the
+  NAS as before. Why: the home is behind CGNAT, so Tailscale only reaches the
+  NAS through the Miami relay, about 0.5 MB/s; Cloudflare took 2 MB/s.
+- At home or not: `GET /v1/status` says `atHome` when this device's address
+  is the one the NAS last fetched from. Asked at most once a minute
+  (`useBuffer`); the buffer server not answering means the NAS route.
+- `sendThroughBuffer` hands up to 30 photos at a time to `BufferUploads`: on
+  the iPhone a background URLSession (`.buffer` identifier), which carries on
+  while Geotag is closed or the phone locked, with no notification; on the
+  Mac an ordinary session. Each upload carries its fingerprint, which R2
+  checks: no reading back. When all are done the phone wakes Geotag
+  (`PhoneAppDelegate`, `PhoneModel.shared`) to hand over the next 30.
+  BackgroundWork asks for no continued-processing task on this route.
+- The path sent: the Mac's `nasFolder` ("homes/david/Geotag") plus the
+  photo's relative path; on the phone the Files folder's path
+  (`nasBookmarkPath`, "home/Geotag"), which bufr.cc turns into
+  "homes/<user>/Geotag" from the key.
+- The keychain item on the iPhone is readable after first unlock, so a
+  relaunch with the phone locked still has the key.
+- A photo counts as sent once at bufr.cc. "Waiting on the buffer server"
+  (Queue) is what the NAS has not fetched yet; "Connected to server" or
+  "Connected to buffer server" says the route (David's words).
+- Settings: a "Buffer server" section (phone) and card (Mac), address and
+  key, default address https://bufr.cc.
+- Simulator: `--flow-test ... --buffer <address> <sender key>` sends through
+  a local `wrangler dev` of bufr.cc; then `nas/fetch.py` with `BUFR_ONCE=1`
+  fetches into a scratch folder. A fetch from the same address within ten
+  minutes makes it "at home" and the NAS route is taken: use a fresh store.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

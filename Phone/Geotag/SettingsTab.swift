@@ -18,6 +18,7 @@ struct SettingsTab: View {
     /// The card being renamed, and the name typed (0.29.30).
     /// The track service's address and key open for editing (0.29.30).
     @State private var editingService = false
+    @State private var editingBuffer = false
     @State private var showingFormat = false
     @State private var showingHowTo = false
     /// A field being typed in: only then does a tap anywhere close the keyboard (0.29.33).
@@ -26,7 +27,10 @@ struct SettingsTab: View {
     var owner: Person? { model.macOwner.flatMap { model.book.person($0) } }
 
     /// Something typed and not saved yet: the checkmark turns blue (0.29.25).
-    var unsaved: Bool { model.serviceUnsaved }
+    var unsaved: Bool { model.serviceUnsaved || model.bufferUnsaved }
+
+    /// The buffer server's address and key as fields: none saved yet, or Change tapped (0.30.0).
+    var bufferFields: Bool { editingBuffer || !model.bufferKeySaved }
 
     /// The address and key as fields: none saved yet, or Change tapped.
     var serviceFields: Bool { editingService || !model.serviceKeySaved }
@@ -151,6 +155,45 @@ struct SettingsTab: View {
                     // The steps to connect a file server, behind the i (0.29.30).
                     InfoHeader(title: Words.t("Server")) { showingHowTo = true }
                 }
+                // Away from home, photos go here first; the NAS fetches them (0.30.0, David).
+                Section(Words.t("Buffer server")) {
+                    if bufferFields {
+                        LabeledContent(Words.t("Address")) {
+                            TextField("", text: $model.bufferAddress)
+                                .focused($typing)
+                                .textContentType(.URL)
+                                .keyboardType(.URL)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .multilineTextAlignment(.trailing)
+                        }
+                        LabeledContent(Words.t("Key")) {
+                            SecureField("", text: $model.bufferKey)
+                                .focused($typing)
+                                .multilineTextAlignment(.trailing)
+                        }
+                        if editingBuffer, model.bufferKeySaved {
+                            Button(Words.t("Cancel")) { model.revertBuffer(); editingBuffer = false }
+                                .buttonStyle(.bordered)
+                        }
+                    } else {
+                        LabeledContent(Words.t("Address")) {
+                            Text(model.bufferAddress).lineLimit(1).truncationMode(.middle)
+                        }
+                        LabeledContent(Words.t("Key")) {
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                                .accessibilityLabel(Words.t("Saved"))
+                        }
+                        HStack(spacing: 12) {
+                            HalfButton(Words.t("Change")) { editingBuffer = true }
+                            HalfButton(Words.t("Remove"), role: .destructive) {
+                                editingBuffer = false
+                                Task { await model.removeBuffer() }
+                            }
+                        }
+                    }
+                    StatusRow(text: model.bufferLine, busy: model.bufferBusy)
+                }
                 if let problem {
                     Section { Sentences(text: problem).foregroundStyle(.secondary) }
                 }
@@ -228,6 +271,12 @@ struct SettingsTab: View {
             Task { await model.saveService() }
         } else if editingService {
             editingService = false
+        }
+        if model.bufferUnsaved {
+            editingBuffer = false
+            Task { await model.saveBuffer() }
+        } else if editingBuffer {
+            editingBuffer = false
         }
     }
 

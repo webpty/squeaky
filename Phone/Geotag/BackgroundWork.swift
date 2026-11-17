@@ -45,6 +45,8 @@ final class BackgroundWork {
             Task { @MainActor in
                 // Asked only while Geotag is in front: the phone takes no request from the background.
                 guard UIApplication.shared.applicationState == .active else { return }
+                // Through the buffer server the phone's own transfers carry on: no notification (0.30.0).
+                guard self?.model.sendRoute != .buffer else { return }
                 self?.begin()
             }
         }
@@ -149,6 +151,8 @@ final class BackgroundWork {
                     try? await Task.sleep(for: .milliseconds(500))
                     continue
                 }
+                // Through the buffer server the phone's own transfers take over: done here (0.30.0).
+                if model.sendRoute == .buffer { model.backgroundNote = nil; RunLog.add("handed to the buffer server"); break }
                 // Then the sending, until nothing that can go now is waiting.
                 let (sent, waiting) = counts(since: startSent)
                 if waiting == 0 { model.backgroundNote = nil; RunLog.add("all sent: \(sent)"); break }

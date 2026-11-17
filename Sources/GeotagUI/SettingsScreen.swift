@@ -11,6 +11,7 @@ struct SettingsScreen: View {
                 ScreenTitle(text: "Settings")
                 TrackServiceCard()
                 NASCard()
+                BufferCard()
                 PeopleCard()
                 CamerasCard()
                 if !model.book.lenses.isEmpty { LensesCard() }
@@ -34,6 +35,55 @@ struct SettingsScreen: View {
             }
             .padding(Style.pad * 1.5)
             .frame(maxWidth: 720, alignment: .leading)
+        }
+    }
+}
+
+/// The buffer server, bufr.cc: away from home photos go there, and the NAS
+/// fetches them; at home they go straight to the NAS (0.30.0, David).
+struct BufferCard: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        Card(title: "Buffer server") {
+            Grid(alignment: .leading, horizontalSpacing: Style.gap, verticalSpacing: Style.gap) {
+                GridRow {
+                    Text("Address").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
+                    TextField("", text: $model.bufferAddress)
+                        .textFieldStyle(.roundedBorder)
+                }
+                GridRow {
+                    Text("Key").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
+                    SecureField("", text: $model.bufferKey)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+            HStack(alignment: .firstTextBaseline, spacing: Style.gap) {
+                Button {
+                    Task { await model.saveBuffer() }
+                } label: {
+                    Text("Save").buttonLabel()
+                }
+                // Greyed out until the address or key changes.
+                .disabled(!model.bufferUnsaved)
+                Button {
+                    Task { await model.checkBuffer(showing: true) }
+                } label: {
+                    Text("Test").buttonLabel()
+                }
+                .disabled(!model.bufferKeySaved)
+                Button(role: .destructive) {
+                    Task { await model.removeBuffer() }
+                } label: {
+                    Text("Remove").buttonLabel()
+                }
+                .disabled(!model.bufferKeySaved)
+                StatusLine(text: model.bufferLine, lines: 2, busy: model.bufferBusy)
+            }
+            .disabled(model.bufferBusy)
+        }
+        .task {
+            if model.bufferKeySaved, model.bufferLine.isEmpty { await model.checkBuffer() }
         }
     }
 }

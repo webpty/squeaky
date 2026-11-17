@@ -129,10 +129,17 @@ struct QueueScreen: View {
                 .disabled(failed == 0)
             }
 
+            // Which way photos go now (0.30.0, David).
+            if let route = model.sendRoute {
+                Text(route == .nas ? "Connected to server" : "Connected to buffer server").lineLimit(1)
+            }
             HStack(spacing: Style.gap) {
                 Tile(label: "NAS", value: QueueText.reach(model.nasReach))
                 Tile(label: "Waiting", value: waiting.formatted())
                 Tile(label: "On the NAS", value: sent.formatted())
+                if model.bufferKeySaved, let held = model.bufferWaiting {
+                    Tile(label: "Waiting on the buffer server", value: held.formatted())
+                }
                 Tile(label: "Not sent", value: failed.formatted())
                 Tile(label: "Freed on this Mac", value: ByteCountFormatter.string(fromByteCount: model.freedOnMac, countStyle: .file))
             }

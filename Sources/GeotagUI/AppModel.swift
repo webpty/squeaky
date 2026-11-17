@@ -105,6 +105,22 @@ public final class AppModel: ObservableObject {
         screen = page
     }
 
+    // The buffer server, bufr.cc, as set in Settings (0.30.0).
+    @Published public var bufferAddress = ""
+    @Published public var bufferKey = ""
+    @Published public var bufferLine = ""
+    @Published public private(set) var bufferBusy = false
+    /// Photos sent to the buffer server that the NAS has not fetched yet, as last asked.
+    @Published public private(set) var bufferWaiting: Int?
+    /// Which way photos go now: straight to the NAS, or through the buffer server.
+    @Published public private(set) var sendRoute: SendRoute?
+    @Published private var savedBuffer = ServiceFields()
+    private var bufferAsked: (at: Date, atHome: Bool?)?
+    private var bufferTopping = false
+    public let bufferUploads = BufferUploads()
+
+    public enum SendRoute: Sendable { case nas, buffer }
+
     // Track service, as set in Settings.
     @Published public var serviceAddress = ""
     @Published public var serviceKey = ""
@@ -505,6 +521,15 @@ public final class AppModel: ObservableObject {
         defaults.removeObject(forKey: "cardNicknames")
         readSecrets()
         savedService = ServiceFields(address: serviceAddress, key: serviceKey)
+        bufferAddress = defaults.string(forKey: "bufferAddress") ?? ""
+        if bufferAddress.isEmpty { bufferAddress = "https://bufr.cc" }
+        savedBuffer = ServiceFields(address: bufferAddress, key: bufferKey)
+        bufferUploads.onProgress = { [weak self] id, fraction in
+            guard let self, self.meter.going[id] != nil else { return }
+            self.meter.show(.sending(fraction), for: id)
+        }
+        bufferUploads.onDone = { [weak self] id, problem, seconds in self?.bufferDone(id, problem: problem, seconds: seconds) }
+        bufferUploads.wake()
         mapCredit = defaults.string(forKey: "mapCredit") ?? ""
         nasAddress = defaults.string(forKey: "nasAddress") ?? ""
         nasBackupAddress = defaults.string(forKey: "nasBackupAddress") ?? ""
@@ -764,6 +789,8 @@ public final class AppModel: ObservableObject {
     private struct StoredSecrets: Codable {
         var serviceKey: String
         var nasPassword: String
+        /// The buffer server's key, from 0.30.0.
+        var bufferKey: String?
     }
 
     private func readSecrets() {
@@ -771,14 +798,16 @@ public final class AppModel: ObservableObject {
         if raw.hasPrefix("{"), let stored = try? JSONDecoder().decode(StoredSecrets.self, from: Data(raw.utf8)) {
             serviceKey = stored.serviceKey
             nasPassword = stored.nasPassword
+            bufferKey = stored.bufferKey ?? ""
         } else {
             // Kept before 0.12.0: the service key alone.
             serviceKey = raw
         }
     }
 
-    private func writeSecrets(serviceKey: String, nasPassword: String) throws {
-        let data = try JSONEncoder().encode(StoredSecrets(serviceKey: serviceKey, nasPassword: nasPassword))
+    private func writeSecrets(serviceKey: String, nasPassword: String, bufferKey: String? = nil) throws {
+        let data = try JSONEncoder().encode(StoredSecrets(serviceKey: serviceKey, nasPassword: nasPassword,
+                                                          bufferKey: bufferKey ?? savedBuffer.key))
         try secrets.write(Self.keyAccount, String(decoding: data, as: UTF8.self))
     }
 
@@ -2679,6 +2708,7 @@ public final class AppModel: ObservableObject {
     public func setSendPaused(_ on: Bool) {
         sendPaused = on
         defaults.set(on, forKey: "sendPaused")
+        if on, sendRoute == .buffer { bufferUploads.cancelAll() }
         if on {
             say(meter.count == 0 ? Words.t("Paused.") : meter.count == 1 ? Words.t("Pausing after this photo.") : Words.t("Pausing after these {0} photos.", meter.count))
         } else {
@@ -2921,6 +2951,12 @@ public final class AppModel: ObservableObject {
         }
         #endif
         if let next = nextTry, Date() < next { return }
+        // Away from home, through the buffer server (0.30.0).
+        if await useBuffer() {
+            await sendThroughBuffer()
+            return
+        }
+        if sendRoute != .nas, queueEntries.contains(where: { $0.state == .waiting && !$0.held }) { sendRoute = .nas }
         sendingNow = true
         defer {
             sendingNow = false
@@ -3388,5 +3424,224 @@ public final class AppModel: ObservableObject {
 
     public func points(_ id: String) async -> TrackPoints? {
         await library.points(id)
+    }
+}
+
+
+// MARK: The buffer server (0.30.0, David, 17 November 2026)
+
+extension AppModel {
+    var bufferClient: BufferClient? { BufferClient(address: savedBuffer.address, key: savedBuffer.key) }
+
+    /// A key has been saved for the buffer server.
+    public var bufferKeySaved: Bool { !savedBuffer.key.isEmpty }
+
+    /// The address or key differs from what was saved.
+    public var bufferUnsaved: Bool { ServiceFields(address: bufferAddress, key: bufferKey) != savedBuffer }
+
+    public func revertBuffer() {
+        bufferAddress = savedBuffer.address
+        bufferKey = savedBuffer.key
+    }
+
+    public func saveBuffer() async {
+        let fields = ServiceFields(address: bufferAddress, key: bufferKey)
+        do {
+            try writeSecrets(serviceKey: savedService.key, nasPassword: savedNAS.password, bufferKey: fields.key)
+        } catch {
+            bufferLine = error.localizedDescription
+            return
+        }
+        defaults.set(fields.address, forKey: "bufferAddress")
+        savedBuffer = fields
+        bufferAsked = nil
+        await checkBuffer(saying: Words.t("Saved. "))
+    }
+
+    public func removeBuffer() async {
+        do {
+            try writeSecrets(serviceKey: savedService.key, nasPassword: savedNAS.password, bufferKey: "")
+        } catch {
+            bufferLine = error.localizedDescription
+            return
+        }
+        bufferUploads.cancelAll()
+        bufferKey = ""
+        savedBuffer = ServiceFields(address: savedBuffer.address, key: "")
+        bufferAddress = savedBuffer.address
+        bufferWaiting = nil
+        bufferAsked = nil
+        bufferLine = ""
+    }
+
+    /// Asks the buffer server how it stands: the key, and how many photos wait there for the NAS.
+    public func checkBuffer(saying prefix: String = "", showing: Bool = false) async {
+        guard let client = bufferClient else { bufferLine = prefix.trimmingCharacters(in: .whitespaces); return }
+        bufferBusy = true
+        defer { bufferBusy = false }
+        if !prefix.isEmpty || showing { bufferLine = prefix + Words.t("Checking the buffer server") }
+        do {
+            let status = try await client.status()
+            bufferWaiting = status.waiting
+            bufferAsked = (Date(), status.atHome)
+            bufferLine = prefix + (status.role == "sender" ? Words.t("Key accepted.") : Words.t("This key can't send photos."))
+        } catch {
+            bufferLine = prefix + error.localizedDescription
+        }
+    }
+
+    /// Through the buffer server when one is set up and this device is away
+    /// from home; asked at most once a minute. The buffer server not
+    /// answering: straight to the NAS, as before.
+    func useBuffer() async -> Bool {
+        guard let client = bufferClient else {
+            if sendRoute == .buffer { sendRoute = nil }
+            return false
+        }
+        let waiting = queueEntries.contains { ($0.state == .waiting || $0.state == .sending) && !$0.held }
+        if let asked = bufferAsked, Date().timeIntervalSince(asked.at) < 60 {
+            if let atHome = asked.atHome { return !atHome }
+            return false
+        }
+        // Nothing to send and nothing on its way: no need to ask.
+        guard waiting || meter.count > 0 else { return sendRoute == .buffer }
+        do {
+            let status = try await client.status()
+            bufferWaiting = status.waiting
+            bufferAsked = (Date(), status.atHome)
+            return !status.atHome
+        } catch {
+            bufferAsked = (Date(), nil)
+            return false
+        }
+    }
+
+    /// Hands waiting photos to the phone's transfers, up to 30 on their way
+    /// at once, so a closed or locked phone carries on with them; topped up
+    /// as they finish.
+    func sendThroughBuffer() async {
+        guard let client = bufferClient, !bufferTopping, !sendPaused else { return }
+        bufferTopping = true
+        defer { bufferTopping = false }
+        if sendRoute != .buffer { sendRoute = .buffer }
+        sendingThrough = client.address.host ?? "bufr.cc"
+        let flying = await bufferUploads.inFlight()
+        // Marked as going but no longer on their way (Geotag closed meanwhile): waiting again.
+        if queueEntries.contains(where: { $0.state == .sending && !flying.contains($0.id) }) {
+            changeQueue { all in
+                for i in all.indices where all[i].state == .sending && !flying.contains(all[i].id) { all[i].state = .waiting }
+            }
+        }
+        for id in flying where meter.going[id] == nil {
+            if let entry = queueEntries.first(where: { $0.id == id }) {
+                meter.begin(id, name: (entry.relativePath as NSString).lastPathComponent)
+            }
+        }
+        var room = 30 - flying.count
+        while room > 0, !sendPaused, let entry = nextToSend() {
+            guard let folder = book.person(entry.personId)?.nasFolder, NASFolder(folder) != nil else { break }
+            let local = URL(fileURLWithPath: entry.localPath)
+            let fingerprint: (sha256: String, size: Int64)? = await withCheckedContinuation { done in
+                DispatchQueue.global(qos: .utility).async { done.resume(returning: try? BufferClient.fingerprint(of: local)) }
+            }
+            guard let fingerprint else {
+                batchFailed += 1
+                changeEntry(entry.id) { e in
+                    e.state = .failed
+                    e.reason = Words.t("The copy here could not be read.")
+                }
+                continue
+            }
+            #if os(iOS)
+            // The phone's folder as the Files app names it: "home/Geotag", the
+            // logged-in user's home; the buffer server knows whose from the key.
+            let base = UserDefaults.standard.string(forKey: PhoneFolders.nasKey + "Path") ?? PhoneFolders.path(PhoneFolders.nasKey)
+            #else
+            let base: String? = folder
+            #endif
+            guard let base, !base.isEmpty else {
+                changeEntry(entry.id) { e in
+                    e.reason = Words.t("Choose the server folder in Settings first.")
+                    e.notBefore = Date().addingTimeInterval(60)
+                }
+                continue
+            }
+            let path = base.split(separator: "/").joined(separator: "/") + "/" + entry.relativePath
+            let modified = (try? FileManager.default.attributesOfItem(atPath: local.path))?[.modificationDate] as? Date
+            let request = client.upload(path: path, sha256: fingerprint.sha256, size: fingerprint.size,
+                                        modified: modified, update: entry.update)
+            changeEntry(entry.id) { $0.state = .sending }
+            meter.begin(entry.id, name: (entry.relativePath as NSString).lastPathComponent)
+            sendingBatch = true
+            bufferUploads.send(entry.id, file: local, request: request)
+            room -= 1
+        }
+        if meter.count > 0 {
+            sayGoing()
+        } else {
+            sendingThrough = nil
+            sendingBatch = false
+            say(sendPaused ? Words.t("Paused.") : restingLine())
+            let waiting = queueEntries.contains { $0.state == .waiting && NASFolder(book.person($0.personId)?.nasFolder) != nil }
+            if !sendPaused, !waiting, !saving, !placingLater, batchSent + batchFailed > 0 {
+                notifier.post(Self.batchText(sent: batchSent, failed: batchFailed))
+                await shareWithServer()
+                batchSent = 0
+                batchFailed = 0
+            }
+        }
+        refreshWork()
+    }
+
+    /// One photo back from the buffer server.
+    func bufferDone(_ id: UUID, problem: (why: String, again: Bool)?, seconds: TimeInterval?) {
+        meter.end(id)
+        entrySizes[id] = nil
+        guard let entry = queueEntries.first(where: { $0.id == id }) else { return }
+        if let problem {
+            if problem.again {
+                changeEntry(id) { e in
+                    e.state = .waiting
+                    if problem.why != Words.t("Paused.") {
+                        e.tries += 1
+                        e.reason = problem.why
+                        e.notBefore = Date().addingTimeInterval(Double(min(e.tries, 10)) * 60)
+                    }
+                }
+            } else {
+                batchFailed += 1
+                changeEntry(id) { e in
+                    e.state = .failed
+                    e.reason = problem.why
+                }
+            }
+        } else {
+            batchSent += 1
+            let before = SentRecord.stamp(entry.localPath)
+            let bytes = before?.size ?? size(of: entry)
+            if let seconds, let address = sendingThrough ?? bufferClient?.address.host {
+                sendSpeeds.add(bytes: bytes, seconds: seconds, for: address)
+                if let data = try? JSONEncoder().encode(sendSpeeds) { defaults.set(data, forKey: "sendSpeeds") }
+                onPhotoTimed?((entry.relativePath as NSString).lastPathComponent, Int64(bytes), [0, seconds, 0, 0])
+            }
+            if let before {
+                let record = SentRecord(personId: entry.personId, localPath: entry.localPath, nasPath: entry.relativePath,
+                                        sent: Date(), size: before.size, modified: before.modified)
+                try? sentLog.add([record])
+                sentRecords.append(record)
+                sentSinceTidy = true
+            }
+            changeEntry(id) { e in
+                e.state = .sent
+                e.sent = Date()
+                e.sentAs = nil
+                e.reason = nil
+                e.notBefore = nil
+            }
+            bufferWaiting = (bufferWaiting ?? 0) + 1
+        }
+        refreshWork()
+        // The next ones handed over straight away, on the phone also while it is locked.
+        Task { await sendThroughBuffer() }
     }
 }
