@@ -10,9 +10,18 @@ struct PhotosTab: View {
     @State private var choosing = false
     @StateObject private var pictures = Pictures()
     @State private var showingFailed = false
+    // Days and selecting (0.31.0).
+    @State private var foldChanged = 0
+    @State private var spots: [String: CGRect] = [:]
+    @State private var slide: Slide?
+    @State private var ignoring = false
+    @State private var fingerAt: CGPoint?
+    @State private var listHeight: CGFloat = 0
+    @State private var rolling: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
+          ScrollViewReader { scroller in
             List {
                 Section {
                     if let note = model.backgroundNote { StatusRow(text: note, busy: false) }
@@ -54,34 +63,51 @@ struct PhotosTab: View {
                                     .foregroundStyle(.red)
                             }
                         } else {
-                            Button(Words.t("Save photos")) { Task { await model.checkTracksBeforeSave() } }
+                            Button(Words.t("Save selected photos")) { Task { await model.checkTracksBeforeSave() } }
                                 .disabled(!model.canSave)
                             Button(Words.t("Done with this card")) { model.letGo() }
                                 .disabled(model.photosBusy)
                         }
                     }
                 }
-                // The photos to be saved, as squares (0.29.1, David, 16 November 2026).
-                // Only while the card is in: once out, its pictures cannot be read (0.29.5).
-                let waiting = shown
-                if !waiting.isEmpty {
+                // The photos by day, to choose what is saved (0.31.0, David, 18 November 2026).
+                let days = PhotoDays.days(shown: shown, all: model.rows, model: model)
+                let _ = foldChanged
+                ForEach(days) { day in
+                    let open = PhotoDays.isOpen(day)
                     Section {
-                        // Squares of one size, a small gap between them, corners rounded (0.29.9).
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 3), spacing: 3) {
-                            ForEach(waiting) { row in
-                                Square(image: pictures.made[model.pictureURL(row) ?? row.photo.url],
-                                       saved: model.results[row.id]?.url != nil,
-                                       failed: { if case .failed? = model.results[row.id] { return true }; return false }())
+                        if open {
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 3), spacing: 3) {
+                                ForEach(day.frames) { frame in
+                                    PickSquare(image: pictures.made[frame.picture], ticked: frame.ticked,
+                                               saved: frame.rows.contains { model.results[$0.id]?.url != nil },
+                                               failed: frame.rows.contains { if case .failed? = model.results[$0.id] { return true }; return false })
+                                        .id(frame.id)
+                                        .background(GeometryReader { g in
+                                            Color.clear.preference(key: FrameSpots.self, value: [frame.id: g.frame(in: .named("photos"))])
+                                        })
+                                        .onTapGesture {
+                                            guard canPick else { return }
+                                            model.setTicked(Set(frame.rows.map(\.id)), !frame.ticked)
+                                        }
+                                }
                             }
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
+                            .onAppear { pictures.make(day.frames.map(\.picture)) }
                         }
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
+                    } header: {
+                        DayHeader(day: day, open: open, canChange: canPick,
+                                  toggleOpen: { PhotoDays.setOpen(day, !open); foldChanged += 1 },
+                                  selectAll: { on in model.setTicked(Set(day.frames.flatMap { $0.rows.map(\.id) }), on) })
                     }
-                    .onAppear { pictures.make(waiting.map { model.pictureURL($0) ?? $0.photo.url }) }
-                    // Made again when a picture's file changes: from the card to the copy once the card is out.
-                    .onChange(of: waiting.map { model.pictureURL($0) ?? $0.photo.url }) { _, urls in pictures.make(urls) }
                 }
             }
+            .coordinateSpace(name: "photos")
+            .onPreferenceChange(FrameSpots.self) { spots = $0 }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }
+            .scrollDisabled(slide != nil)
+            .simultaneousGesture(sliding(days: days(), scroller: scroller))
             .scrollContentBackground(.hidden)
             // The last card's photo behind every tab, veiled (0.29.5, David, 16 November 2026).
             .background(Backdrop(image: model.sidebarImage))
@@ -111,6 +137,7 @@ struct PhotosTab: View {
                 }
             }
             #endif
+          }
         }
         .sheet(isPresented: $showingFailed) { NotSaved(model: model) }
         // Apart from the Files list above: two on one view and neither opens.
@@ -119,18 +146,17 @@ struct PhotosTab: View {
         }
     }
 
-    /// The photos still to be saved, one square per frame: the JPG of a RAW+JPG pair.
+    /// The photos shown, one square per frame: the JPG of a RAW+JPG pair.
     var shown: [ImportRow] {
-        // Still to save while the card is in, and saved from this card: those keep their square,
-        // from the copy on the phone once the card is out, with a check (0.29.12).
+        // While the card is in, every photo on it, to choose from (0.31.0); once out, the
+        // copies saved from it still on the phone, with a check (0.29.12).
         let cardIn = model.source != nil
         let waiting = model.rows.filter { row in
             if let copy = model.results[row.id]?.url {
                 // Card out: only a copy still on the phone has a picture; a raw sent to the server has none (0.29.14).
                 return cardIn || FileManager.default.fileExists(atPath: copy.path)
             }
-            if case .failed? = model.results[row.id] { return cardIn }
-            return cardIn && row.willImport && model.results[row.id] == nil
+            return cardIn
         }
         var seen = Set<String>()
         let jpgFirst = waiting.sorted { a, b in
@@ -144,6 +170,89 @@ struct PhotosTab: View {
             if seen.insert(frame).inserted { keep.insert(row.id) }
         }
         return waiting.filter { keep.contains($0.id) }
+    }
+
+    /// The days as shown now, for the slide.
+    func days() -> [PhotoDay] { PhotoDays.days(shown: shown, all: model.rows, model: model) }
+
+    /// Photos can be selected while the card is in and nothing is being saved.
+    var canPick: Bool { model.source != nil && !model.saving }
+
+    /// A slide over the squares: starting sideways it selects, or deselects
+    /// when it starts on a selected one, everything from where it began to
+    /// where the finger is; starting up or down it is left to the scrolling.
+    /// Near the top or bottom tenth the page moves by itself (0.31.0).
+    func sliding(days: [PhotoDay], scroller: ScrollViewProxy) -> some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .named("photos"))
+            .onChanged { value in
+                guard canPick, !ignoring else { return }
+                fingerAt = value.location
+                if slide == nil {
+                    let sideways = abs(value.translation.width) > abs(value.translation.height)
+                    guard sideways, let first = frame(at: value.startLocation) else { ignoring = true; return }
+                    let open = days.filter { PhotoDays.isOpen($0) }
+                    let frames = open.flatMap(\.frames)
+                    let order = frames.map(\.id)
+                    guard let start = order.firstIndex(of: first) else { ignoring = true; return }
+                    var before: [String: Bool] = [:]
+                    for f in frames { before[f.id] = f.ticked }
+                    slide = Slide(order: order, start: start, select: !(before[first] ?? false), before: before, last: start)
+                    roll(scroller: scroller, frames: frames)
+                }
+                reach()
+            }
+            .onEnded { _ in
+                slide = nil
+                ignoring = false
+                fingerAt = nil
+                rolling?.cancel()
+                rolling = nil
+            }
+    }
+
+    /// The square under a point, if any.
+    func frame(at point: CGPoint) -> String? {
+        spots.first { $0.value.contains(point) }?.key
+    }
+
+    /// Everything from the start of the slide to the square under the finger set as the slide says.
+    func reach() {
+        let frames = days().flatMap(\.frames)
+        guard var s = slide, let point = fingerAt, let id = frame(at: point), let now = s.order.firstIndex(of: id), now != s.last else { return }
+        s.last = now
+        slide = s
+        let range = min(s.start, now)...max(s.start, now)
+        let byId = Dictionary(uniqueKeysWithValues: frames.map { ($0.id, $0) })
+        var on = Set<String>(), off = Set<String>()
+        for (i, fid) in s.order.enumerated() {
+            guard let f = byId[fid] else { continue }
+            let want = range.contains(i) ? s.select : (s.before[fid] ?? false)
+            if want != f.ticked { f.rows.forEach { if want { on.insert($0.id) } else { off.insert($0.id) } } }
+        }
+        model.setTicked(on, true)
+        model.setTicked(off, false)
+    }
+
+    /// While the finger is in the top or bottom tenth, the page moves a row at a time.
+    func roll(scroller: ScrollViewProxy, frames: [PhotoFrame]) {
+        rolling?.cancel()
+        rolling = Task { @MainActor in
+            while !Task.isCancelled, slide != nil {
+                try? await Task.sleep(for: .milliseconds(180))
+                guard let point = fingerAt, let s = slide, listHeight > 0 else { continue }
+                let visible = s.order.enumerated().filter { spots[$0.element].map { $0.maxY > 0 && $0.minY < listHeight } ?? false }.map(\.offset)
+                guard let low = visible.min(), let high = visible.max() else { continue }
+                if point.y > listHeight * 0.9, high + 1 < s.order.count {
+                    withAnimation(.linear(duration: 0.17)) { scroller.scrollTo(s.order[min(high + 3, s.order.count - 1)], anchor: .bottom) }
+                } else if point.y < listHeight * 0.1, low > 0 {
+                    withAnimation(.linear(duration: 0.17)) { scroller.scrollTo(s.order[max(low - 3, 0)], anchor: .top) }
+                } else {
+                    continue
+                }
+                try? await Task.sleep(for: .milliseconds(30))
+                reach()
+            }
+        }
     }
 
     /// "8 photos: Camera time offset not set".

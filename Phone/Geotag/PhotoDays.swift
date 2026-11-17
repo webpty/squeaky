@@ -1,0 +1,158 @@
+import GeotagCore
+import GeotagUI
+import SwiftUI
+
+/// The photos on the Photos page, one section per day (0.31.0, David,
+/// 18 November 2026): newest day first, earliest photo first within it; a
+/// blue tick on each to choose what is saved; a tap selects or deselects, a
+/// slide that starts sideways selects or deselects everything from where it
+/// began to where the finger is, scrolling by itself near the edges; each
+/// day folds away, remembered, and days copied before start folded with no
+/// pictures made until opened.
+struct PhotoDay: Identifiable {
+    let id: String          // "2026-06-20"
+    let date: Date?
+    var frames: [PhotoFrame]
+    /// Every photo of the day was copied before, or has been now.
+    var copied: Bool
+}
+
+/// One square: the JPG of a RAW+JPG pair, standing for both.
+struct PhotoFrame: Identifiable {
+    let id: String          // the shown row's id
+    let rows: [ImportRow]   // every file of the frame
+    let picture: URL
+    let taken: String
+    var ticked: Bool { rows.contains(where: \.ticked) }
+}
+
+enum PhotoDays {
+    static let key = "photoDaysOpen"
+
+    /// The days, from the rows shown and every file belonging to each frame.
+    @MainActor
+    static func days(shown: [ImportRow], all: [ImportRow], model: AppModel) -> [PhotoDay] {
+        func frameKey(_ r: ImportRow) -> String { (r.photo.fileName as NSString).deletingPathExtension + "|" + (r.photo.taken ?? "") }
+        var byFrame: [String: [ImportRow]] = [:]
+        for r in all { byFrame[frameKey(r), default: []].append(r) }
+        var days: [String: PhotoDay] = [:]
+        let parse = DateFormatter()
+        parse.locale = Locale(identifier: "en_US_POSIX")
+        parse.dateFormat = "yyyy:MM:dd"
+        for row in shown {
+            let taken = row.photo.taken ?? ""
+            let day = String(taken.prefix(10))
+            let id = day.isEmpty ? "unknown" : day.replacingOccurrences(of: ":", with: "-")
+            let files = byFrame[frameKey(row)] ?? [row]
+            let frame = PhotoFrame(id: row.id, rows: files, picture: model.pictureURL(row) ?? row.photo.url, taken: taken)
+            let copied = files.allSatisfy { model.isSaved($0) }
+            if days[id] == nil { days[id] = PhotoDay(id: id, date: parse.date(from: day), frames: [], copied: true) }
+            days[id]!.frames.append(frame)
+            if !copied { days[id]!.copied = false }
+        }
+        return days.values
+            .map { var d = $0; d.frames.sort { $0.taken < $1.taken }; return d }
+            .sorted { $0.id > $1.id }
+    }
+
+    /// "Monday 20 June 2026", in the phone's own long form.
+    static func title(_ day: PhotoDay) -> String {
+        guard let date = day.date else { return Words.t("Date unknown") }
+        let f = DateFormatter()
+        f.locale = .autoupdatingCurrent
+        f.dateStyle = .full
+        f.timeStyle = .none
+        return f.string(from: date)
+    }
+
+    /// Days opened or folded by hand; the rest follow whether they were copied before.
+    static func isOpen(_ day: PhotoDay) -> Bool {
+        let chosen = UserDefaults.standard.dictionary(forKey: key) as? [String: Bool] ?? [:]
+        return chosen[day.id] ?? !day.copied
+    }
+
+    static func setOpen(_ day: PhotoDay, _ open: Bool) {
+        var chosen = UserDefaults.standard.dictionary(forKey: key) as? [String: Bool] ?? [:]
+        chosen[day.id] = open
+        UserDefaults.standard.set(chosen, forKey: key)
+    }
+}
+
+/// Where each square is on screen, for the slide.
+struct FrameSpots: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+/// The day's title: fold, name, count, Select all.
+struct DayHeader: View {
+    let day: PhotoDay
+    let open: Bool
+    let canChange: Bool
+    let toggleOpen: () -> Void
+    let selectAll: (Bool) -> Void
+
+    var body: some View {
+        let all = !day.frames.isEmpty && day.frames.allSatisfy(\.ticked)
+        // The date on a line of its own, so a long one is never cut short;
+        // the count and Select all under it.
+        VStack(alignment: .leading, spacing: 6) {
+            Button(action: toggleOpen) {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .rotationEffect(.degrees(open ? 90 : 0))
+                    Text(PhotoDays.title(day)).font(.headline).lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            HStack(spacing: 8) {
+                Text(day.frames.count == 1 ? Words.t("1 photo") : Words.t("{0} photos", day.frames.count.formatted()))
+                    .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                Spacer(minLength: 8)
+                Button(all ? Words.t("Deselect all") : Words.t("Select all")) { selectAll(!all) }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .lineLimit(1)
+                    .disabled(!canChange)
+            }
+        }
+        .textCase(nil)
+        .foregroundStyle(.primary)
+    }
+}
+
+/// A square with its blue tick, top left.
+struct PickSquare: View {
+    let image: UIImage?
+    let ticked: Bool
+    let saved: Bool
+    let failed: Bool
+
+    var body: some View {
+        Square(image: image, saved: saved, failed: failed)
+            .overlay(alignment: .topLeading) {
+                Image(systemName: ticked ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, ticked ? Color.blue : Color.black.opacity(0.25))
+                    .shadow(color: .black.opacity(0.3), radius: 1)
+                    .padding(5)
+                    .accessibilityLabel(ticked ? Words.t("Selected") : Words.t("Not selected"))
+            }
+    }
+}
+
+/// The slide in progress: where it began, the order of the squares, and
+/// how each was before it, so moving back puts them as they were.
+struct Slide {
+    var order: [String]
+    var start: Int
+    var select: Bool
+    var before: [String: Bool]
+    var last: Int
+}

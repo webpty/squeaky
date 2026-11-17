@@ -1380,6 +1380,27 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   fetches into a scratch folder. A fetch from the same address within ten
   minutes makes it "at home" and the NAS route is taken: use a fresh store.
 
+## Photos by day, chosen by hand (0.31.0, David, 18 November 2026)
+
+- While the card is in, the Photos page shows every photo on it (one square
+  per frame, the JPG of a pair), in a section per day: newest day first,
+  earliest photo first within it (`PhotoDays`). The title is the phone's
+  own full date form ("Monday 20 June 2026"; David first asked for "20th",
+  then dropped it), on its own line so it is never cut; the count and
+  "Select all"/"Deselect all" under it.
+- A blue tick top left on each square is `ImportRow.ticked`, for every file
+  of the frame (`AppModel.setTicked`). "Save selected photos" saves the
+  ticked ones, photos copied before included (copied again). New photos
+  start ticked, ones copied before not.
+- A slide that starts sideways on a square selects (or deselects, when it
+  starts on a selected one) everything from where it began to the square
+  under the finger, in the page's order; moving back restores the rest.
+  Scrolling is off during it; in the top or bottom tenth the page moves
+  three squares at a time. Up or down at the start scrolls, as in Photos.
+- Days fold on a tap of the title, remembered in `photoDaysOpen`; days
+  whose photos were all copied before start folded, and their pictures are
+  made only when opened. Simulator: `--tab photos --show-card <folder>`.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

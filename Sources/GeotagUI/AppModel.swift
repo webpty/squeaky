@@ -1880,6 +1880,19 @@ public final class AppModel: ObservableObject {
         defaults.set(reminded, forKey: "clockReminders")
     }
 
+    /// Photos selected or not for saving, as one change to the list: the
+    /// phone's ticks, taps and slides (0.31.0, David, 18 November 2026).
+    public func setTicked(_ ids: Set<String>, _ on: Bool) {
+        guard !saving, !ids.isEmpty else { return }
+        var changed = rows
+        var any = false
+        for i in changed.indices where ids.contains(changed[i].id) && changed[i].ticked != on {
+            changed[i].ticked = on
+            any = true
+        }
+        if any { rows = changed }
+    }
+
     /// Saved now, or imported on an earlier card.
     public func isSaved(_ row: ImportRow) -> Bool {
         if let result = results[row.id] { return result.url != nil }
