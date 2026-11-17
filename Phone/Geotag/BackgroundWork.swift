@@ -28,6 +28,7 @@ final class BackgroundWork {
     /// Watches for a save beginning, or sending beginning without a save
     /// (0.29.29); each asks the phone to let it run on.
     func start() {
+        RunLog.watchTheApp()
         watching = model.$saving.removeDuplicates().sink { [weak self] saving in
             if saving { Task { @MainActor in self?.begin() } }
         }
@@ -70,6 +71,7 @@ final class BackgroundWork {
             Task { @MainActor in self?.run(task) }
         }
         guard registered else {
+            RunLog.add("not registered")
             refused = Words.t("The phone won't let Geotag keep saving in the background; keep it open until it's done.")
             return
         }
@@ -80,14 +82,16 @@ final class BackgroundWork {
         request.strategy = .fail
         do {
             try BGTaskScheduler.shared.submit(request)
+            RunLog.add("asked: \(model.saving ? "saving \(model.saveDone) of \(model.saveTotal)" : "sending, \(counts(since: 0).waiting) waiting")")
             asked = true
             refused = nil
             // Never started by the phone within ten seconds: free to ask again.
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(10))
-                if running == nil { asked = false }
+                if running == nil, asked { asked = false; RunLog.add("not started by the phone within 10 s") }
             }
         } catch {
+            RunLog.add("refused: \(error.localizedDescription)")
             refused = Words.t("The phone won't let Geotag keep saving in the background; keep it open until it's done.") + " " + error.localizedDescription
         }
     }
@@ -95,6 +99,7 @@ final class BackgroundWork {
     @available(iOS 26, *)
     private func run(_ task: BGContinuedProcessingTask) {
         running = task
+        RunLog.add("started")
         let progress = task.progress
         var stopped = false
         let startSent = model.queueEntries.filter { $0.state == .sent }.count
@@ -104,6 +109,8 @@ final class BackgroundWork {
             Task { @MainActor in
                 guard let self else { return }
                 stopped = true
+                let at = self.counts(since: startSent)
+                RunLog.add("ended by the iPhone: \(self.model.saving ? "saving \(self.model.saveDone) of \(self.model.saveTotal)" : "sent \(at.sent), \(at.waiting) waiting"), \(RunLog.state())")
                 if self.model.saving {
                     self.model.stopSaving()
                     self.finish(task, title: Words.t("Saving stopped"),
@@ -117,7 +124,14 @@ final class BackgroundWork {
         }
         Task { @MainActor in
             var idle = 0
+            var beat = 0
             while !stopped {
+                // Every 30 s, how far it has got and how the phone stands (0.29.41).
+                beat += 1
+                if beat % 60 == 0 {
+                    let at = counts(since: startSent)
+                    RunLog.add("running: \(model.saving ? "saving \(model.saveDone) of \(model.saveTotal)" : "sent \(at.sent), \(at.waiting) waiting, \(model.meter.count) going"), \(RunLog.state())")
+                }
                 // A save, whenever one is going.
                 if model.saving {
                     progress.totalUnitCount = Int64(max(model.saveTotal, 1))
@@ -129,10 +143,11 @@ final class BackgroundWork {
                 }
                 // Then the sending, until nothing that can go now is waiting.
                 let (sent, waiting) = counts(since: startSent)
-                if waiting == 0 { model.backgroundNote = nil; break }
+                if waiting == 0 { model.backgroundNote = nil; RunLog.add("all sent: \(sent)"); break }
                 // The server away: nothing moves; given up after a minute, and said.
                 if model.meter.count == 0 { idle += 1 } else { idle = 0 }
                 if idle > 120 {
+                    RunLog.add("given up: the server not answering, sent \(sent), \(waiting) waiting")
                     noteStopped(sent: sent, total: sent + waiting, why: Words.t("The NAS wasn't answering."))
                     paused(task, sent: sent, total: sent + waiting)
                     return
@@ -165,9 +180,72 @@ final class BackgroundWork {
     @available(iOS 26, *)
     private func finish(_ task: BGContinuedProcessingTask, title: String?, detail: String?) {
         guard running != nil else { return }
+        RunLog.add("closed by Geotag: \(title ?? "done") \(detail ?? "")")
         if let title { task.updateTitle(title, subtitle: detail ?? "") }
         task.setTaskCompleted(success: true)
         running = nil
         asked = false
+    }
+}
+
+/// A record on the phone of each run in the background, read over the cable
+/// to find why the iPhone says "Task failed" (0.29.41, David, 17 November
+/// 2026). Library/Application Support/Geotag/background-runs.log, the
+/// newest 3000 lines kept.
+@MainActor
+enum RunLog {
+    private static let file = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Geotag").appendingPathComponent("background-runs.log")
+    private static let stamp: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_GB")
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss ZZZZZ"
+        return f
+    }()
+    private static var watching: [NSObjectProtocol] = []
+
+    static func add(_ line: String) {
+        let text = stamp.string(from: Date()) + "  " + appVersion + "  " + line + "\n"
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var all = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
+        all += text
+        let lines = all.split(separator: "\n", omittingEmptySubsequences: true)
+        if lines.count > 3000 { all = lines.suffix(3000).joined(separator: "\n") + "\n" }
+        try? all.write(to: file, atomically: true, encoding: .utf8)
+    }
+
+    /// In front or not, locked or not, and the time the phone still allows.
+    static func state() -> String {
+        let app = UIApplication.shared
+        let place: String
+        switch app.applicationState {
+        case .active: place = "in front"
+        case .inactive: place = "inactive"
+        case .background: place = "in the background"
+        @unknown default: place = "unknown"
+        }
+        let left = app.backgroundTimeRemaining
+        return place + (app.isProtectedDataAvailable ? ", unlocked" : ", locked")
+            + (left < 100_000 ? String(format: ", %.0f s allowed", left) : "")
+    }
+
+    /// Geotag opening, going to the background, the phone locking and unlocking, and Geotag closing.
+    static func watchTheApp() {
+        guard watching.isEmpty else { return }
+        add("Geotag opened")
+        let centre = NotificationCenter.default
+        let events: [(Notification.Name, String)] = [
+            (UIApplication.didEnterBackgroundNotification, "Geotag in the background"),
+            (UIApplication.willEnterForegroundNotification, "Geotag back in front"),
+            (UIApplication.protectedDataWillBecomeUnavailableNotification, "phone locked"),
+            (UIApplication.protectedDataDidBecomeAvailableNotification, "phone unlocked"),
+            (UIApplication.willTerminateNotification, "Geotag closing"),
+            (UIApplication.didReceiveMemoryWarningNotification, "memory warning"),
+        ]
+        for (name, words) in events {
+            watching.append(centre.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { add(words) }
+            })
+        }
     }
 }

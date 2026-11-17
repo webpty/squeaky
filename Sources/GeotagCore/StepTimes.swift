@@ -115,15 +115,17 @@ public struct SendSpeeds: Codable, Equatable, Sendable {
     }
 
     public enum Rating: String, Sendable {
-        case slow = "Slow", average = "Average", fast = "Fast"
+        case verySlow = "Very slow", slow = "Slow", average = "Average", fast = "Fast"
     }
 
     /// Where this speed falls among every photo timed, home and away: the
-    /// slowest third slow, the fastest third fast.
+    /// slowest tenth very slow, the rest of the slowest third slow, the fastest third fast.
     public func rating(of speed: Double) -> Rating? {
         let all = byAddress.values.flatMap { $0 }.map(\.speed).filter { $0 > 0 }
         guard all.count >= Self.neededToRate, speed > 0 else { return nil }
         let below = Double(all.filter { $0 < speed }.count) / Double(all.count)
+        // The slowest tenth: very slow (0.29.41, David).
+        if below < 0.1 { return .verySlow }
         if below < 1.0 / 3 { return .slow }
         if below >= 2.0 / 3 { return .fast }
         return .average

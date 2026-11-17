@@ -1287,6 +1287,25 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   finished"). Once the card is out, "Open card" is back. Photos not saved:
   unchanged.
 
+## The Queue page reworked, and a record of background runs (0.29.41, David, 17 November 2026)
+
+- The photo going up is first on the page, its name on a blue bar that fills
+  with `SendStep`'s share (`ProgressFill`); no wheel. Pause is a round button
+  top right (play while paused). "Retry failed uploads" is a round refresh
+  button beside the Failed count, from one failed up. The server row is
+  removed ("we've only enabled one in this setup").
+- A box at the bottom while sending: "Estimated time" (`Remaining.approx`,
+  no ≈ any more), "Average time per photo" (that time over the photos left,
+  `Remaining.each`), "Speed": `SendSpeeds.Rating`, now with Very slow for
+  the slowest tenth of every photo timed.
+- `RunLog` writes `Library/Application Support/Geotag/background-runs.log`
+  (newest 3000 lines): Geotag opening, background, lock and unlock, closing;
+  each background request, start, a line every 30 s with counts and how the
+  phone stands, and how it ended (by the iPhone, or closed by Geotag). Read
+  it over the cable with `xcrun devicectl device copy from ... --source
+  "Library/Application Support/Geotag/background-runs.log"` to find the
+  cause of "Task failed".
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

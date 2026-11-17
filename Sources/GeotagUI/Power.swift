@@ -45,15 +45,30 @@ public enum Remaining {
         #endif
     }
 
-    /// "≈ 9 h 15 min", never split over two lines: the phone's Queue line
-    /// (0.29.29, David, 17 November 2026).
+    /// "9 h 15 min", never split over two lines: the phone's Queue page
+    /// (0.29.29; without the ≈ from 0.29.41, David, 17 November 2026).
     public static func approx(_ seconds: TimeInterval) -> String {
         let minutes = max(1, Int((seconds / 60).rounded()))
         let h = minutes / 60, m = minutes % 60
         var parts: [String] = []
         if h > 0 { parts.append(Words.t("{0} h", h)) }
         if m > 0 || h == 0 { parts.append(Words.t("{0} min", m)) }
-        return ("≈ " + parts.joined(separator: " ")).replacingOccurrences(of: " ", with: "\u{00A0}")
+        return parts.joined(separator: " ").replacingOccurrences(of: " ", with: "\u{00A0}")
+    }
+
+    /// "2 min 24 s", "40 s", "1 h 5 min": the time one photo takes (0.29.41).
+    public static func each(_ seconds: TimeInterval) -> String {
+        let whole = max(1, Int(seconds.rounded()))
+        let h = whole / 3600, m = (whole % 3600) / 60, sec = whole % 60
+        var parts: [String] = []
+        if h > 0 {
+            parts.append(Words.t("{0} h", h))
+            if m > 0 { parts.append(Words.t("{0} min", m)) }
+        } else {
+            if m > 0 { parts.append(Words.t("{0} min", m)) }
+            if sec > 0 || m == 0 { parts.append(Words.t("{0} s", sec)) }
+        }
+        return parts.joined(separator: " ").replacingOccurrences(of: " ", with: "\u{00A0}")
     }
 
     /// What is left at the pace so far: nil until enough has gone to tell.
