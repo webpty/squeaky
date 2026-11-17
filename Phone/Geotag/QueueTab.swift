@@ -54,7 +54,7 @@ struct QueueTab: View {
                 Section {
                     HStack(spacing: 12) {
                         HalfButton(model.sendPaused ? Words.t("Resume") : Words.t("Pause")) { model.setSendPaused(!model.sendPaused) }
-                        HalfButton(Words.t("Retry failed")) { model.retryFailed() }
+                        HalfButton(Words.t("Retry failed uploads")) { model.retryFailed() }
                             .disabled(failed.isEmpty)
                     }
                 }
