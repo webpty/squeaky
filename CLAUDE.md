@@ -1357,6 +1357,8 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   "homes/<user>/Geotag" from the key.
 - The keychain item on the iPhone is readable after first unlock, so a
   relaunch with the phone locked still has the key.
+- A NAS batch already going asks `useBuffer` before each next photo, so a
+  key saved mid-batch, or leaving home, hands over without reopening (0.30.1).
 - A photo counts as sent once at bufr.cc. "Waiting on the buffer server"
   (Queue) is what the NAS has not fetched yet; "Connected to server" or
   "Connected to buffer server" says the route (David's words).

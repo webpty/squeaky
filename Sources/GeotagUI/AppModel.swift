@@ -2980,6 +2980,9 @@ public final class AppModel: ObservableObject {
             var running = 0
             while true {
                 while halt == nil, !sendPaused, running < sendAtOnce, let entry = nextToSend() {
+                    // Away from home with the buffer server set up since this batch began:
+                    // no more go to the NAS; the next round sends through the buffer (0.30.1).
+                    if bufferKeySaved, await useBuffer() { break }
                     guard let place = NASFolder(book.person(entry.personId)?.nasFolder) else { break }
                     let connection: NASConnection
                     do {
