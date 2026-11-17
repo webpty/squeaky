@@ -1328,6 +1328,13 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   name was not applied to the card ... remove all that mambo jumbo"). Each
   card shows its own name, as in Files.
 
+## Each photo timed in the record (0.29.45, David, 17 November 2026)
+
+- `AppModel.onPhotoTimed` hands each photo sent through every step to the
+  phone, which adds a line to `background-runs.log`: name, size, total, and
+  the time spent looking, sending, reading back and naming, with the sending
+  speed. Nothing on screen ("no need to report on the app. at least not yet").
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

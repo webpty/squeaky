@@ -2909,6 +2909,9 @@ public final class AppModel: ObservableObject {
     public var mobileDataBlocked = false
     #endif
 
+    /// Each photo sent with the time of its four steps, for the phone's record (0.29.45).
+    public var onPhotoTimed: ((String, Int64, [Double]) -> Void)?
+
     public func sendWaiting() async {
         guard !sendingNow, !sendPaused else { return }
         #if os(iOS)
@@ -3085,6 +3088,7 @@ public final class AppModel: ObservableObject {
             // Only a photo that went through every step times them.
             if case .alreadyThere = result {} else if let seconds = clock.seconds() {
                 stepTimes.add(seconds, for: connection.address)
+                onPhotoTimed?(name, Int64(before?.size ?? fullSize), seconds)
                 if let data = try? JSONEncoder().encode(stepTimes) { defaults.set(data, forKey: "stepTimes") }
                 sendSpeeds.add(bytes: before?.size ?? fullSize, seconds: seconds.reduce(0, +), for: connection.address)
                 if let data = try? JSONEncoder().encode(sendSpeeds) { defaults.set(data, forKey: "sendSpeeds") }

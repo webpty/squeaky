@@ -29,6 +29,14 @@ final class BackgroundWork {
     /// (0.29.29); each asks the phone to let it run on.
     func start() {
         RunLog.watchTheApp()
+        // Where each photo's time goes, for finding why sending is slow (0.29.45, David).
+        model.onPhotoTimed = { name, bytes, steps in
+            let mb = Double(bytes) / 1_000_000
+            let total = steps.reduce(0, +)
+            let parts = zip(["looking", "sending", "reading back", "naming"], steps).map { String(format: "%@ %.1f s", $0, $1) }
+            RunLog.add(String(format: "photo %@, %.1f MB, %.1f s: ", name, mb, total) + parts.joined(separator: ", ")
+                       + String(format: ", %.2f MB/s sending", steps[1] > 0 ? mb / steps[1] : 0))
+        }
         watching = model.$saving.removeDuplicates().sink { [weak self] saving in
             if saving { Task { @MainActor in self?.begin() } }
         }
