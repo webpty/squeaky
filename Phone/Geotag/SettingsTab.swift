@@ -79,6 +79,8 @@ struct SettingsTab: View {
                     StatusRow(text: model.settingsLine, busy: model.settingsBusy)
                 }
                 Section(Words.t("Server")) {
+                    Toggle(Words.t("Allow backup over mobile data"),
+                           isOn: Binding(get: { model.allowMobileData }, set: { model.setAllowMobileData($0) }))
                     LabeledContent(Words.t("Folder")) {
                         // The path being worked out: the wheel (0.29.26).
                         if nasName == nil, PhoneFolders.isChosen(PhoneFolders.nasKey), folderProblem == nil {

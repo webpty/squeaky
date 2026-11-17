@@ -1131,6 +1131,23 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - The sync line: "Sync list: 4,230 photos, last updated by the Mac app @
   01:21".
 
+## HIF photos, reasons, mobile data (0.29.28, David, 17 November 2026)
+
+- HIF photos from the person's own card (his cameras save .HIF with HDR
+  PQ on) go straight into the phone's Photos library with their location
+  and date set in Photos, not written into the file: no copy, not sent to
+  the server, not on the sync list; he will decide on that later. Noted on
+  the phone only (`heifAdded`) so they show as saved. This replaces the
+  phone's earlier "never HEIC" rule for his own HIF photos.
+- "Show what wasn't saved" on the Photos tab, when anything failed, lists
+  each file with its reason.
+- The saving line is two fixed lines, "Saving X of Y" and "Z left" (a
+  blank second line until known), the wheel beside the first; "adding to
+  Photos" is no longer said.
+- Settings, Server: "Allow backup over mobile data", off by default; while
+  off and the phone is on mobile data only, sending waits for Wi-Fi and
+  says so.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

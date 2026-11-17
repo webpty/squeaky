@@ -1039,6 +1039,37 @@ public final class AppModel: ObservableObject {
                 }
                 item.burst = burstName[n]
             }
+            #if os(iOS)
+            // HIF (HDR) photos: added to Photos as they are, with their place given to Photos,
+            // never saved as a copy, sent or listed (0.29.28, David: "copy the hif ... not saved on the server").
+            if NativeMetadata.isHEIF(row.photo.url) {
+                if libraryAllowed == nil {
+                    photosLine = Words.t("Waiting for permission to add to Photos")
+                    libraryAllowed = await PhoneLibrary.allowed()
+                }
+                var outcome: SaveResult = .saved(row.photo.url)
+                if libraryAllowed == true {
+                    do {
+                        try await PhoneLibrary.add(row.photo.url, at: item.position,
+                                                   taken: item.position?.moment ?? Moments.clockReading(row.photo).map {
+                                                       $0.addingTimeInterval(-Double(Moments.zoneSeconds(row.photo.zone ?? "") ?? 0)) })
+                        var added = defaults.stringArray(forKey: "heifAdded") ?? []
+                        added.append(row.photo.key)
+                        defaults.set(added, forKey: "heifAdded")
+                        savedCount += 1
+                    } catch {
+                        outcome = .failed(Words.t("It could not be added to Photos: {0}", error.localizedDescription))
+                        failedCount += 1
+                    }
+                } else {
+                    outcome = .failed(Words.t("Geotag isn't allowed to add photos: allow it in the phone's Settings, Privacy, Photos, Geotag."))
+                    failedCount += 1
+                }
+                results[row.id] = outcome
+                saveDone += 1
+                continue
+            }
+            #endif
             let named = item
             let result = await Task.detached { saver.save(named) }.value
             // The card gone mid-save (pulled, or the phone stopped letting Geotag in): stop at
@@ -1060,7 +1091,7 @@ public final class AppModel: ObservableObject {
                         photosLine = Words.t("Waiting for permission to add to Photos")
                         libraryAllowed = await PhoneLibrary.allowed()
                     }
-                    photosLine = Words.t("{0}, adding to Photos", said.line)
+
                     if libraryAllowed == true {
                         do {
                             try await PhoneLibrary.add(url)
@@ -1254,6 +1285,11 @@ public final class AppModel: ObservableObject {
     /// "Saving 341 of 3,630, about 12 min left", and the warning to connect
     /// to power when the battery would run out first.
     nonisolated public static func savingLine(done: Int, total: Int, left: TimeInterval?, battery: TimeInterval?) -> (line: String, warning: String?) {
+        #if os(iOS)
+        // Two fixed lines on the phone, so nothing below moves (0.29.28).
+        let first = Words.t("Saving {0} of {1}", (done + 1).formatted(), total.formatted())
+        return (first + "\n" + (left.map { Words.t("{0} left", Remaining.text($0)) } ?? " "), nil)
+        #endif
         var line = Words.t("Saving {0} of {1}", (done + 1).formatted(), total.formatted())
         guard let left else { return (line, nil) }
         line += Words.t(", {0} left", Remaining.text(left))
@@ -1559,6 +1595,10 @@ public final class AppModel: ObservableObject {
             }.value
             // The camera offsets set on the person's other devices, then what
             // any Mac or phone saved before, from the lists on the server.
+            #if os(iOS)
+            // HIF photos already added to Photos count as saved, on this phone only.
+            let heif = Set(defaults.stringArray(forKey: "heifAdded") ?? [])
+            #endif
             // What the sync files held when last read, kept here: no wait on the server (0.29.12).
             // Never read yet (0.29.12 left it empty after the update): read from the server
             // first, as before, or said that it couldn't be (0.29.17).
@@ -1584,7 +1624,13 @@ public final class AppModel: ObservableObject {
             #if os(iOS)
             addCameras(photos, personId: personId)
             #endif
-            rows = ImportList.rows(photos, history: past, book: book, personId: personId)
+            var known = past
+            #if os(iOS)
+            known += photos.filter { heif.contains($0.key) }.map {
+                HistoryEntry(fileName: $0.fileName, size: $0.size, taken: $0.taken, subSeconds: $0.subSeconds, imported: Date())
+            }
+            #endif
+            rows = ImportList.rows(photos, history: known, book: book, personId: personId)
             refreshBreaks()
             Task { await chooseSidebarPhoto(photos) }
             noteFirmware(photos, personId: personId)
@@ -2801,8 +2847,27 @@ public final class AppModel: ObservableObject {
     /// time, until nothing more can go now, the NAS can't be reached, or
     /// sending is paused. Called every few seconds from launch; the queue is
     /// on disk, so it carries on after a restart.
+    #if os(iOS)
+    /// "Allow backup over mobile data", off to start with (0.29.28, David).
+    @Published public private(set) var allowMobileData = UserDefaults.standard.bool(forKey: "allowMobileData")
+    /// Set by the phone's app from the network it is on.
+    public var onMobileDataOnly = false
+
+    public func setAllowMobileData(_ on: Bool) {
+        allowMobileData = on
+        defaults.set(on, forKey: "allowMobileData")
+        nextTry = nil
+    }
+    #endif
+
     public func sendWaiting() async {
         guard !sendingNow, !sendPaused else { return }
+        #if os(iOS)
+        if onMobileDataOnly, !allowMobileData {
+            if queueEntries.contains(where: { $0.state == .waiting && !$0.held }) { say(Words.t("Waiting for Wi-Fi to back up to the server")) }
+            return
+        }
+        #endif
         if let next = nextTry, Date() < next { return }
         sendingNow = true
         defer {

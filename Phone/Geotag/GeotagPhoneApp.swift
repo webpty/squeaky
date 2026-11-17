@@ -2,6 +2,7 @@ import GeotagCore
 import GeotagUI
 import SwiftUI
 import UIKit
+import Network
 
 /// Geotag on the iPhone (14 November 2026): the Mac's own model, with the
 /// card chosen in the Files list, CR3 and JPG written by Geotag's own writer,
@@ -56,6 +57,7 @@ struct PhoneRoot: View {
     @State private var tab = Tab.photos
     @State private var cards: CardWatch?
     @State private var work: BackgroundWork?
+    @State private var network = NetworkWatch()
     @Environment(\.scenePhase) private var phase
 
     enum Tab { case photos, tracks, queue, settings }
@@ -95,6 +97,7 @@ struct PhoneRoot: View {
                 work = BackgroundWork(model: model)
                 work?.start()
             }
+            network.start(model: model)
         }
         .onChange(of: phase) { _, now in
             if now == .active { cards?.start() } else { cards?.stop() }
@@ -197,9 +200,9 @@ struct StatusRow: View {
 
     var body: some View {
         if busy || !text.isEmpty {
-            // The wheel centred on the text beside it (0.29.9).
-            HStack(alignment: .center, spacing: 8) {
-                if busy { ProgressView() }
+            // The wheel beside the first line (0.29.28).
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if busy { ProgressView().alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 } }
                 Text(text).foregroundStyle(.secondary)
             }
         }
@@ -227,5 +230,23 @@ struct Backdrop: View {
             }
         }
         .ignoresSafeArea()
+    }
+}
+
+/// Whether the phone is on mobile data only, for "Allow backup over mobile data" (0.29.28).
+@MainActor
+final class NetworkWatch {
+    private var monitor: NWPathMonitor?
+
+    func start(model: AppModel) {
+        guard monitor == nil else { return }
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak model] path in
+            let mobileOnly = path.status == .satisfied && path.usesInterfaceType(.cellular)
+                && !path.usesInterfaceType(.wifi) && !path.usesInterfaceType(.wiredEthernet)
+            Task { @MainActor in model?.onMobileDataOnly = mobileOnly }
+        }
+        monitor.start(queue: .global())
+        self.monitor = monitor
     }
 }

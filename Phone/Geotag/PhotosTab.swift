@@ -9,6 +9,7 @@ struct PhotosTab: View {
     @ObservedObject var model: AppModel
     @State private var choosing = false
     @StateObject private var pictures = Pictures()
+    @State private var showingFailed = false
 
     var body: some View {
         NavigationStack {
@@ -25,6 +26,10 @@ struct PhotosTab: View {
                     }
                     if !model.rows.isEmpty {
                         LabeledContent(Words.t("Photos"), value: counts)
+                    }
+                    // Every photo not saved, by name, with the full reason (0.29.28, David: "we need a button to show the error").
+                    if model.results.values.contains(where: { if case .failed = $0 { return true }; return false }) {
+                        Button(Words.t("Show what wasn't saved")) { showingFailed = true }
                     }
                     // Why photos wait: one line for each reason, with how many.
                     ForEach(reasons, id: \.self) { line in
@@ -99,6 +104,7 @@ struct PhotosTab: View {
             }
             #endif
         }
+        .sheet(isPresented: $showingFailed) { NotSaved(model: model) }
         // Apart from the Files list above: two on one view and neither opens.
         .sheet(isPresented: Binding(get: { model.askingWhose != nil }, set: { if !$0 { model.askingWhose = nil } })) {
             WhoseCard(model: model)
@@ -251,5 +257,32 @@ struct WhoseCard: View {
     func pick(_ id: UUID?) {
         guard let id, let source = model.askingWhose else { return }
         Task { await model.read(source, for: id) }
+    }
+}
+
+/// Each photo not saved, by file name, with the whole reason (0.29.28).
+struct NotSaved: View {
+    @ObservedObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    var failed: [(String, String)] {
+        model.rows.compactMap { row in
+            if case .failed(let why)? = model.results[row.id] { return (row.photo.fileName, Words.t(why)) }
+            return nil
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List(failed, id: \.0) { item in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.0)
+                    Text(item.1).font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle(Words.t("Not saved"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(Words.t("Close")) { dismiss() } } }
+        }
     }
 }

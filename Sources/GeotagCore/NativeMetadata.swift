@@ -99,11 +99,28 @@ public enum NativeMetadata {
     }
 
     /// The photos' details, as the Mac's scanner reads them.
+    /// A HEIF photo (.HIF, .HEIC) through the phone's own reader: Geotag
+    /// never writes into one, so only its time, zone and camera are needed (0.29.28).
+    static func readHEIF(_ url: URL) -> Details {
+        var d = Details()
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] else { return d }
+        let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
+        let tiff = props[kCGImagePropertyTIFFDictionary] as? [CFString: Any] ?? [:]
+        d.taken = exif[kCGImagePropertyExifDateTimeOriginal] as? String
+        d.subSeconds = (exif[kCGImagePropertyExifSubsecTimeOriginal] as? String) ?? (exif[kCGImagePropertyExifSubsecTimeOriginal]).map { "\($0)" }
+        d.zone = (exif[kCGImagePropertyExifOffsetTimeOriginal] as? String) ?? (exif[kCGImagePropertyExifOffsetTime] as? String)
+        d.model = (tiff[kCGImagePropertyTIFFModel] as? String)?.trimmingCharacters(in: .whitespaces)
+        return d
+    }
+
+    public static func isHEIF(_ url: URL) -> Bool { ["hif", "heic", "heif"].contains(url.pathExtension.lowercased()) }
+
     public static func scan(_ files: [URL], progress: @Sendable (Int) -> Void) -> [ScannedPhoto] {
         var out: [ScannedPhoto] = []
         for (i, url) in files.enumerated() {
             let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0 }.map(Int64.init) ?? 0
-            let d = (try? read(url)) ?? Details()
+            let d = isHEIF(url) ? readHEIF(url) : ((try? read(url)) ?? Details())
             let located = hasLocation(d)
             out.append(ScannedPhoto(url: url, fileName: url.lastPathComponent, size: size, taken: d.taken, subSeconds: d.subSeconds,
                                     zone: d.zone, model: d.model, hasLocation: located,

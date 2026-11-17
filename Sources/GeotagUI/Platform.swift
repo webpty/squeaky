@@ -21,6 +21,7 @@ public extension PlatformImage {
 
 #if os(iOS)
 import Photos
+import CoreLocation
 
 /// The phone's Photos library (0.29.15): each JPG saved from a card is added
 /// there, with its location and date, as a copy of its own.
@@ -40,6 +41,22 @@ public enum PhoneLibrary {
     }
 
     public static func isJPG(_ url: URL) -> Bool { ["jpg", "jpeg"].contains(url.pathExtension.lowercased()) }
+
+    /// A file added as it is, its place and moment given to Photos alone (HIF, 0.29.28).
+    public static func add(_ url: URL, at position: Position?, taken: Date?) async throws {
+        try await PHPhotoLibrary.shared().performChanges {
+            let options = PHAssetResourceCreationOptions()
+            options.originalFilename = url.lastPathComponent
+            let request = PHAssetCreationRequest.forAsset()
+            request.addResource(with: .photo, fileURL: url, options: options)
+            if let position {
+                request.location = CLLocation(coordinate: CLLocationCoordinate2D(latitude: position.lat, longitude: position.lon),
+                                              altitude: position.alt ?? 0, horizontalAccuracy: 10, verticalAccuracy: position.alt == nil ? -1 : 10,
+                                              timestamp: position.moment)
+            }
+            if let taken { request.creationDate = taken }
+        }
+    }
 }
 
 /// Where things are on the iPhone (14 November 2026). Each person's copies
