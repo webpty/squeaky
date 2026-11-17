@@ -311,8 +311,24 @@ public final class MapThumbnails: ObservableObject {
         return 1
     }
 
-    static func render(points: TrackPoints, bounds: Bounds, template: String, key: String) async -> Data? {
-        let size = Self.size
+    /// A track's map as large as the screen allows, the route framed to fit
+    /// (0.29.35, David, 17 November 2026: "a big image like the others").
+    /// Kept on the phone once made, by its size.
+    public func large(_ track: Track, points: TrackPoints, dark: Bool, size: CGSize) async -> UIImage? {
+        let size = CGSize(width: size.width.rounded(.down), height: size.height.rounded(.down))
+        guard size.width > 40, size.height > 40 else { return nil }
+        let file = folder.appendingPathComponent("\(track.id)-phone-large-\(Int(size.width))x\(Int(size.height))-\(dark ? "dark" : "light").png")
+        if let data = try? Data(contentsOf: file), let image = UIImage(data: data, scale: Self.scale) { return image }
+        guard let source, let key = source.key, !key.isEmpty else { return nil }
+        guard let png = await Self.render(points: points, bounds: track.bounds, template: dark ? source.dark : source.light,
+                                          key: key, size: size, thin: 2000, lineWidth: 4) else { return nil }
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? png.write(to: file, options: .atomic)
+        return UIImage(data: png, scale: Self.scale)
+    }
+
+    static func render(points: TrackPoints, bounds: Bounds, template: String, key: String,
+                       size: CGSize = MapThumbnails.size, thin: Int = 400, lineWidth: CGFloat = 2.5) async -> Data? {
         let z = zoom(bounds, size: size)
         let a = project(bounds.maxLat, bounds.minLon, z), c = project(bounds.minLat, bounds.maxLon, z)
         let left = (((a.x + c.x) / 2 - size.width / 2) * scale).rounded() / scale
@@ -333,7 +349,7 @@ public final class MapThumbnails: ObservableObject {
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale
         format.opaque = true
-        let line = thinned(points, to: 400).map { project($0.0, $0.1, z) }.map { CGPoint(x: $0.x - left, y: $0.y - top) }
+        let line = thinned(points, to: thin).map { project($0.0, $0.1, z) }.map { CGPoint(x: $0.x - left, y: $0.y - top) }
         let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
             for t in images {
                 t.image.draw(in: CGRect(x: CGFloat(t.x) * 256 - left, y: CGFloat(t.y) * 256 - top, width: 256, height: 256))
@@ -342,10 +358,10 @@ public final class MapThumbnails: ObservableObject {
             for (i, p) in line.enumerated() { if i == 0 { path.move(to: p) } else { path.addLine(to: p) } }
             path.lineJoinStyle = .round
             path.lineCapStyle = .round
-            path.lineWidth = 4
+            path.lineWidth = lineWidth + 1.5
             UIColor.white.withAlphaComponent(0.85).setStroke()
             path.stroke()
-            path.lineWidth = 2.5
+            path.lineWidth = lineWidth
             lineColour.setStroke()
             path.stroke()
         }

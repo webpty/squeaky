@@ -76,7 +76,9 @@ public enum LineBreaks {
 
     /// The line broken: at each soft break, and after each sentence.
     public static func broken(_ text: String) -> String {
-        var out = text.replacingOccurrences(of: soft, with: "\n")
+        // A line begun at a soft break starts with a capital: "Starts 17 Nov" (0.29.35).
+        let pieces = text.components(separatedBy: soft)
+        var out = ([pieces[0]] + pieces.dropFirst().map { $0.prefix(1).uppercased() + $0.dropFirst() }).joined(separator: "\n")
         for end in [". ", "? ", "! "] {
             out = out.replacingOccurrences(of: end, with: String(end.first!) + "\n")
         }

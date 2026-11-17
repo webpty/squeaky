@@ -9,6 +9,7 @@ struct TracksTab: View {
     @ObservedObject var model: AppModel
     @ObservedObject var maps: MapThumbnails
     @State private var importing = false
+    @State private var path: [String] = []
 
     /// GPX and FIT files; any file where the phone knows neither.
     static let trackFiles: [UTType] = {
@@ -22,7 +23,7 @@ struct TracksTab: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 // Plain words above the list, no box: it looked like a field (0.29.30).
                 Section {
@@ -37,7 +38,8 @@ struct TracksTab: View {
                 .listRowInsets(EdgeInsets(top: 2, leading: 20, bottom: 2, trailing: 20))
                 Section {
                     ForEach(model.tracks.sorted { $0.start > $1.start }) { track in
-                        // The map on the left, the words on the right (0.29.4).
+                        // The map on the left, the words on the right (0.29.4); a tap opens it large (0.29.35).
+                        NavigationLink(value: track.id) {
                         HStack(alignment: .top, spacing: 12) {
                             TrackPicture(model: model, track: track)
                                 .frame(width: MapThumbnails.size.width, height: MapThumbnails.size.height)
@@ -52,6 +54,7 @@ struct TracksTab: View {
                             }
                             .lineLimit(1)
                         }
+                        }
                     }
                 }
                 // The map's licence asks for its credit to show with it: under the last track (0.29.33).
@@ -65,6 +68,9 @@ struct TracksTab: View {
                 }
             }
             .listSectionSpacing(.compact)
+            .navigationDestination(for: String.self) { id in
+                if let track = model.tracks.first(where: { $0.id == id }) { TrackMapPage(model: model, track: track) }
+            }
             .contentMargins(.top, 4, for: .scrollContent)
             .scrollContentBackground(.hidden)
             // The last card's photo behind every tab, veiled (0.29.5, David, 16 November 2026).
@@ -86,6 +92,21 @@ struct TracksTab: View {
                 }
             }
             .refreshable { await model.refresh(pullStrava: true) }
+            #if DEBUG
+            // Opens the newest track's map, for pictures in the simulator; `--maps <file>` gives it
+            // the service's map source without a key in the simulator.
+            .task {
+                let args = CommandLine.arguments
+                guard args.contains("--track-map") else { return }
+                if let i = args.firstIndex(of: "--maps"), args.count > i + 1,
+                   let data = try? Data(contentsOf: URL(fileURLWithPath: args[i + 1])),
+                   let source = try? JSONDecoder().decode(MapSource.self, from: data) {
+                    model.thumbnails.source = source
+                }
+                while model.tracks.isEmpty { try? await Task.sleep(for: .milliseconds(200)) }
+                if let newest = model.tracks.max(by: { $0.start < $1.start }) { path = [newest.id] }
+            }
+            #endif
             .fileImporter(isPresented: $importing, allowedContentTypes: Self.trackFiles, allowsMultipleSelection: true) { result in
                 switch result {
                 case .success(let urls): Task { await model.importFiles(urls) }
@@ -166,4 +187,59 @@ struct TrackPicture: View {
 
 private extension CGSize {
     func insetBy(_ d: CGFloat) -> CGSize { CGSize(width: max(width - 2 * d, 1), height: max(height - 2 * d, 1)) }
+}
+
+/// One track's map as large as the screen allows, the route framed to fit;
+/// it does not move or zoom (0.29.35, David, 17 November 2026).
+struct TrackMapPage: View {
+    @ObservedObject var model: AppModel
+    let track: Track
+    @Environment(\.colorScheme) private var scheme
+    @State private var map: UIImage?
+    @State private var points: [CGPoint] = []
+    @State private var making = true
+
+    var body: some View {
+        VStack(spacing: 8) {
+            GeometryReader { box in
+                ZStack {
+                    Color(.secondarySystemBackground)
+                    if let map {
+                        Image(uiImage: map).resizable().scaledToFit()
+                    } else {
+                        // The bare route until the map is made, or when it cannot be.
+                        Path { path in
+                            let fitted = TrackPicture.fit(points, in: CGSize(width: max(box.size.width - 32, 1), height: max(box.size.height - 32, 1)))
+                            guard let first = fitted.first else { return }
+                            path.move(to: first)
+                            for p in fitted.dropFirst() { path.addLine(to: p) }
+                        }
+                        .offset(x: 16, y: 16)
+                        .stroke(Color.blue, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                        if making {
+                            StatusRow(text: Words.t("Making the map"), busy: true)
+                                .padding(8).background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        }
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .task(id: "\(box.size.width)x\(box.size.height)-\(scheme == .dark)") {
+                    making = true
+                    defer { making = false }
+                    guard let loaded = await model.points(track.id) else { return }
+                    if points.isEmpty { points = TrackPicture.flatten(loaded) }
+                    map = await model.thumbnails.large(track, points: loaded, dark: scheme == .dark, size: box.size)
+                }
+            }
+            // The map's licence asks for its credit to show with it.
+            if !model.mapCredit.isEmpty {
+                Text(model.mapCredit).font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.6)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+        .background(Backdrop(image: model.sidebarImage))
+        .navigationTitle(model.trackTitle(track))
+        .navigationBarTitleDisplayMode(.inline)
+    }
 }

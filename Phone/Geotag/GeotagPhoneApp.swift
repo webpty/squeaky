@@ -156,8 +156,9 @@ struct TrackCheckSheet: View {
                     Text(Words.t("The track service isn't answering.")).font(.headline)
                 }
                 if let latest {
-                    Text(Words.t("Latest track: {0}, starts {1}", model.trackTitle(latest),
-                                 When.current.dayAndTime(latest.start, zone: latest.timeZone.flatMap(TimeZone.init(identifier:)) ?? .current)))
+                    // The place stays whole; the start goes on its own line when it does not fit (0.29.35).
+                    Sentences(text: Words.t("Latest track: {0}", model.trackTitle(latest)) + LineBreaks.soft
+                              + Words.t("starts {0}", When.current.dayAndTime(latest.start, zone: latest.timeZone.flatMap(TimeZone.init(identifier:)) ?? .current)))
                         .font(.headline)
                 }
                 if check != .ready {

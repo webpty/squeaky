@@ -1219,6 +1219,18 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   typed in: always on, it swallowed taps on plain buttons (Show offset code
   did nothing).
 
+## A track's large map (0.29.35, David, 17 November 2026)
+
+- Tapping a track on the phone opens `TrackMapPage`: the same wordless map
+  as the small pictures, drawn at the page's size (`MapThumbnails.large`,
+  kept as `<id>-phone-large-<w>x<h>-<light|dark>.png`), the route framed to
+  fit, no moving or zooming (David: "just a big image like the others is
+  enough"); "Making the map" with the wheel until it is ready; the credit
+  under it. Simulator: `--track-map --maps <file of GET /v1/maps>`.
+- The panel before saving: "Latest track: Ronda, Andalusia" and "Starts 17
+  Nov 2026, 15:57" on separate lines when they do not fit on one; a line
+  begun at a soft break starts with a capital.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.
