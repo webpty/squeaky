@@ -58,6 +58,7 @@
  "Connect a file server": "Connect a file server",
  "Connect to power: {0} of saving left, the battery has {1}.": "Connect to power: {0} of saving left, the battery has {1}.",
  "Connected through {0}.": "Connected through {0}.",
+ "Copy done. Remove the card.": "Copy done. Remove the card.",
  "Copying {0} to the NAS": "Copying {0} to the server",
  "Destination full": "Destination full",
  "Don't save": "Don't save",

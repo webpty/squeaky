@@ -58,6 +58,9 @@ final class CardWatch {
         }
         guard model.source == nil, !model.photosBusy, !model.saving, model.macOwner != nil else { return }
         let all = UserDefaults.standard.dictionary(forKey: Self.key) as? [String: Data] ?? [:]
+        // Whether a card let go of is still in, for "Copy done. Remove the card." (0.29.40).
+        var stillIn = false
+        defer { if model.cardStillIn != stillIn { model.cardStillIn = stillIn } }
         for (id, data) in all {
             var stale = false
             guard let url = try? URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale) else {
@@ -74,6 +77,7 @@ final class CardWatch {
             }
             if letGo.contains(id) {
                 if access { url.stopAccessingSecurityScopedResource() }
+                stillIn = true
                 continue
             }
             if stale { Self.remember(url, id: id) }

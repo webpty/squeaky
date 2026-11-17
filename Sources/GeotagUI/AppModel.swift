@@ -1496,8 +1496,12 @@ public final class AppModel: ObservableObject {
     /// the usual line, and as a notification.
     #if os(iOS)
     /// The phone holds nothing to eject: the card is let go of and can come out.
+    /// A card let go of is still plugged in: set here and by the phone's card watch (0.29.40).
+    @Published public var cardStillIn = false
+
     public func letGo(done: String? = nil) {
         guard let card = source else { return }
+        cardStillIn = true
         readingRound += 1
         askingWhose = nil
         aligning = false

@@ -42,8 +42,13 @@ struct PhotosTab: View {
                         Button(Words.t("Stop")) { model.stopSaving() }
                     } else {
                         if model.source == nil {
-                            Button(Words.t("Open card")) { choosing = true }
-                                .disabled(model.photosBusy || model.macOwner == nil)
+                            // Everything saved and the card still in: nothing to open (0.29.40, David).
+                            if model.cardStillIn, allSaved {
+                                Text(Words.t("Copy done. Remove the card."))
+                            } else {
+                                Button(Words.t("Open card")) { choosing = true }
+                                    .disabled(model.photosBusy || model.macOwner == nil)
+                            }
                             if !model.rows.isEmpty {
                                 Button(Words.t("Clear photos"), role: .destructive) { model.clearPhotos() }
                                     .foregroundStyle(.red)
@@ -155,6 +160,13 @@ struct PhotosTab: View {
     }
 
     /// "340 new, 12 already saved".
+    /// Every photo to save is saved: none failed, none still waiting (0.29.40).
+    var allSaved: Bool {
+        !model.rows.isEmpty
+            && !model.results.values.contains(where: { if case .failed = $0 { return true }; return false })
+            && !model.rows.contains(where: { $0.willImport && model.results[$0.id] == nil })
+    }
+
     var counts: String {
         // Updated after every photo saved (0.29.13): saved now counts with saved before.
         let before = model.rows.filter { $0.status == .alreadyImported || model.results[$0.id]?.url != nil }.count

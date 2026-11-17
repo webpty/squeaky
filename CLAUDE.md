@@ -1278,6 +1278,15 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   ("appears too high, not tied with the actual location of the launching
   button"). Simulator: `--tab settings --ask-card` asks about the first card.
 
+## Copy done, remove the card (0.29.40, David, 17 November 2026)
+
+- After saving, with every photo saved and the card still plugged in
+  (`AppModel.cardStillIn`, set by `letGo` and kept by `CardWatch` while a
+  let-go card is still there), the Photos page shows "Copy done. Remove the
+  card." where "Open card" was (David: "makes no sense. we've just
+  finished"). Once the card is out, "Open card" is back. Photos not saved:
+  unchanged.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.
