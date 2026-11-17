@@ -71,8 +71,9 @@ public enum QueueText {
         // Said so it is clear nothing is held up (0.29.21, David: "of course it blocks me from trusting its safe to proceed").
         if let problem { return Words.t("Not synced with the NAS yet: {0} Trying again each minute; your photos are not affected, you can carry on.", problem) }
         guard let last else { return Words.t("Sync file not saved yet.") }
-        return Words.t("Sync file saved on NAS. Last save: {0} @ {1}", last.byPhone ? Words.t("iPhone app") : Words.t("Mac app"),
-                       When.current.time(last.at))
+        // The shared list: how many photos, and who last updated it (0.29.27).
+        return Words.t("Sync list: {0} photos, last updated by the {1} @ {2}", last.count.formatted(),
+                       last.byPhone ? Words.t("iPhone app") : Words.t("Mac app"), When.current.time(last.at))
     }
 
     public static func status(_ entry: QueueEntry) -> String {

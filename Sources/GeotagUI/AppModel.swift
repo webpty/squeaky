@@ -2246,11 +2246,9 @@ public final class AppModel: ObservableObject {
 
     /// This device's list of photos saved for a person, put on the server.
     public func publishHistory(_ personId: UUID) async {
-        guard let entries = try? history.load(personId), !entries.isEmpty,
-              let folder = await serverFolder(personId) else { return }
-        let device = deviceId
-        _ = await Task.detached { try? ServerList.write(entries, into: folder, device: device) }.value
+        await shareWithServer()
     }
+
 
     /// Everyone's lists, as Geotag opens: the photos saved before this
     /// version count on the other devices straight away.
@@ -2269,23 +2267,17 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var lastSave: ServerList.LastSave? = {
         let d = UserDefaults.standard
         guard let at = d.object(forKey: "lastSaveAt") as? Date else { return nil }
-        return ServerList.LastSave(byPhone: d.bool(forKey: "lastSaveByPhone"), at: at)
+        return ServerList.LastSave(byPhone: d.bool(forKey: "lastSaveByPhone"), at: at, count: d.integer(forKey: "lastSaveCount"))
     }() {
         didSet {
             guard let lastSave else { return }
             UserDefaults.standard.set(lastSave.at, forKey: "lastSaveAt")
             UserDefaults.standard.set(lastSave.byPhone, forKey: "lastSaveByPhone")
+            UserDefaults.standard.set(lastSave.count, forKey: "lastSaveCount")
         }
     }
 
-    /// The last save in a person's server folder, noted whenever Geotag looks there.
-    private func noteLastSave(_ folder: URL, _ personId: UUID) async {
-        guard personId == (macOwner ?? book.people.first(where: { goesToServer($0.id) && NASFolder($0.nasFolder) != nil })?.id) else { return }
-        if let found = await Task.detached(operation: { ServerList.lastSave(in: folder) }).value, found != lastSave {
-            lastSave = found
-            sharedProblem = nil
-        }
-    }
+
     private var sharing = false
 
     /// Every person's lists, read and written: as Geotag opens, whenever the
@@ -2309,25 +2301,33 @@ public final class AppModel: ObservableObject {
                 continue
             }
             await Task.detached { ServerList.moveFromHidden(in: folder) }.value
-            if let refreshed = await refreshServerCopy(person.id, folder: folder) { problem = refreshed }
-            let entries = (try? history.load(person.id)) ?? []
-            let cameras = book.cameras(of: person.id).filter { $0.offsetSeconds != nil }
-            let device = deviceId
-            // Written only when something is new since the last write (0.29.21).
-            let fingerprint = "\(entries.count)|\(entries.last?.key ?? "")|" + cameras.map { "\($0.model)=\($0.offsetSeconds ?? 0)@\($0.offsetDate.timeIntervalSince1970)" }.joined(separator: ",")
-            let writtenKey = "syncWritten-" + person.id.uuidString + "-" + folder.path
-            if defaults.string(forKey: writtenKey) == fingerprint {
+            // One list per person, merged and written back (0.29.27, David: "i want a synced list").
+            let (readProblem, shared) = await readAndKeep(person.id, folder: folder)
+            if let readProblem { problem = readProblem }
+            guard let shared else { continue }
+            let own = (try? history.load(person.id)) ?? []
+            let ownCameras = book.cameras(of: person.id).filter { $0.offsetSeconds != nil }
+            let entries = ServerList.union(shared.allEntries, own)
+            let cameras = ServerList.newest(shared.allCameras + ownCameras)
+            let camerasBefore = shared.cameras?.cameras.map { "\($0.model)=\($0.offsetDate.timeIntervalSince1970)" }.sorted() ?? []
+            let camerasAfter = cameras.map { "\($0.model)=\($0.offsetDate.timeIntervalSince1970)" }.sorted()
+            // Written only when something is new: an entry or an offset not yet listed, or old files to fold in.
+            guard entries.count != (shared.saved?.entries.count ?? -1) || camerasBefore != camerasAfter || !shared.oldFiles.isEmpty else {
                 syncActivity = nil
                 continue
             }
-            syncActivity = Words.t("Saving this phone's sync file to the server")
+            syncActivity = Words.t("Saving the sync list to the NAS")
+            let now = Date()
+            let by = Self.deviceKind
+            let oldFiles = shared.oldFiles
             // Given up after 30 seconds rather than hanging (0.29.18).
             let failure: String? = await withTaskGroup(of: String??.self) { group in
                 group.addTask {
                     await Task.detached { () -> String? in
                         do {
-                            if !entries.isEmpty { try ServerList.write(entries, into: folder, device: device) }
-                            if !cameras.isEmpty { try ServerList.writeCameras(cameras, into: folder, device: device) }
+                            try ServerList.writeShared(.init(entries: entries, updatedAt: now, updatedBy: by),
+                                                       .init(cameras: cameras, updatedAt: now, updatedBy: by), into: folder)
+                            ServerList.removeOld(oldFiles, in: folder)
                             return nil
                         } catch {
                             return error.localizedDescription
@@ -2340,10 +2340,10 @@ public final class AppModel: ObservableObject {
                 return first ?? nil
             }
             syncActivity = nil
-            if let failure { problem = Words.t("it couldn't be written:") + " " + failure } else { defaults.set(fingerprint, forKey: writtenKey) }
-            // The phone's person, or this Mac's owner, or the first: the line on the Photos page.
-            if person.id == (macOwner ?? people.first?.id) {
-                lastSave = await Task.detached { ServerList.lastSave(in: folder) }.value
+            if let failure {
+                problem = Words.t("it couldn't be written:") + " " + failure
+            } else if person.id == linePerson {
+                lastSave = ServerList.LastSave(byPhone: by == "iphone", at: now, count: entries.count)
             }
         }
         syncActivity = nil
@@ -2359,11 +2359,9 @@ public final class AppModel: ObservableObject {
 
     /// This device's cameras for a person, with their offsets, put on the server.
     public func publishCameras(_ personId: UUID) async {
-        let cameras = book.cameras(of: personId).filter { $0.offsetSeconds != nil }
-        guard !cameras.isEmpty, let folder = await serverFolder(personId) else { return }
-        let device = deviceId
-        _ = await Task.detached { try? ServerList.writeCameras(cameras, into: folder, device: device) }.value
+        await shareWithServer()
     }
+
 
     /// Offsets set more recently on another device taken here; a camera
     /// another device knows and this one not yet, added.
@@ -2397,28 +2395,36 @@ public final class AppModel: ObservableObject {
     /// Both sync files read in one visit, kept here, the offsets taken; nil
     /// when all went well, else why not.
     func refreshServerCopy(_ personId: UUID, folder: URL) async -> String? {
-        // Which files, said as they are read, and given up after 30 seconds rather than hanging (0.29.18).
-        let names = await Task.detached { ServerList.files(in: folder) }.value
-        syncActivity = names.isEmpty ? Words.t("Reading the sync files")
-            : Words.t("Reading the sync files: {0}", names.joined(separator: ", "))
-        let outcome = await withTaskGroup(of: ([HistoryEntry], String?, [Camera])?.self) { group in
-            group.addTask {
-                await Task.detached { () -> ([HistoryEntry], String?, [Camera]) in
-                    let saved = ServerList.readChecked(from: folder)
-                    return (saved.entries, saved.problem, ServerList.readCameras(from: folder))
-                }.value
-            }
+        await readAndKeep(personId, folder: folder).0
+    }
+
+    /// The person whose list the sync line reports: the phone's, or this Mac's owner, or the first.
+    var linePerson: UUID? {
+        macOwner ?? book.people.first(where: { goesToServer($0.id) && NASFolder($0.nasFolder) != nil })?.id
+    }
+
+    static var deviceKind: String {
+        #if os(iOS)
+        return "iphone"
+        #else
+        return "mac"
+        #endif
+    }
+
+    /// The person's list read in one visit, within 30 seconds, kept here, the
+    /// offsets taken; why not, when it could not be read.
+    func readAndKeep(_ personId: UUID, folder: URL) async -> (String?, ServerList.Shared?) {
+        syncActivity = Words.t("Reading the sync list")
+        let shared = await withTaskGroup(of: ServerList.Shared?.self) { group in
+            group.addTask { await Task.detached { ServerList.readShared(from: folder) }.value }
             group.addTask { try? await Task.sleep(for: .seconds(30)); return nil }
             let first = await group.next() ?? nil
             group.cancelAll()
             return first
         }
-        guard let outcome else {
-            syncActivity = nil
-            return Words.t("reading the sync files took more than 30 seconds: {0}", names.joined(separator: ", "))
-        }
-        let read = ((entries: outcome.0, problem: outcome.1), outcome.2)
-        let copy = ServerCopy(entries: read.0.entries, cameras: read.1)
+        syncActivity = nil
+        guard let shared else { return (Words.t("reading the sync files took more than 30 seconds: {0}", ServerList.folderName), nil) }
+        let copy = ServerCopy(entries: shared.allEntries, cameras: shared.allCameras)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .secondsSince1970
         if let data = try? encoder.encode(copy) {
@@ -2426,10 +2432,13 @@ public final class AppModel: ObservableObject {
             try? data.write(to: copyFile(personId), options: .atomic)
         }
         applyCameras(copy.cameras, personId: personId)
-        await noteLastSave(folder, personId)
-        syncActivity = nil
-        return read.0.problem.map { Words.t("the other devices' sync files couldn't be read:") + " " + $0 }
+        if personId == linePerson, let saved = shared.saved {
+            lastSave = ServerList.LastSave(byPhone: saved.updatedBy == "iphone", at: saved.updatedAt, count: saved.entries.count)
+            sharedProblem = nil
+        }
+        return (shared.problem.map { Words.t("the other devices' sync files couldn't be read:") + " " + $0 }, shared)
     }
+
 
     /// Offsets set more recently on another device taken here; a camera
     /// another device knows and this one not yet, added.

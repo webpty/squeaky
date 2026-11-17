@@ -84,14 +84,129 @@ public enum ServerList {
         return newest.values.sorted { $0.model < $1.model }
     }
 
-    /// The device that wrote last into the folder, and when (0.29.3).
+    /// The device that wrote last into the folder, and when (0.29.3), and
+    /// how many photos the shared list holds (0.29.27).
     public struct LastSave: Equatable, Sendable {
         public var byPhone: Bool
         public var at: Date
-        public init(byPhone: Bool, at: Date) {
+        public var count: Int
+        public init(byPhone: Bool, at: Date, count: Int = 0) {
             self.byPhone = byPhone
             self.at = at
+            self.count = count
         }
+    }
+
+    // MARK: One list per person (0.29.27, David: "i want a synced list. everyone their own is not a sync")
+
+    /// "saved.json": every photo saved by any device for the person.
+    public struct SavedFile: Codable, Sendable {
+        public var entries: [HistoryEntry]
+        public var updatedAt: Date
+        /// "mac" or "iphone".
+        public var updatedBy: String
+        public init(entries: [HistoryEntry], updatedAt: Date, updatedBy: String) {
+            self.entries = entries
+            self.updatedAt = updatedAt
+            self.updatedBy = updatedBy
+        }
+    }
+
+    /// "cameras.json": each camera's newest offset, from any device.
+    public struct CamerasFile: Codable, Sendable {
+        public var cameras: [Camera]
+        public var updatedAt: Date
+        public var updatedBy: String
+        public init(cameras: [Camera], updatedAt: Date, updatedBy: String) {
+            self.cameras = cameras
+            self.updatedAt = updatedAt
+            self.updatedBy = updatedBy
+        }
+    }
+
+    /// What the folder holds: the shared lists, and the per-device files of
+    /// 0.29.2 to 0.29.26, still to be merged in.
+    public struct Shared: Sendable {
+        public var saved: SavedFile?
+        public var cameras: CamerasFile?
+        public var oldEntries: [HistoryEntry] = []
+        public var oldCameras: [Camera] = []
+        public var oldFiles: [String] = []
+        public var problem: String?
+
+        /// Every photo listed, shared and old, once each.
+        public var allEntries: [HistoryEntry] { ServerList.union(saved?.entries ?? [], oldEntries) }
+        /// For each camera model, the newest offset.
+        public var allCameras: [Camera] { ServerList.newest((cameras?.cameras ?? []) + oldCameras) }
+    }
+
+    public static func union(_ a: [HistoryEntry], _ b: [HistoryEntry]) -> [HistoryEntry] {
+        var seen = Set<String>()
+        return (a + b).filter { seen.insert($0.key).inserted }
+    }
+
+    public static func newest(_ cameras: [Camera]) -> [Camera] {
+        var by: [String: Camera] = [:]
+        for c in cameras where c.offsetSeconds != nil {
+            if let known = by[c.model], known.offsetDate >= c.offsetDate { continue }
+            by[c.model] = c
+        }
+        return by.values.sorted { $0.model < $1.model }
+    }
+
+    static let coder: (JSONEncoder, JSONDecoder) = {
+        let e = JSONEncoder(), d = JSONDecoder()
+        e.dateEncodingStrategy = .secondsSince1970
+        d.dateDecodingStrategy = .secondsSince1970
+        e.outputFormatting = [.sortedKeys]
+        return (e, d)
+    }()
+
+    public static func readShared(from personFolder: URL) -> Shared {
+        let folder = personFolder.appendingPathComponent(folderName, isDirectory: true)
+        var out = Shared()
+        let decoder = coder.1
+        let names: [String]
+        do {
+            names = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+        } catch {
+            if (error as NSError).code != NSFileReadNoSuchFileError { out.problem = error.localizedDescription }
+            return out
+        }
+        for name in names.sorted() where name.hasSuffix(".json") {
+            let url = folder.appendingPathComponent(name)
+            do {
+                let bytes = try data(url)
+                switch name {
+                case "saved.json": out.saved = try decoder.decode(SavedFile.self, from: bytes)
+                case "cameras.json": out.cameras = try decoder.decode(CamerasFile.self, from: bytes)
+                default:
+                    if name.hasPrefix("saved-") {
+                        out.oldEntries += try decoder.decode([HistoryEntry].self, from: bytes)
+                        out.oldFiles.append(name)
+                    } else if name.hasPrefix("cameras-") {
+                        out.oldCameras += try decoder.decode([Camera].self, from: bytes)
+                        out.oldFiles.append(name)
+                    }
+                }
+            } catch {
+                out.problem = "\(name): \(error.localizedDescription)"
+            }
+        }
+        return out
+    }
+
+    public static func writeShared(_ saved: SavedFile, _ cameras: CamerasFile, into personFolder: URL) throws {
+        let folder = personFolder.appendingPathComponent(folderName, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try put(coder.0.encode(saved), at: folder.appendingPathComponent("saved.json"))
+        try put(coder.0.encode(cameras), at: folder.appendingPathComponent("cameras.json"))
+    }
+
+    /// The per-device files, once merged into the shared lists.
+    public static func removeOld(_ names: [String], in personFolder: URL) {
+        let folder = personFolder.appendingPathComponent(folderName, isDirectory: true)
+        for name in names { try? FileManager.default.removeItem(at: folder.appendingPathComponent(name)) }
     }
 
     public static func lastSave(in personFolder: URL) -> LastSave? {

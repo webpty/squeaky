@@ -1117,6 +1117,20 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   by place, working out the server folder's path in Settings, and every
   step that already had one.
 
+## One synced list per person (0.29.27, David, 17 November 2026: "i want a synced list. everyone their own is not a sync")
+
+- Each person's "~Geotag" holds one `saved.json` (every photo saved by any
+  device for that person) and one `cameras.json` (each camera's newest
+  offset), each with when and by which kind of device it was last updated.
+  A device reads them, adds what it saved, and writes them back only when
+  something is new, once a card's save is done or a batch is sent, never
+  per photo; entries are never removed, and anything lost to two writes at
+  once is added again at the next. The Mac keeps one per person it saves
+  for. The per-device files of 0.29.2 to 0.29.26 are merged in the first
+  time, then removed from the NAS.
+- The sync line: "Sync list: 4,230 photos, last updated by the Mac app @
+  01:21".
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

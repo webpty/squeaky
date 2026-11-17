@@ -1440,6 +1440,9 @@ extension SelfTest {
             await second.pullCameras(davidB)
             let got = second.book.camera(personId: davidB, model: "Canon EOS R5m2")?.offsetSeconds
             check("server list: a camera offset set on one Mac reaches the other", got == 7, "\(String(describing: got))")
+        let shared = ServerList.readShared(from: scratch.appendingPathComponent("SL-NAS/homes/david/Geotag"))
+        check("server list: one shared list and one camera list, no per-device files",
+              shared.saved?.entries.count == 4 && shared.cameras != nil && shared.oldFiles.isEmpty, "\(shared.oldFiles)")
             if var theirs = second.book.camera(personId: davidB, model: "Canon EOS R5m2") {
                 try? await Task.sleep(for: .milliseconds(20))
                 theirs.offsetSeconds = -3
@@ -1456,7 +1459,7 @@ extension SelfTest {
         await second.shareWithServer()
         let line = QueueText.sync(second.lastSave, problem: second.sharedProblem)
         check("server list: sharing says who saved last and when", second.sharedAt != nil && second.sharedProblem == nil
-              && line.hasPrefix("Sync file saved on NAS. Last save: Mac app @ "), line)
+              && line.hasPrefix("Sync list: ") && line.contains("Mac app @ "), line)
         // Server away: no wait, and the card reads as new.
         nas.online = false
         await second.checkNAS()
