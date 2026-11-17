@@ -1271,6 +1271,13 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   data", how to stop sending over it, "Open iPhone Settings" and "Close".
   Not shown in the debug flow test.
 
+## "Is this your card?" from its button (0.29.39, David, 17 November 2026)
+
+- The question is attached to each SD card's Change button, so the iPhone
+  opens it from that button; attached to the page, it opened near the top
+  ("appears too high, not tied with the actual location of the launching
+  button"). Simulator: `--tab settings --ask-card` asks about the first card.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

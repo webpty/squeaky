@@ -66,6 +66,15 @@ struct SettingsTab: View {
                                     HalfButton(Words.t("Rename")) { newName = card.name; renaming = card }
                                         .disabled(model.source?.id != card.id)
                                     HalfButton(Words.t("Change")) { changing = card }
+                                        // Opens from this button, not the top of the page (0.29.39).
+                                        .confirmationDialog(Words.t("Is this your card?"),
+                                                            isPresented: Binding(get: { changing?.id == card.id },
+                                                                                 set: { if !$0 { changing = nil } }),
+                                                            titleVisibility: .visible) {
+                                            Button(Words.t("Yes")) { if let me = model.macOwner { model.setOwner(of: card.id, to: me) } }
+                                            Button(Words.t("No")) { model.setOwner(of: card.id, to: PhoneFolders.othersId) }
+                                            Button(Words.t("Cancel"), role: .cancel) {}
+                                        }
                                 }
                             }
                         }
@@ -170,13 +179,6 @@ struct SettingsTab: View {
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(isPresented: $showingFormat) { ServiceFormat() }
             .navigationDestination(isPresented: $showingHowTo) { ConnectServer() }
-            .confirmationDialog(Words.t("Is this your card?"),
-                                isPresented: Binding(get: { changing != nil }, set: { if !$0 { changing = nil } }),
-                                titleVisibility: .visible) {
-                Button(Words.t("Yes")) { if let card = changing, let me = model.macOwner { model.setOwner(of: card.id, to: me) } }
-                Button(Words.t("No")) { if let card = changing { model.setOwner(of: card.id, to: PhoneFolders.othersId) } }
-                Button(Words.t("Cancel"), role: .cancel) {}
-            }
             // The name Geotag shows for a card; the card itself is never changed (0.29.30).
             .alert(Words.t("Rename SD card"),
                    isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
@@ -211,6 +213,9 @@ struct SettingsTab: View {
                 #if DEBUG
                 if CommandLine.arguments.contains("--offset-code") { showingCode = true }
                 if CommandLine.arguments.contains("--service-format") { showingFormat = true }
+                if CommandLine.arguments.contains("--ask-card"), let card = model.knownCards.first {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) { changing = card }
+                }
                 #endif
             }
             .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
