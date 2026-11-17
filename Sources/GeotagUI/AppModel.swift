@@ -3180,6 +3180,15 @@ public final class AppModel: ObservableObject {
     /// Seconds still to go for every photo waiting, at this address's pace.
     public func sendingSeconds() -> TimeInterval? {
         guard let address = sendingThrough else { return nil }
+        // Through the buffer server: the whole batch's pace, not one photo's (0.30.3).
+        if sendRoute == .buffer, let pace = bufferUploads.pace(), pace > 0 {
+            let ahead = queueEntries.filter { $0.state == .waiting && !$0.held && NASFolder(book.person($0.personId)?.nasFolder) != nil }
+            var bytes = ahead.reduce(0.0) { $0 + Double(size(of: $1)) }
+            for entry in queueEntries where entry.state == .sending {
+                bytes += Double(size(of: entry)) * (1 - (meter.going[entry.id]?.fraction ?? 0))
+            }
+            return bytes / pace
+        }
         let ahead = queueEntries.filter { $0.state == .waiting && NASFolder(book.person($0.personId)?.nasFolder) != nil }
         var bytes = ahead.reduce(0.0) { $0 + Double(size(of: $1)) }
         for entry in queueEntries where entry.state == .sending {
@@ -3622,7 +3631,9 @@ extension AppModel {
             batchSent += 1
             let before = SentRecord.stamp(entry.localPath)
             let bytes = before?.size ?? size(of: entry)
-            if let seconds, let address = sendingThrough ?? bufferClient?.address.host {
+            if var seconds, let address = sendingThrough ?? bufferClient?.address.host {
+                // Timed at the batch's pace: the photo's own time includes sharing the line (0.30.3).
+                if let pace = bufferUploads.pace(), pace > 0 { seconds = Double(bytes) / pace }
                 sendSpeeds.add(bytes: bytes, seconds: seconds, for: address)
                 if let data = try? JSONEncoder().encode(sendSpeeds) { defaults.set(data, forKey: "sendSpeeds") }
                 onPhotoTimed?((entry.relativePath as NSString).lastPathComponent, Int64(bytes), [0, seconds, 0, 0])

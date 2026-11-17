@@ -16,6 +16,8 @@ public final class BufferUploads: NSObject, URLSessionDataDelegate, @unchecked S
     public var finishEvents: (() -> Void)?
 
     private let lock = NSLock()
+    /// Bytes gone up, all photos together, with when: the pace of the whole batch (0.30.3).
+    private var sentLog: [(at: Date, bytes: Int64)] = []
     private var started: [Int: Date] = [:]
     private var answers: [Int: Data] = [:]
     private lazy var session: URLSession = {
@@ -31,6 +33,18 @@ public final class BufferUploads: NSObject, URLSessionDataDelegate, @unchecked S
         config.timeoutIntervalForResource = 24 * 3600
         return URLSession(configuration: config, delegate: self, delegateQueue: nil)
     }()
+
+    /// Bytes a second over the last three minutes, every photo going up
+    /// counted together: many share one connection, so one photo's own time
+    /// says little (David, 17 November 2026: "36h left"). Nil until 20 s of it.
+    public func pace() -> Double? {
+        lock.withLock {
+            guard let first = sentLog.first, let last = sentLog.last else { return nil }
+            let span = last.at.timeIntervalSince(first.at)
+            guard span >= 20 else { return nil }
+            return Double(sentLog.reduce(0) { $0 + $1.bytes }) / span
+        }
+    }
 
     /// Reconnects to transfers begun before Geotag was closed.
     public func wake() { _ = session }
@@ -57,7 +71,12 @@ public final class BufferUploads: NSObject, URLSessionDataDelegate, @unchecked S
                            totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
         // The clock starts when the photo really starts going up, not when it was
         // handed over to wait its turn (0.30.2, David: "2 min 18 s per photo").
-        lock.withLock { if started[task.taskIdentifier] == nil { started[task.taskIdentifier] = Date().addingTimeInterval(-0.5) } }
+        lock.withLock {
+            if started[task.taskIdentifier] == nil { started[task.taskIdentifier] = Date().addingTimeInterval(-0.5) }
+            let now = Date()
+            sentLog.append((now, bytesSent))
+            sentLog.removeAll { now.timeIntervalSince($0.at) > 180 }
+        }
         guard let id = task.taskDescription.flatMap(UUID.init(uuidString:)), totalBytesExpectedToSend > 0 else { return }
         let fraction = Double(totalBytesSent) / Double(totalBytesExpectedToSend)
         Task { @MainActor [weak self] in self?.onProgress?(id, fraction) }

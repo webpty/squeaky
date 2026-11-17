@@ -1362,6 +1362,10 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Each buffer upload is timed from its first bytes going up, not from being
   handed over: 30 are handed over and two go at a time, so the time spent
   waiting its turn made 40 s read as 2 min 18 s (0.30.2).
+- Over HTTP/2 every handed-over upload goes at once on one connection, so a
+  photo's own time is its share of the line: "8 min per photo", "36 h
+  left". `BufferUploads.pace()` counts the bytes of all of them over three
+  minutes; `sendingSeconds` and the speeds recorded use it (0.30.3).
 - A photo counts as sent once at bufr.cc. "Waiting on the buffer server"
   (Queue) is what the NAS has not fetched yet; "Connected to server" or
   "Connected to buffer server" says the route (David's words).
