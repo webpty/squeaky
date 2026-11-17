@@ -30,7 +30,7 @@ struct PhotosTab: View {
                     }
                     // Every photo not saved, by name, with the full reason (0.29.28, David: "we need a button to show the error").
                     if model.results.values.contains(where: { if case .failed = $0 { return true }; return false }) {
-                        Button(Words.t("Show what wasn't saved")) { showingFailed = true }
+                        Button(Words.t("Show unsaved photos")) { showingFailed = true }
                     }
                     // Why photos wait: one line for each reason, with how many.
                     ForEach(reasons, id: \.self) { line in
@@ -277,13 +277,29 @@ struct NotSaved: View {
 
     var body: some View {
         NavigationStack {
-            List(failed, id: \.0) { item in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.0)
-                    Text(item.1).font(.callout).foregroundStyle(.secondary)
+            List {
+                // Try again with the card in; without it, what to do (0.29.31, David, 17 November 2026).
+                Section {
+                    if model.source != nil {
+                        Button(Words.t("Try again")) {
+                            dismiss()
+                            Task { await model.tryUnsavedAgain() }
+                        }
+                        .disabled(model.saving || model.photosBusy)
+                    } else {
+                        Text(Words.t("Insert the card to try again"))
+                    }
+                }
+                Section {
+                    ForEach(failed, id: \.0) { item in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.0)
+                            Sentences(text: item.1).font(.callout).foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
-            .navigationTitle(Words.t("Not saved"))
+            .navigationTitle(Words.t("Unsaved photos"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(Words.t("Close")) { dismiss() } } }
         }

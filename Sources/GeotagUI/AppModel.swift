@@ -1595,6 +1595,16 @@ public final class AppModel: ObservableObject {
         if let source, source.id == card, !saving { Task { await read(source, for: personId) } }
     }
 
+    /// The photos not saved, tried again (0.29.31, David, 17 November 2026):
+    /// the card read again, so a photo this version can now handle (a HIF)
+    /// is read afresh, then saved as Save photos would.
+    public func tryUnsavedAgain() async {
+        guard let source, let person = importPerson, !saving, !photosBusy else { return }
+        await read(source, for: person)
+        while photosBusy { try? await Task.sleep(for: .milliseconds(200)) }
+        if !saving, trackCheck == nil, canSave { await checkTracksBeforeSave() }
+    }
+
     /// The card now in, read again for whoever it belongs to.
     public func checkAgain() {
         guard let source, let person = importPerson, !saving, !photosBusy else { return }

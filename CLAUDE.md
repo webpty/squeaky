@@ -1186,6 +1186,14 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Tracks: the status line has no box; an Import button at the top right
   takes GPX or FIT files from the Files list, as the Mac's import does.
 
+## Unsaved photos tried again (0.29.31, David, 17 November 2026)
+
+- "Show unsaved photos" (it was "Show what wasn't saved") opens "Unsaved
+  photos": each file and its reason, and "Try again", which reads the card
+  again (so a photo this version can now handle is read afresh) and saves
+  as Save photos would. With the card out, the button's place reads
+  "Insert the card to try again"; never a dimmed button there.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.
