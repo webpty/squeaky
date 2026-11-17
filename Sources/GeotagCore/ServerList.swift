@@ -2,17 +2,18 @@ import Foundation
 
 /// The photos already saved from cards, kept on the server in each person's
 /// folder so every Mac and phone knows them (David, 16 November 2026): a
-/// "Geotag sync" folder (hidden ".geotag" before 0.29.23) with one list per device, so two never write over
+/// "~Geotag" folder (hidden ".geotag" before 0.29.24) with one list per device, so two never write over
 /// each other. Each device writes its own whole list; a card being read is
 /// checked against all of them.
 public enum ServerList {
     /// Visible (0.29.23): the phone reaches the NAS through the Files app,
     /// which hides a folder whose name starts with a dot, so ".geotag" looked
     /// absent there and the Mac's list was never read.
-    public static let folderName = "Geotag sync"
+    /// "~Geotag" (0.29.24, David): the tilde keeps it at the top of the folder's list.
+    public static let folderName = "~Geotag"
     static let oldFolderName = ".geotag"
 
-    /// Once per folder: the files of the hidden ".geotag" moved to "Geotag sync".
+    /// Once per folder: the files of the hidden ".geotag" moved to "~Geotag".
     public static func moveFromHidden(in personFolder: URL) {
         let fm = FileManager.default
         let old = personFolder.appendingPathComponent(oldFolderName, isDirectory: true)

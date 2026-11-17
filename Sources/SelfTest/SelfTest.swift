@@ -1419,7 +1419,7 @@ extension SelfTest {
         let saved = photos.map { HistoryEntry(fileName: $0.fileName, size: $0.size, taken: $0.taken, subSeconds: $0.subSeconds, imported: Date()) }
         try? HistoryStoreFolder(folder: scratch.appendingPathComponent("sl-a-history")).save(davidA, saved)
         await first.publishHistory(davidA)
-        let listed = fm.fileExists(atPath: scratch.appendingPathComponent("SL-NAS/homes/david/Geotag/Geotag sync").path)
+        let listed = fm.fileExists(atPath: scratch.appendingPathComponent("SL-NAS/homes/david/Geotag/~Geotag").path)
         let onServer = await second.serverHistory(davidB)
         check("server list: one Mac's photos saved are listed on the server for the other", listed && onServer.count == 4,
               "\(onServer.count) listed")
