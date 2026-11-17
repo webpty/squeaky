@@ -1460,6 +1460,15 @@ public final class AppModel: ObservableObject {
         try? photoList?.save(KeptPhotoList(personId: importPerson, rows: rows, results: results))
     }
 
+    /// The phone's card no longer answers while nothing is reading or saving it
+    /// (0.29.37): let go of, the list and whose it is kept, as on the Mac.
+    public func cardTakenOut() {
+        guard let gone = source, !saving, !photosBusy else { return }
+        readingRound += 1
+        source = nil
+        photosLine = Words.t("{0} was taken out.", gone.name)
+    }
+
     /// The card gone as if taken out, for the self-test: scratch cards have no disk.
     public func cardOutForTest() {
         readingRound += 1

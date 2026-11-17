@@ -3,7 +3,8 @@ import GeotagCore
 
 /// The phone's language for Geotag's words: the first of the phone's own
 /// languages Geotag has, else English (David, 15 November 2026: English,
-/// Spanish, French, Simplified and Traditional Chinese, as Countries).
+/// Spanish, French, Simplified and Traditional Chinese, as Countries;
+/// Traditional Chinese only from 0.29.37).
 enum PhoneWords {
     static func language(_ preferred: [String] = Locale.preferredLanguages) -> String {
         for tag in preferred {
@@ -11,12 +12,8 @@ enum PhoneWords {
             let code = id.language.languageCode?.identifier ?? ""
             switch code {
             case "en", "es", "fr": return code
-            case "zh":
-                let script = id.language.script?.identifier
-                if script == "Hant" { return "zh-Hant" }
-                if script == "Hans" { return "zh-Hans" }
-                let region = id.region?.identifier ?? ""
-                return ["TW", "HK", "MO"].contains(region) ? "zh-Hant" : "zh-Hans"
+            // Traditional Chinese only; a phone in Simplified reads it too (0.29.37).
+            case "zh": return "zh-Hant"
             default: continue
             }
         }

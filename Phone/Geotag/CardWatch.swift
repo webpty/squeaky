@@ -45,6 +45,17 @@ final class CardWatch {
         // A card the list was showing and is now let go of stays let go of while it is in.
         if let id = lastSource, model.source == nil { letGo.insert(id) }
         lastSource = model.source?.id
+        // The card in use, taken out: noticed here, since the phone says nothing (0.29.37).
+        if let card = model.source, card.isCard, !model.photosBusy, !model.saving {
+            let there = (try? card.url.checkResourceIsReachable()) == true
+                && (try? FileManager.default.contentsOfDirectory(atPath: card.url.path)) != nil
+            if !there {
+                model.cardTakenOut()
+                letGo.remove(card.id)
+                lastSource = nil
+            }
+            return
+        }
         guard model.source == nil, !model.photosBusy, !model.saving, model.macOwner != nil else { return }
         let all = UserDefaults.standard.dictionary(forKey: Self.key) as? [String: Data] ?? [:]
         for (id, data) in all {

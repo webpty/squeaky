@@ -1239,6 +1239,22 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   and 0.29.33 is removed: it closed the keyboard on a tap inside the field
   itself, so Paste never appeared ("i can't paste it").
 
+## Card out, and the language choice (0.29.37, David, 17 November 2026)
+
+- The phone says nothing when a card is pulled out, so `CardWatch` checks the
+  card in use every 3 s while nothing reads or saves it; gone, it calls
+  `AppModel.cardTakenOut()`: the card let go of, the list and whose it is
+  kept, "{0} was taken out." on the Photos page. Rename greys out and the
+  unsaved photos say "Insert the card to try again" (David: "the sd card
+  menu is still active while there is no card connected").
+- `CFBundleLocalizations` in `Phone/Info.plist` lists en, es, fr, zh-Hant.
+  The iPhone offers a Language row under Settings, Apps, Geotag, only when
+  the phone itself has more than one language in General, Language & Region.
+  `Locale.preferredLanguages` then starts with the language chosen there.
+- Simplified Chinese is removed (David: "only need traditional chinese. not
+  simplified"): no `words-zh-Hans.json`, no `zh-Hans.lproj`; a phone in any
+  Chinese gets Traditional.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.
