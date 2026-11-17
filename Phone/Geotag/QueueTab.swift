@@ -34,7 +34,10 @@ struct QueueTab: View {
                         ForEach(meter.order, id: \.self) { id in
                             if let going = meter.going[id] {
                                 // How far it has got on the right, in fixed-width digits (0.29.42).
+                                // The wheel in front of the name: the bar alone moved too slowly to
+                                // show it was working (0.29.43, David).
                                 HStack {
+                                    ProgressView()
                                     Text(going.name).lineLimit(1).truncationMode(.middle)
                                     Spacer()
                                     Text(going.percent).monospacedDigit().foregroundStyle(.secondary)

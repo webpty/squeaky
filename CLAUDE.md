@@ -1315,6 +1315,11 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   with no service or a reading key; Refresh with no service; Rename's Save
   with an empty name.
 
+## The wheel back in front of the name (0.29.43, David, 17 November 2026)
+
+- Each Sending row: the wheel, the name, the percentage on the right, over
+  the blue bar ("the blue progress is too slow to feel it's doing something").
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.
