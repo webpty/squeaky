@@ -1526,6 +1526,13 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - `Phone/install_phone.sh` takes `PHONE=<id>` for the phone on the cable
   when another one is about over Wi-Fi.
 
+## 相途 in Chinese (0.31.10, David, 18 November 2026)
+
+- On an iPhone set to Chinese the app is named 相途 ("photos along the
+  way", David's pick of three), under its icon, in Settings and in the
+  Photos permission texts (`zh-Hant.lproj/InfoPlist.strings`). Everywhere
+  else, and in the words inside the app, it stays Geotag.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.
