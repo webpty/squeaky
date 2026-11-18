@@ -1441,6 +1441,17 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   600 s before the phone starts it again. Watch the record for slower
   sending while locked: each batch of 6 needs the phone to wake Geotag.
 
+## Where the Mac build lands (0.31.6, 18 November 2026)
+
+- Swift 6.4 puts release products in `.build/out/Products/Release` for every
+  chip, not `.build/<chip>-apple-macosx/release`. `build.sh` copies each
+  chip's build out by `--show-bin-path` before the next; it had been
+  shipping the 17 November copy (0.29.27). The self-test runs from
+  `$(swift build -c release --triple arm64-apple-macosx14.0 --show-bin-path)/SelfTest`;
+  the old path ran a stale copy from 17 November to 18 November.
+- After `./build.sh install`, check a long new string is in the app
+  (`strings ... | grep`): strings of 15 bytes or fewer sit inside the code.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

@@ -3432,9 +3432,12 @@ extension SelfTest {
               speeds.rate(for: "away").map { abs($0 - 30_000_000 * 20 / Double((11...30).map { 300 + $0 }.reduce(0, +))) < 0.01 } == true)
         check("send speeds: none of it rated before ten", SendSpeeds().rating(of: 1) == nil)
         for _ in 1...15 { speeds.add(bytes: 30_000_000, seconds: 10, for: "home") }
-        check("send speeds: away slow, home fast",
-              speeds.rating(of: speeds.latest(for: "away")!) == .slow && speeds.rating(of: speeds.latest(for: "home")!) == .fast,
-              "\(String(describing: speeds.rating(of: speeds.latest(for: "away")!)))")
+        // The slowest tenth very slow (0.29.41): the latest away photo is the slowest of all.
+        check("send speeds: the slowest very slow, a little faster slow, home fast",
+              speeds.rating(of: speeds.latest(for: "away")!) == .verySlow
+                && speeds.rating(of: 30_000_000 / 325) == .slow
+                && speeds.rating(of: speeds.latest(for: "home")!) == .fast,
+              "\(String(describing: speeds.rating(of: speeds.latest(for: "away")!))) \(String(describing: speeds.rating(of: 30_000_000 / 325)))")
         check("send speeds: in between, average", speeds.rating(of: 1_000_000) == .average)
         for _ in 1...300 { speeds.add(bytes: 1, seconds: 1, for: "home") }
         check("send speeds: at most 200 kept a place", speeds.byAddress["home"]?.count == SendSpeeds.kept)

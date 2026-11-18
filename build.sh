@@ -15,10 +15,17 @@ version=$(grep 'let appVersion' Sources/GeotagCore/Version.swift | sed 's/.*"\(.
 mkdir -p build
 
 echo "Building $display $version"
-swift build -c release --product "$name" --triple arm64-apple-macosx14.0
-swift build -c release --product "$name" --triple x86_64-apple-macosx14.0
+# Each chip's build copied out as soon as it is made: newer Swift puts both in
+# the same place (.build/out/Products/Release), and the old per-chip folders
+# kept a copy from 17 November 2026 that was shipped as 0.31.5 (18 November).
+for arch in arm64 x86_64; do
+  swift build -c release --product "$name" --triple $arch-apple-macosx14.0
+  bin=$(swift build -c release --product "$name" --triple $arch-apple-macosx14.0 --show-bin-path)
+  cp "$bin/$name" "build/$name-$arch"
+done
 binary="build/$name-universal"
-lipo -create ".build/arm64-apple-macosx/release/$name" ".build/x86_64-apple-macosx/release/$name" -output "$binary"
+lipo -create "build/$name-arm64" "build/$name-x86_64" -output "$binary"
+
 
 app="build/$display.app"
 rm -rf "$app"
