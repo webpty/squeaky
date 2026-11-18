@@ -3577,7 +3577,7 @@ extension AppModel {
         }
         // In the queue's own order, so the rows come back in the same places after a reopen.
         for entry in queueEntries where flying.contains(entry.id) && meter.going[entry.id] == nil {
-            meter.begin(entry.id, name: (entry.relativePath as NSString).lastPathComponent)
+            meter.begin(entry.id, name: (entry.relativePath as NSString).lastPathComponent, weights: .buffer)
         }
         // Six at a time: thirty shared one connection, and the starved ones started
         // again from nothing ("57% then back to 11%", 0.31.5, David).
@@ -3618,7 +3618,7 @@ extension AppModel {
             let request = client.upload(path: path, sha256: fingerprint.sha256, size: fingerprint.size,
                                         modified: modified, update: entry.update)
             changeEntry(entry.id) { $0.state = .sending }
-            meter.begin(entry.id, name: (entry.relativePath as NSString).lastPathComponent)
+            meter.begin(entry.id, name: (entry.relativePath as NSString).lastPathComponent, weights: .buffer)
             sendingBatch = true
             bufferUploads.send(entry.id, file: local, request: request)
             room -= 1

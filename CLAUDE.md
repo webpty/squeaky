@@ -1452,6 +1452,13 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - After `./build.sh install`, check a long new string is in the app
   (`strings ... | grep`): strings of 15 bytes or fewer sit inside the code.
 
+## The buffer bar reaches 100% (0.31.7, David, 18 November 2026)
+
+- A photo going to the buffer server fills its bar on `StepWeights.buffer`
+  (sending is all of it): on the NAS weights it stopped at 62% ("62% is the
+  maximum value I see before the image disappears"), the reading back and
+  naming never happening on that route.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

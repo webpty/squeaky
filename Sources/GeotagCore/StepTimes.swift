@@ -17,6 +17,9 @@ public struct StepWeights: Equatable, Sendable {
 
     /// Until a link has photos timed.
     public static let guess = StepWeights(looking: 0.02, sending: 0.60, checking: 0.36, naming: 0.02)
+    /// To the buffer server: going up is the whole of it, the fingerprint checked
+    /// there (0.31.7, David: "62% is the maximum value I see").
+    public static let buffer = StepWeights(looking: 0, sending: 1, checking: 0, naming: 0)
 }
 
 /// How long each step took for the last photos sent, kept for each NAS
