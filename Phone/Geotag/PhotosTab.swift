@@ -96,7 +96,7 @@ struct PhotosTab: View {
                             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 3), spacing: 3) {
                                 ForEach(day.frames) { frame in
                                     PickSquare(image: pictures.made[frame.picture], ticked: frame.ticked,
-                                               saved: frame.rows.contains { model.results[$0.id]?.url != nil },
+                                               saved: frame.rows.allSatisfy { model.isSaved($0) },
                                                failed: frame.rows.contains { if case .failed? = model.results[$0.id] { return true }; return false })
                                         .id(frame.id)
                                         .background(GeometryReader { g in

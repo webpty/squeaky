@@ -442,5 +442,7 @@
  "Add locations to {0} photos": "為 {0} 張照片加入位置",
  "Adding locations in Photos: {0} of {1}": "正在「照片」中加入位置：{0}／{1}",
  "Locations added to {0} photos in Photos, then stopped: {1}": "已為「照片」中 {0} 張照片加入位置，之後停止：{1}",
- "Locations added to {0} photos in Photos": "已為「照片」中 {0} 張照片加入位置"
+ "Locations added to {0} photos in Photos": "已為「照片」中 {0} 張照片加入位置",
+ "Offset updated for {0}": "已更新 {0} 的時差",
+ "Copied": "已複製"
 }

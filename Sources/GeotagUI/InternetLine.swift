@@ -67,3 +67,33 @@ public struct InternetLine: View {
         }
     }
 }
+
+/// Notices that stay until closed (0.31.9, David: offset codes read): inside
+/// Geotag, under the red line, never a system notification.
+public struct NoticeLines: View {
+    @ObservedObject var model: AppModel
+
+    public init(model: AppModel) { self.model = model }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            ForEach(model.offsetNotices, id: \.self) { line in
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Text(line).lineLimit(1).minimumScaleFactor(0.8)
+                    Spacer(minLength: 8)
+                    Button {
+                        model.offsetNotices.removeAll { $0 == line }
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel(Words.t("Close"))
+                }
+                .padding(.vertical, 8)
+                .padding(.horizontal, 16)
+                .background(.regularMaterial)
+            }
+        }
+    }
+}

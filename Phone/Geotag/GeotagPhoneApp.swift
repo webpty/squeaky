@@ -116,6 +116,7 @@ struct PhoneRoot: View {
         // the tabs rather than laid over them, so each page's title row sits under it.
         VStack(spacing: 0) {
         InternetLine()
+        NoticeLines(model: model)
         TabView(selection: $tab) {
             PhotosTab(model: model)
                 .tabItem { Label(Words.t("Photos"), systemImage: "photo.on.rectangle") }
@@ -224,6 +225,14 @@ struct TrackCheckSheet: View {
                     Text(Words.t("The track service isn't answering.")).font(.headline)
                 }
                 if let latest {
+                    // Its map, as on the Tracks page (0.31.9, David).
+                    VStack(alignment: .leading, spacing: 2) {
+                        TrackLargeMap(model: model, track: latest)
+                            .frame(height: 170)
+                        if !model.mapCredit.isEmpty {
+                            Text(model.mapCredit).font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.6)
+                        }
+                    }
                     // The place stays whole; the start goes on its own line when it does not fit (0.29.35).
                     Sentences(text: Words.t("Latest track: {0}", model.trackTitle(latest)) + LineBreaks.soft
                               + Words.t("starts {0}", When.current.dayAndTime(latest.start, zone: latest.timeZone.flatMap(TimeZone.init(identifier:)) ?? .current)))
@@ -257,7 +266,7 @@ struct TrackCheckSheet: View {
             }
         }
         .padding(24)
-        .presentationDetents([.height(check == .checking ? 140 : 400)])
+        .presentationDetents([.height(check == .checking ? 140 : 590)])
         .interactiveDismissDisabled()
     }
 }

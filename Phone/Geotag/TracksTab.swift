@@ -195,43 +195,10 @@ private extension CGSize {
 struct TrackMapPage: View {
     @ObservedObject var model: AppModel
     let track: Track
-    @Environment(\.colorScheme) private var scheme
-    @State private var map: UIImage?
-    @State private var points: [CGPoint] = []
-    @State private var making = true
 
     var body: some View {
         VStack(spacing: 8) {
-            GeometryReader { box in
-                ZStack {
-                    Color(.secondarySystemBackground)
-                    if let map {
-                        Image(uiImage: map).resizable().scaledToFit()
-                    } else {
-                        // The bare route until the map is made, or when it cannot be.
-                        Path { path in
-                            let fitted = TrackPicture.fit(points, in: CGSize(width: max(box.size.width - 32, 1), height: max(box.size.height - 32, 1)))
-                            guard let first = fitted.first else { return }
-                            path.move(to: first)
-                            for p in fitted.dropFirst() { path.addLine(to: p) }
-                        }
-                        .offset(x: 16, y: 16)
-                        .stroke(Color.heroBlue, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
-                        if making {
-                            StatusRow(text: Words.t("Making the map"), busy: true)
-                                .padding(8).background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-                        }
-                    }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .task(id: "\(box.size.width)x\(box.size.height)-\(scheme == .dark)") {
-                    making = true
-                    defer { making = false }
-                    guard let loaded = await model.points(track.id) else { return }
-                    if points.isEmpty { points = TrackPicture.flatten(loaded) }
-                    map = await model.thumbnails.large(track, points: loaded, dark: scheme == .dark, size: box.size)
-                }
-            }
+            TrackLargeMap(model: model, track: track)
             // The map's licence asks for its credit to show with it.
             if !model.mapCredit.isEmpty {
                 Text(model.mapCredit).font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.6)
@@ -242,5 +209,49 @@ struct TrackMapPage: View {
         .background(Backdrop(image: model.sidebarImage))
         .navigationTitle(model.trackTitle(track))
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// A track's map made at the size it is shown, the bare route until it is
+/// ready: the large map page, and the panel before saving (0.31.9).
+struct TrackLargeMap: View {
+    @ObservedObject var model: AppModel
+    let track: Track
+    @Environment(\.colorScheme) private var scheme
+    @State private var map: UIImage?
+    @State private var points: [CGPoint] = []
+    @State private var making = true
+
+    var body: some View {
+    GeometryReader { box in
+        ZStack {
+            Color(.secondarySystemBackground)
+            if let map {
+                Image(uiImage: map).resizable().scaledToFit()
+            } else {
+                // The bare route until the map is made, or when it cannot be.
+                Path { path in
+                    let fitted = TrackPicture.fit(points, in: CGSize(width: max(box.size.width - 32, 1), height: max(box.size.height - 32, 1)))
+                    guard let first = fitted.first else { return }
+                    path.move(to: first)
+                    for p in fitted.dropFirst() { path.addLine(to: p) }
+                }
+                .offset(x: 16, y: 16)
+                .stroke(Color.heroBlue, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                if making {
+                    StatusRow(text: Words.t("Making the map"), busy: true)
+                        .padding(8).background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .task(id: "\(box.size.width)x\(box.size.height)-\(scheme == .dark)") {
+            making = true
+            defer { making = false }
+            guard let loaded = await model.points(track.id) else { return }
+            if points.isEmpty { points = TrackPicture.flatten(loaded) }
+            map = await model.thumbnails.large(track, points: loaded, dark: scheme == .dark, size: box.size)
+        }
+    }
     }
 }

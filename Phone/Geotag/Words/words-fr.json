@@ -442,5 +442,7 @@
  "Add locations to {0} photos": "Ajouter un lieu à {0} photos",
  "Adding locations in Photos: {0} of {1}": "Ajout des lieux dans Photos : {0} sur {1}",
  "Locations added to {0} photos in Photos, then stopped: {1}": "Lieu ajouté à {0} photos dans Photos, puis arrêt : {1}",
- "Locations added to {0} photos in Photos": "Lieu ajouté à {0} photos dans Photos"
+ "Locations added to {0} photos in Photos": "Lieu ajouté à {0} photos dans Photos",
+ "Offset updated for {0}": "Décalage mis à jour pour {0}",
+ "Copied": "Copiées"
 }

@@ -39,21 +39,30 @@ enum PhotoDays {
         let parse = DateFormatter()
         parse.locale = Locale(identifier: "en_US_POSIX")
         parse.dateFormat = "yyyy:MM:dd"
+        // A day's photos copied before and those not yet are two cards, so the new
+        // ones are selected at once; one card again once all are copied, with the
+        // green tick, as is every day copied before (0.31.9, David).
         for row in shown {
             let taken = row.photo.taken ?? ""
             let day = String(taken.prefix(10))
-            let id = day.isEmpty ? "unknown" : day.replacingOccurrences(of: ":", with: "-")
+            let dayId = day.isEmpty ? "unknown" : day.replacingOccurrences(of: ":", with: "-")
             let files = byFrame[frameKey(row)] ?? [row]
             let frame = PhotoFrame(id: row.id, rows: files, picture: model.pictureURL(row) ?? row.photo.url, taken: taken)
             let copied = files.allSatisfy { model.isSaved($0) }
-            if days[id] == nil { days[id] = PhotoDay(id: id, date: parse.date(from: day), frames: [], copied: true) }
+            let id = copied ? dayId + copiedSuffix : dayId
+            if days[id] == nil { days[id] = PhotoDay(id: id, date: parse.date(from: day), frames: [], copied: copied) }
             days[id]!.frames.append(frame)
-            if !copied { days[id]!.copied = false }
         }
         return days.values
             .map { var d = $0; d.frames.sort { $0.taken < $1.taken }; return d }
-            .sorted { $0.id > $1.id }
+            .sorted { a, b in
+                let da = a.id.replacingOccurrences(of: copiedSuffix, with: ""), db = b.id.replacingOccurrences(of: copiedSuffix, with: "")
+                return da != db ? da > db : !a.copied
+            }
     }
+
+    /// The card of a day's photos already copied.
+    static let copiedSuffix = "-copied"
 
     /// "17 Nov 2026", in the phone's own short form (0.31.3, David).
     static func title(_ day: PhotoDay) -> String {
@@ -106,6 +115,13 @@ struct DayHeader: View {
                         .font(.footnote.weight(.semibold))
                         .rotationEffect(.degrees(open ? 90 : 0))
                     Text(PhotoDays.title(day)).font(.headline).lineLimit(1)
+                    // Copied, the same tick as the copied photos (0.31.9, David).
+                    if day.copied {
+                        Image(systemName: "checkmark.circle.fill")
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, Color.green)
+                            .accessibilityLabel(Words.t("Copied"))
+                    }
                     Spacer(minLength: 8)
                 }
                 .contentShape(Rectangle())

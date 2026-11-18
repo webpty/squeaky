@@ -1507,6 +1507,25 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   in Photos"; once given it looks by itself whenever the tracks change,
   with the card out. Copies already on the server keep no location.
 
+## Ticks, the panel's map, offset code photos, days in two (0.31.9, David, 18 November 2026)
+
+- Every photo already copied, by any device known, shows the green tick as
+  soon as the card is read (`isSaved`), not only those copied since: "there
+  was nothing showing".
+- The panel before saving shows the latest track's map (`TrackLargeMap`,
+  shared with the large map page, made at its size) with the map credit.
+- Photos of the offset code are left out of the list (`offsetCodeFrames`, by
+  frame), on the phone and the Mac: never shown, copied or sent. A reading
+  that changed the record adds "Offset updated for <model>" to
+  `offsetNotices`, shown under the red line inside Geotag (`NoticeLines`),
+  never a system notification, until closed.
+- A day with photos copied and not is two cards: "<day>" with every photo
+  not copied yet, then "<day>-copied" with a green tick in its title, folded
+  to start; every fully copied day has the tick; all copied, one card again
+  (it keeps the copied card's fold state).
+- `Phone/install_phone.sh` takes `PHONE=<id>` for the phone on the cable
+  when another one is about over Wi-Fi.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

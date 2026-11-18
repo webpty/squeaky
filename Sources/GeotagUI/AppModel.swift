@@ -1762,6 +1762,9 @@ public final class AppModel: ObservableObject {
             noteLenses(photos, personId: personId)
             let codes = await readOffsetCodes(photos, personId: personId, round: round)
             guard readingRound == round, self.source?.id == source.id else { return }
+            if rows.contains(where: { offsetCodeFrames.contains(Self.frameKey($0.photo)) }) {
+                rows = rows.filter { !offsetCodeFrames.contains(Self.frameKey($0.photo)) }
+            }
             photosLine = Words.t("Loading tracks")
             await loadTimeline()
             guard readingRound == round else { return }
@@ -1823,6 +1826,17 @@ public final class AppModel: ObservableObject {
         ["jpg", "jpeg"].contains((photo.fileName as NSString).pathExtension.lowercased())
     }
 
+    /// The photos of the offset code found on cards read since Geotag opened,
+    /// by frame: left out of the list, so never shown, copied or sent (0.31.9).
+    var offsetCodeFrames = Set<String>()
+    /// "Offset updated for Canon EOS R5m2": shown inside Geotag until closed (0.31.9).
+    @Published public var offsetNotices: [String] = []
+
+    /// A frame: its RAW and JPG together.
+    static func frameKey(_ photo: ScannedPhoto) -> String {
+        (photo.fileName as NSString).deletingPathExtension + "|" + (photo.taken ?? "") + (photo.subSeconds ?? "")
+    }
+
     /// How many photos at each end of a camera's run are looked at for an offset code.
     static let codeEnds = 5
 
@@ -1859,12 +1873,22 @@ public final class AppModel: ObservableObject {
             if let moment = await Task.detached(operation: { OffsetCode.find(in: photo.url) }).value { found.append((photo, moment)) }
         }
         var said: [String] = []
+        var updated: [String] = []
         for (photo, moment) in found {
+            // The photo of the code is left out: never shown, copied or sent (0.31.9, David).
+            offsetCodeFrames.insert(Self.frameKey(photo))
             guard let model = photo.model, var camera = book.camera(personId: personId, model: model),
                   let offset = Moments.exactOffset(placing: photo, camera: camera, at: moment) else { continue }
+            let known = camera.readings.contains { abs($0.at.timeIntervalSince(moment)) < 60 && abs($0.offset - offset) < 0.005 }
             camera.add(ClockReading(at: moment, offset: offset))
             save(camera)
             said.append(Words.t("{0}: clock {1}, set from the offset code.", camera.model, OffsetText.exact(offset)))
+            if !known, !updated.contains(camera.model) { updated.append(camera.model) }
+        }
+        // Said inside Geotag until closed, only when the record changed (0.31.9, David).
+        for model in updated {
+            let line = Words.t("Offset updated for {0}", model)
+            if !offsetNotices.contains(line) { offsetNotices.append(line) }
         }
         return said.joined(separator: " ")
     }

@@ -15,6 +15,7 @@ public struct RootView: View {
             // The red internet line, fixed above the page (0.31.8, David).
             VStack(spacing: 0) {
                 InternetLine()
+                NoticeLines(model: model)
                 ScreenView(screen: model.screen)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }

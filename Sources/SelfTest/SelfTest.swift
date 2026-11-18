@@ -3245,8 +3245,11 @@ extension SelfTest {
         check("offset code: sets the offset to the hundredth",
               after?.offsetSeconds == 3 && after?.readings.count == 1 && abs((after?.readings.first?.offset ?? 0) - 3.42) < 0.005,
               "\(after?.readings.map(\.offset) ?? [])")
-        check("offset code: every camera set, saved straight away without the map",
-              !model.aligning && model.results.count == 4 && model.results.values.allSatisfy { $0.url != nil }, model.photosLine)
+        // The photo of the code itself is left out of the list: never copied (0.31.9).
+        check("offset code: every camera set, saved straight away without the map, the code's photo left out",
+              !model.aligning && model.results.count == 3 && model.results.values.allSatisfy { $0.url != nil }
+                && model.rows.count == 3, model.photosLine)
+        check("offset code: a notice inside Geotag until closed", model.offsetNotices == ["Offset updated for Canon EOS R7"], "\(model.offsetNotices)")
 
         // The weekly reminder, a week after the reading and each week after.
         let reading = after?.readings.last?.at ?? shown
