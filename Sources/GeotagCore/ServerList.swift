@@ -162,6 +162,12 @@ public enum ServerList {
         return (e, d)
     }()
 
+    /// The two lists as kept at the buffer server (0.31.8): the same files as on the NAS.
+    public static func encode(_ saved: SavedFile) throws -> Data { try coder.0.encode(saved) }
+    public static func encode(_ cameras: CamerasFile) throws -> Data { try coder.0.encode(cameras) }
+    public static func decodeSaved(_ data: Data) throws -> SavedFile { try coder.1.decode(SavedFile.self, from: data) }
+    public static func decodeCameras(_ data: Data) throws -> CamerasFile { try coder.1.decode(CamerasFile.self, from: data) }
+
     public static func readShared(from personFolder: URL) -> Shared {
         let folder = personFolder.appendingPathComponent(folderName, isDirectory: true)
         var out = Shared()

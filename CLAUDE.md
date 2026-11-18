@@ -1433,6 +1433,11 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   Amanda's card without a location, her camera's offset never having been
   set on David's phone.
 
+## Photos held when the camera has no offset: replaced (0.31.8)
+
+- 0.31.4's hold is removed (David, 18 November 2026: "i always want the
+  choice"; his card on Amanda's phone could never be saved). See below.
+
 ## Six at a time to the buffer (0.31.5, David, 18 November 2026)
 
 - `sendThroughBuffer` hands over 6 photos at a time, not 30: over one HTTP/2
@@ -1458,6 +1463,49 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   (sending is all of it): on the NAS weights it stopped at 62% ("62% is the
   maximum value I see before the image disappears"), the reading back and
   naming never happening on that route.
+
+## The choice, no duplicates, lists at bufr.cc, the red line, locations in Photos (0.31.8, David, 18 November 2026)
+
+- Save selected photos is on whenever photos are selected, whatever their
+  camera's offset. The panel before saving says "12 photos have no camera
+  time offset. They will be saved without a location."; the Photos page's
+  reason line adds "Show the offset code in Settings and photograph it with
+  that camera." while such photos are selected. Never hold a photo back
+  from saving without giving the choice (David: "i always want the choice").
+- No duplicates: just before copying, each selected photo is checked
+  against this device's record, the sync lists kept here and the HIF list
+  (`alreadyCopied`); those are left out and unticked: "8 photos already
+  copied, not copied again." Photos copied before without a location
+  included: Locations in Photos (below) is the way to place them.
+- Sync lists at bufr.cc too (bufr.cc 0.2.1, `GET`/`PUT /v1/lists`, header
+  `X-Path` = the person's base + "/~Geotag/saved.json" or "cameras.json",
+  the same path the NAS has; `bufferBase`). `syncThroughBuffer` reads both,
+  adds them to the copy kept here (`keepServerCopy`: never replaced, only
+  added to, the NAS read included), and writes back when something is new.
+  Run first in `shareWithServer` (as Geotag opens, after each save and
+  batch) and before each card is read, at most 10 s ("Reading the sync list
+  from the buffer server"). Reached, it clears the sync line's problem; the
+  NAS write passes on what it added. Card reading itself stays local.
+- The red line (`InternetState`, `InternetLine`): fixed at the very top,
+  over every tab on the phone (`safeAreaInset` on the TabView) and above
+  the page on the Mac. "No internet connection" from the device's network
+  state; "The internet connection is unstable" from `NetHealth`: the track
+  service, the buffer server (status, lists, uploads) and map tiles report
+  each request; two network failures within a minute, until two requests
+  in a row get through (David: "the app should tell us when the internet is
+  unstable/not connected", "in red", "stays visible when scrolling").
+- Locations in Photos (phone, `LibraryLocations`, David: "much cleaner"):
+  photos in the Photos app with no location, taken from two days before the
+  first track on, whose original is a JPG from a camera Geotag knows with
+  its offset set (the phone's person's, else Others'), get the location
+  their time falls on, set on the photo already there
+  (`PHAssetChangeRequest.location`, 100 a batch; the iPhone asks to allow
+  each). Photos keeps it in its own record; the file inside is not
+  rewritten. Each photo's clock reading is read once and kept in
+  `libraryread.json` (originals in iCloud only are not fetched). Full
+  access to Photos is asked only from the button "Add locations to photos
+  in Photos"; once given it looks by itself whenever the tracks change,
+  with the card out. Copies already on the server keep no location.
 
 ## Architecture
 

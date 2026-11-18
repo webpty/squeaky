@@ -1,2 +1,3 @@
 "CFBundleDisplayName" = "Geotag";
 "NSPhotoLibraryAddUsageDescription" = "Geotag 會加入從記憶卡儲存的照片。";
+"NSPhotoLibraryUsageDescription" = "Geotag 會為「照片」中沒有位置的照片加入位置。";

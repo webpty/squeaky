@@ -427,5 +427,20 @@
  "{0}'s save folder can't be found: {1}. If it is on a drive, plug the drive in, or choose another folder.": "Le dossier d'enregistrement de {0} est introuvable : {1}. S'il se trouve sur un disque, branchez le disque ou choisissez un autre dossier.",
  "{0}. {1} {2} on the service.": "{0}. {1} {2} sur le service.",
  "{0}: clock {1}, set from the offset code.": "{0} : horloge {1}, réglée d'après le code de décalage.",
- "{0}: connected through {1}.": "{0} : connecté via {1}."
+ "{0}: connected through {1}.": "{0} : connecté via {1}.",
+ "{0} photos already copied, not copied again.": "{0} photos déjà copiées, pas copiées à nouveau.",
+ "Show the offset code in Settings and photograph it with that camera.": "Affichez le code de décalage dans Réglages et photographiez-le avec cet appareil.",
+ "1 photo has no camera time offset. It will be saved without a location.": "1 photo n'a pas de décalage horaire d'appareil. Elle sera enregistrée sans lieu.",
+ "{0} photos have no camera time offset. They will be saved without a location.": "{0} photos n'ont pas de décalage horaire d'appareil. Elles seront enregistrées sans lieu.",
+ "Reading the sync list from the buffer server": "Lecture de la liste de synchronisation sur le serveur tampon",
+ "No internet connection": "Pas de connexion internet",
+ "The internet connection is unstable": "La connexion internet est instable",
+ "Add locations to photos in Photos": "Ajouter un lieu aux photos de Photos",
+ "Geotag has no full access to Photos, so it can't add locations there.": "Geotag n'a pas l'accès complet à Photos, il ne peut donc pas y ajouter de lieux.",
+ "Looking through Photos: {0} of {1}": "Parcours de Photos : {0} sur {1}",
+ "Add a location to 1 photo": "Ajouter un lieu à 1 photo",
+ "Add locations to {0} photos": "Ajouter un lieu à {0} photos",
+ "Adding locations in Photos: {0} of {1}": "Ajout des lieux dans Photos : {0} sur {1}",
+ "Locations added to {0} photos in Photos, then stopped: {1}": "Lieu ajouté à {0} photos dans Photos, puis arrêt : {1}",
+ "Locations added to {0} photos in Photos": "Lieu ajouté à {0} photos dans Photos"
 }

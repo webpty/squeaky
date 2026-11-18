@@ -992,13 +992,10 @@ public final class AppModel: ObservableObject {
 
     /// The rows Save photos would save: ticked and placed, or let through.
     public var readyToSave: [ImportRow] {
-        #if os(iOS)
-        // Chosen by hand on the phone: a photo whose camera has no time offset is held,
-        // never saved without its location (0.31.4, David: Amanda's 1,799 photos).
-        return rows.filter { $0.willImport && $0.placement != .review(.offsetNotSet) }
-        #else
-        return rows.filter(\.willImport)
-        #endif
+        // Every photo selected, those whose camera has no time offset too: the panel
+        // before saving says they go without a location, and the choice is the
+        // person's (0.31.8, David: "i always want the choice"; 0.31.4 held them).
+        rows.filter(\.willImport)
     }
 
     /// Copies every ready photo into the person's folder with its location,
@@ -1030,9 +1027,26 @@ public final class AppModel: ObservableObject {
                 fix: .chooseFolder(personId))
             return
         }
-        let todo = readyToSave
+        var todo = readyToSave
+        // No duplicates (0.31.8, David): just before copying, every photo selected
+        // is checked against everything known to be copied, from any device, and
+        // those are left out.
+        let copiedBefore = alreadyCopied(personId)
+        let skipped = todo.filter { copiedBefore.contains($0.photo.key) || isSaved($0) }
+        if !skipped.isEmpty {
+            let left = Set(skipped.map(\.id))
+            todo.removeAll { left.contains($0.id) }
+            var unticked = rows
+            for i in unticked.indices where left.contains(unticked[i].id) {
+                unticked[i].ticked = false
+                if results[unticked[i].id] == nil { unticked[i].status = .alreadyImported }
+            }
+            rows = unticked
+        }
+        let skippedLine = skipped.isEmpty ? "" : Words.t("{0} photos already copied, not copied again.", skipped.count)
         guard !todo.isEmpty else {
-            photosLine = rows.isEmpty ? Words.t("There are no photos on {0}.", source.name) : Words.t("Every photo on {0} is already saved.", source.name)
+            photosLine = !skipped.isEmpty ? skippedLine
+                : rows.isEmpty ? Words.t("There are no photos on {0}.", source.name) : Words.t("Every photo on {0} is already saved.", source.name)
             return
         }
         // Earlier photos being placed write the same records: wait for them.
@@ -1245,6 +1259,7 @@ public final class AppModel: ObservableObject {
             #endif
         }
         if results.values.contains(.failed(Saver.diskFull)) { line = Words.t("Stopped: {0}. {1} saved before that.", Words.t(Saver.diskFull).lowercased(), savedCount) }
+        if !skippedLine.isEmpty { line += " " + skippedLine }
         // Done before the last line is said, so the menu bar never shows it.
         saving = false
         photosLine = line
@@ -1695,6 +1710,18 @@ public final class AppModel: ObservableObject {
             // What the sync files held when last read, kept here: no wait on the server (0.29.12).
             // Never read yet (0.29.12 left it empty after the update): read from the server
             // first, as before, or said that it couldn't be (0.29.17).
+            // The buffer server's list first, at most ten seconds (0.31.8, David).
+            if bufferClient != nil, goesToServer(personId) {
+                photosLine = Words.t("Reading the sync list from the buffer server")
+                let pid = personId
+                await withTaskGroup(of: Void.self) { group in
+                    group.addTask { @MainActor in _ = await self.syncThroughBuffer(pid) }
+                    group.addTask { try? await Task.sleep(for: .seconds(10)) }
+                    await group.next()
+                    group.cancelAll()
+                }
+                guard readingRound == round else { return }
+            }
             var copy = loadServerCopy(personId)
             savedListProblem = nil
             if goesToServer(personId), NASFolder(book.person(personId)?.nasFolder) != nil, copy?.entries.isEmpty ?? true {
@@ -1907,6 +1934,19 @@ public final class AppModel: ObservableObject {
     }
 
     /// Saved now, or imported on an earlier card.
+    /// Every photo known to be copied for this person, by any device: this
+    /// device's own record, the sync lists kept here (from the NAS and the
+    /// buffer server), and on the phone the HIF photos added to Photos.
+    func alreadyCopied(_ personId: UUID) -> Set<String> {
+        var keys = Set(((try? history.load(personId)) ?? []).map(\.key))
+        keys.formUnion((loadServerCopy(personId)?.entries ?? []).map(\.key))
+        #if os(iOS)
+        let heif = Set(defaults.stringArray(forKey: "heifAdded") ?? [])
+        keys.formUnion(rows.map(\.photo).filter { heif.contains($0.key) }.map(\.key))
+        #endif
+        return keys
+    }
+
     public func isSaved(_ row: ImportRow) -> Bool {
         if let result = results[row.id] { return result.url != nil }
         return row.status == .alreadyImported
@@ -2446,6 +2486,16 @@ public final class AppModel: ObservableObject {
         sharing = true
         defer { sharing = false }
         var problem: String?
+        // The buffer server first: quick from anywhere (0.31.8). Reached, it
+        // stands for the sync even while the NAS can't be.
+        var bufferSynced = false
+        if bufferClient != nil {
+            syncActivity = Words.t("Reading the sync list from the buffer server")
+            var failed: String?
+            for person in people { if let why = await syncThroughBuffer(person.id) { failed = why } }
+            syncActivity = nil
+            bufferSynced = failed == nil
+        }
         for person in people {
             // Reaching the NAS can take seconds: said, with the wheel (0.29.26).
             syncActivity = Words.t("Reaching the NAS")
@@ -2464,8 +2514,10 @@ public final class AppModel: ObservableObject {
             guard let shared else { continue }
             let own = (try? history.load(person.id)) ?? []
             let ownCameras = book.cameras(of: person.id).filter { $0.offsetSeconds != nil }
-            let entries = ServerList.union(shared.allEntries, own)
-            let cameras = ServerList.newest(shared.allCameras + ownCameras)
+            // What the buffer server's list added is passed on to the NAS too.
+            let kept = loadServerCopy(person.id)
+            let entries = ServerList.union(ServerList.union(shared.allEntries, own), kept?.entries ?? [])
+            let cameras = ServerList.newest(shared.allCameras + ownCameras + (kept?.cameras ?? []))
             let camerasBefore = shared.cameras?.cameras.map { "\($0.model)=\($0.offsetDate.timeIntervalSince1970)" }.sorted() ?? []
             let camerasAfter = cameras.map { "\($0.model)=\($0.offsetDate.timeIntervalSince1970)" }.sorted()
             // Written only when something is new: an entry or an offset not yet listed, or old files to fold in.
@@ -2506,6 +2558,7 @@ public final class AppModel: ObservableObject {
         syncActivity = nil
         // No sync file seen at all, not even this device's own: a problem, said (0.29.23).
         if problem == nil, lastSave == nil { problem = Words.t("No sync files found on the server.") }
+        if bufferSynced { problem = nil }
         if let problem {
             sharedProblem = problem
         } else {
@@ -2541,6 +2594,63 @@ public final class AppModel: ObservableObject {
         let folder = (peopleStore as? PeopleStoreFile)?.url.deletingLastPathComponent()
             ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Geotag")
         return folder.appendingPathComponent("servercopy-\(personId.uuidString).json")
+    }
+
+    /// What is kept here, with these entries and offsets added; written back and returned.
+    @discardableResult
+    func keepServerCopy(_ personId: UUID, entries: [HistoryEntry], cameras: [Camera]) -> ServerCopy {
+        let before = loadServerCopy(personId)
+        let copy = ServerCopy(entries: ServerList.union(before?.entries ?? [], entries),
+                              cameras: ServerList.newest((before?.cameras ?? []) + cameras))
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .secondsSince1970
+        if let data = try? encoder.encode(copy) {
+            try? FileManager.default.createDirectory(at: copyFile(personId).deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? data.write(to: copyFile(personId), options: .atomic)
+        }
+        return copy
+    }
+
+    /// The person's lists at the buffer server (0.31.8, David, 18 November 2026:
+    /// a phone away from home did not know what was copied): read, added to what
+    /// is kept here, and written back with what this device knows when something
+    /// is new. Nil when it went well or there is no buffer server; else why not.
+    @discardableResult
+    func syncThroughBuffer(_ personId: UUID) async -> String? {
+        guard goesToServer(personId), let client = bufferClient,
+              let base = bufferBase(book.person(personId)?.nasFolder), !base.isEmpty else { return nil }
+        let folder = base.split(separator: "/").joined(separator: "/") + "/" + ServerList.folderName + "/"
+        let savedPath = folder + "saved.json", camerasPath = folder + "cameras.json"
+        let theirs: ServerList.SavedFile?
+        let theirCameras: ServerList.CamerasFile?
+        do {
+            theirs = try await client.readList(savedPath).map(ServerList.decodeSaved)
+            theirCameras = try await client.readList(camerasPath).map(ServerList.decodeCameras)
+        } catch {
+            return error.localizedDescription
+        }
+        let copy = keepServerCopy(personId, entries: theirs?.entries ?? [], cameras: theirCameras?.cameras ?? [])
+        applyCameras(copy.cameras, personId: personId)
+        let own = (try? history.load(personId)) ?? []
+        let entries = ServerList.union(copy.entries, own)
+        let cameras = ServerList.newest(copy.cameras + book.cameras(of: personId).filter { $0.offsetSeconds != nil })
+        func stamp(_ list: [Camera]) -> [String] { list.map { "\($0.model)=\($0.offsetDate.timeIntervalSince1970)" }.sorted() }
+        if personId == linePerson, let theirs, theirs.updatedAt > (lastSave?.at ?? .distantPast) {
+            lastSave = ServerList.LastSave(byPhone: theirs.updatedBy == "iphone", at: theirs.updatedAt, count: theirs.entries.count)
+        }
+        guard entries.count != (theirs?.entries.count ?? -1) || stamp(cameras) != stamp(theirCameras?.cameras ?? []) else { return nil }
+        let now = Date()
+        do {
+            try await client.writeList(savedPath, ServerList.encode(.init(entries: entries, updatedAt: now, updatedBy: Self.deviceKind)))
+            try await client.writeList(camerasPath, ServerList.encode(.init(cameras: cameras, updatedAt: now, updatedBy: Self.deviceKind)))
+        } catch {
+            return error.localizedDescription
+        }
+        keepServerCopy(personId, entries: entries, cameras: cameras)
+        if personId == linePerson {
+            lastSave = ServerList.LastSave(byPhone: Self.deviceKind == "iphone", at: now, count: entries.count)
+        }
+        return nil
     }
 
     func loadServerCopy(_ personId: UUID) -> ServerCopy? {
@@ -2581,13 +2691,9 @@ public final class AppModel: ObservableObject {
         }
         syncActivity = nil
         guard let shared else { return (Words.t("reading the sync files took more than 30 seconds: {0}", ServerList.folderName), nil) }
-        let copy = ServerCopy(entries: shared.allEntries, cameras: shared.allCameras)
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .secondsSince1970
-        if let data = try? encoder.encode(copy) {
-            try? FileManager.default.createDirectory(at: copyFile(personId).deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? data.write(to: copyFile(personId), options: .atomic)
-        }
+        // Added to what is kept here, never in place of it: the buffer server's
+        // list may know photos the NAS has not heard of yet (0.31.8).
+        let copy = keepServerCopy(personId, entries: shared.allEntries, cameras: shared.allCameras)
         applyCameras(copy.cameras, personId: personId)
         if personId == linePerson, let saved = shared.saved {
             lastSave = ServerList.LastSave(byPhone: saved.updatedBy == "iphone", at: saved.updatedAt, count: saved.entries.count)
@@ -3562,6 +3668,21 @@ extension AppModel {
     /// Hands waiting photos to the phone's transfers, up to 6 on their way
     /// at once, so a closed or locked phone carries on with them; topped up
     /// as they finish.
+    /// The person's folder as the buffer server is told it: on the phone the
+    /// folder as the Files app names it ("home/Geotag", the logged-in user's
+    /// home; the buffer server knows whose from the key), or the owner's
+    /// Geotag folder in their home when none is chosen yet (0.30.4, David);
+    /// on the Mac the person's NAS folder.
+    func bufferBase(_ nasFolder: String?) -> String? {
+        #if os(iOS)
+        return PhoneFolders.isChosen(PhoneFolders.nasKey)
+            ? (UserDefaults.standard.string(forKey: PhoneFolders.nasKey + "Path") ?? PhoneFolders.path(PhoneFolders.nasKey))
+            : "home/Geotag"
+        #else
+        return nasFolder
+        #endif
+    }
+
     func sendThroughBuffer() async {
         guard let client = bufferClient, !bufferTopping, !sendPaused else { return }
         bufferTopping = true
@@ -3596,16 +3717,7 @@ extension AppModel {
                 }
                 continue
             }
-            #if os(iOS)
-            // The phone's folder as the Files app names it: "home/Geotag", the
-            // logged-in user's home; the buffer server knows whose from the key.
-            // No folder chosen yet: the owner's Geotag folder in their home (0.30.4, David).
-            let base: String? = PhoneFolders.isChosen(PhoneFolders.nasKey)
-                ? (UserDefaults.standard.string(forKey: PhoneFolders.nasKey + "Path") ?? PhoneFolders.path(PhoneFolders.nasKey))
-                : "home/Geotag"
-            #else
-            let base: String? = folder
-            #endif
+            let base = bufferBase(folder)
             guard let base, !base.isEmpty else {
                 changeEntry(entry.id) { e in
                     e.reason = Words.t("Choose the server folder in Settings first.")

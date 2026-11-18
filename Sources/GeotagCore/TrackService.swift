@@ -129,9 +129,11 @@ public struct TrackServiceHTTP: TrackServicePort {
         let response: URLResponse
         do {
             (data, response) = try await session.data(for: request)
+            NetHealth.shared.through()
         } catch let error as URLError where [.notConnectedToInternet, .networkConnectionLost, .cannotFindHost,
                                              .cannotConnectToHost, .timedOut, .dnsLookupFailed,
                                              .internationalRoamingOff, .dataNotAllowed].contains(error.code) {
+            NetHealth.shared.failed(error)
             throw ServiceError.offline
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0

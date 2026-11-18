@@ -54,7 +54,9 @@ public struct BufferClient: Sendable {
         let response: URLResponse
         do {
             (data, response) = try await URLSession.shared.data(for: request("v1/status"))
+            NetHealth.shared.through()
         } catch {
+            NetHealth.shared.failed(error)
             throw BufferError.unreachable(error.localizedDescription)
         }
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -82,6 +84,51 @@ public struct BufferClient: Sendable {
         }
         if update { request.setValue("1", forHTTPHeaderField: "X-Update") }
         return request
+    }
+
+    /// A sync list kept at the buffer server (0.31.8), by the path it has on
+    /// the NAS ("home/Geotag/~Geotag/saved.json"); nil when none was written yet.
+    public func readList(_ path: String) async throws -> Data? {
+        var request = request("v1/lists")
+        request.setValue(Self.encoded(path), forHTTPHeaderField: "X-Path")
+        let (data, code) = try await send(request)
+        if code == 204 { return nil }
+        guard code == 200 else { throw Self.problem(code, data) }
+        return data
+    }
+
+    /// The whole list, written over the one kept there.
+    public func writeList(_ path: String, _ bytes: Data) async throws {
+        var request = request("v1/lists")
+        request.httpMethod = "PUT"
+        request.timeoutInterval = 60
+        request.setValue(Self.encoded(path), forHTTPHeaderField: "X-Path")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = bytes
+        let (data, code) = try await send(request)
+        guard code == 204 || code == 200 else { throw Self.problem(code, data) }
+    }
+
+    private func send(_ request: URLRequest) async throws -> (Data, Int) {
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            NetHealth.shared.through()
+            return (data, (response as? HTTPURLResponse)?.statusCode ?? 0)
+        } catch {
+            NetHealth.shared.failed(error)
+            throw BufferError.unreachable(error.localizedDescription)
+        }
+    }
+
+    private static func problem(_ code: Int, _ data: Data) -> BufferError {
+        if code == 404 || code == 403 { return .refusedKey }
+        let said = (try? JSONDecoder().decode([String: String].self, from: data))?["error"]
+        return .answered(code, said ?? Words.t("The buffer server answered {0}.", code))
+    }
+
+    static func encoded(_ path: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        return path.addingPercentEncoding(withAllowedCharacters: allowed) ?? path
     }
 
     /// The SHA-256 of a file, read a piece at a time.

@@ -93,6 +93,7 @@ public final class BufferUploads: NSObject, URLSessionDataDelegate, @unchecked S
         let seconds = began.map { Date().timeIntervalSince($0) }
         let code = (task.response as? HTTPURLResponse)?.statusCode ?? 0
         var outcome: (why: String, again: Bool)?
+        if let error { NetHealth.shared.failed(error) } else { NetHealth.shared.through() }
         if let error {
             let cancelled = (error as NSError).code == NSURLErrorCancelled
             outcome = (cancelled ? Words.t("Paused.") : error.localizedDescription, true)

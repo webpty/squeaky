@@ -9,6 +9,7 @@ struct PhotosTab: View {
     @ObservedObject var model: AppModel
     @State private var choosing = false
     @StateObject private var pictures = Pictures()
+    @StateObject private var library = LibraryLocations()
     @State private var showingFailed = false
     // Days and selecting (0.31.0).
     @State private var foldChanged = 0
@@ -45,6 +46,10 @@ struct PhotosTab: View {
                     ForEach(reasons, id: \.self) { line in
                         Sentences(text: line).foregroundStyle(.secondary)
                     }
+                }
+                // Locations added later to photos already in Photos (0.31.8, David).
+                if model.source == nil {
+                    LibraryLocationsSection(model: model, library: library)
                 }
                 Section {
                     if model.saving {
@@ -144,6 +149,11 @@ struct PhotosTab: View {
             }
             #endif
           }
+        }
+        // Looked through again whenever the tracks or the offsets change, and after a save.
+        .task(id: "\(model.tracks.count)|\(model.timeline.pieces.count)|\(model.saving)|\(model.source == nil)") {
+            guard !model.saving, model.source == nil else { return }
+            await library.lookIfAllowed(model)
         }
         .sheet(isPresented: $showingFailed) { NotSaved(model: model) }
         // Apart from the Files list above: two on one view and neither opens.
@@ -273,7 +283,14 @@ struct PhotosTab: View {
             if counts[why] == nil { order.append(why) }
             counts[why, default: 0] += 1
         }
-        return order.map { counts[$0] == 1 ? Words.t("1 photo: {0}", $0) : Words.t("{0} photos: {1}", counts[$0]!.formatted(), $0) }
+        // Selected photos whose camera has no offset: what to do about it (0.31.8, David).
+        let offsetWhy = Words.t("Camera time offset not set")
+        let offsetSelected = model.rows.contains { $0.ticked && $0.placement == .review(.offsetNotSet) && model.results[$0.id] == nil }
+        return order.map { why in
+            let said = counts[why] == 1 ? Words.t("1 photo: {0}", why) : Words.t("{0} photos: {1}", counts[why]!.formatted(), why)
+            return why == offsetWhy && offsetSelected
+                ? said + ". " + Words.t("Show the offset code in Settings and photograph it with that camera.") : said
+        }
     }
 
     /// "340 new, 12 already saved".

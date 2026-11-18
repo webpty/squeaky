@@ -427,5 +427,20 @@
  "{0}'s save folder can't be found: {1}. If it is on a drive, plug the drive in, or choose another folder.": "{0}'s save folder can't be found: {1}. If it is on a drive, plug the drive in, or choose another folder.",
  "{0}. {1} {2} on the service.": "{0}. {1} {2} on the service.",
  "{0}: clock {1}, set from the offset code.": "{0}: clock {1}, set from the offset code.",
- "{0}: connected through {1}.": "{0}: connected through {1}."
+ "{0}: connected through {1}.": "{0}: connected through {1}.",
+ "{0} photos already copied, not copied again.": "{0} photos already copied, not copied again.",
+ "Show the offset code in Settings and photograph it with that camera.": "Show the offset code in Settings and photograph it with that camera.",
+ "1 photo has no camera time offset. It will be saved without a location.": "1 photo has no camera time offset. It will be saved without a location.",
+ "{0} photos have no camera time offset. They will be saved without a location.": "{0} photos have no camera time offset. They will be saved without a location.",
+ "Reading the sync list from the buffer server": "Reading the sync list from the buffer server",
+ "No internet connection": "No internet connection",
+ "The internet connection is unstable": "The internet connection is unstable",
+ "Add locations to photos in Photos": "Add locations to photos in Photos",
+ "Geotag has no full access to Photos, so it can't add locations there.": "Geotag has no full access to Photos, so it can't add locations there.",
+ "Looking through Photos: {0} of {1}": "Looking through Photos: {0} of {1}",
+ "Add a location to 1 photo": "Add a location to 1 photo",
+ "Add locations to {0} photos": "Add locations to {0} photos",
+ "Adding locations in Photos: {0} of {1}": "Adding locations in Photos: {0} of {1}",
+ "Locations added to {0} photos in Photos, then stopped: {1}": "Locations added to {0} photos in Photos, then stopped: {1}",
+ "Locations added to {0} photos in Photos": "Locations added to {0} photos in Photos"
 }

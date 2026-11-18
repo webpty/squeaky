@@ -11,14 +11,25 @@ extension DebugHooks {
     static func flow(_ model: AppModel) async -> Bool {
         let args = CommandLine.arguments
         guard let i = args.firstIndex(of: "--flow-test"), args.count > i + 3 else { return false }
+        setvbuf(stdout, nil, _IOLBF, 0)
+        // Each line also written beside the stand-in NAS, as it is said.
+        let trace = URL(fileURLWithPath: args[i + 3] + ".trace")
+        FileManager.default.createFile(atPath: trace.path, contents: nil)
+        func print(_ line: String) {
+            Swift.print(line)
+            if let h = try? FileHandle(forWritingTo: trace) { h.seekToEndOfFile(); h.write(Data((line + "\n").utf8)); try? h.close() }
+        }
         let card = URL(fileURLWithPath: args[i + 1]), gpx = URL(fileURLWithPath: args[i + 2]), nas = URL(fileURLWithPath: args[i + 3])
         model.setPhonePerson(name: "Flow")
         guard let owner = model.macOwner, model.book.people.filter({ $0.id != PhoneFolders.othersId }).count == 1 else { print("flow: FAILED, no person"); return true }
         // `--no-folder`: a phone set up with the buffer key only (0.30.4).
         if !args.contains("--no-folder") { try? PhoneFolders.remember(nas, as: PhoneFolders.nasKey) }
+        print("starting")
         await model.start()
+        print("started")
         await model.importFiles([gpx])
         print("tracks: \(model.tracks.count) \(model.tracksLine)")
+        print("card read starting")
         let source = PhotoSource(id: "flow-card", name: "FLOWCARD", url: card, isCard: true)
         model.choose(source)
         guard model.askingWhose != nil else { print("flow: FAILED, a new card was not asked about"); return true }
@@ -28,12 +39,12 @@ extension DebugHooks {
         guard var camera = model.book.camera(personId: owner, model: "Canon EOS R5m2"), camera.offsetSeconds == nil,
               model.results.isEmpty else { print("flow: FAILED, camera not added from the card, or saved without an offset"); return true }
         print("camera added from the card: \(camera.model), \(model.photosLine)")
-        // Selected and saved before the offset is set: held, none saved without a location (0.31.4).
+        // Selected before the offset is set: Save selected photos is on, the choice the
+        // person's (0.31.8; 0.31.4 held them). Not saved here, so they save with a location below.
         model.setTicked(Set(model.rows.map(\.id)), true)
-        await model.savePhotos()
-        while model.saving || model.photosBusy { try? await Task.sleep(for: .milliseconds(200)) }
-        guard model.results.isEmpty else { print("flow: FAILED, saved without an offset: \(model.results.count)"); return true }
-        print("held without an offset: \(model.rows.count) photos, none saved")
+        let noOffset = model.readyToSave.filter { $0.placement == .review(.offsetNotSet) }.count
+        guard model.canSave, noOffset == model.rows.count else { print("flow: FAILED, Save selected photos off without an offset (\(noOffset))"); return true }
+        print("without an offset: Save selected photos is on, \(noOffset) photos would go without a location")
         camera.offsetSeconds = 0
         model.save(camera)
         // `--buffer <address> <key>`: sent through a stand-in buffer server instead (0.30.0).
@@ -50,6 +61,17 @@ extension DebugHooks {
         for row in model.rows {
             print("  \(row.photo.fileName): \(String(describing: row.placement)) -> \(String(describing: model.results[row.id]))")
         }
+        // The card read again, everything selected again and saved again: nothing copied twice (0.31.8).
+        let savedOnce = model.results.values.filter { $0.url != nil }.count
+        model.choose(source)
+        try? await Task.sleep(for: .milliseconds(300))
+        while model.saving || model.photosBusy { try? await Task.sleep(for: .milliseconds(200)) }
+        model.setTicked(Set(model.rows.map(\.id)), true)
+        await model.savePhotos()
+        while model.saving || model.photosBusy { try? await Task.sleep(for: .milliseconds(200)) }
+        print("saved again: \(model.photosLine)")
+        guard model.results.values.filter({ $0.url != nil }).count == 0, savedOnce == model.rows.count,
+              model.photosLine.contains("\(model.rows.count)") else { print("flow: FAILED, copied twice"); return true }
         let until = Date().addingTimeInterval(120)
         while Date() < until, model.queueEntries.contains(where: { $0.state != .sent && $0.state != .failed }) {
             try? await Task.sleep(for: .seconds(1))
@@ -59,9 +81,20 @@ extension DebugHooks {
             print("  queue \(entry.relativePath): \(entry.state) \(entry.reason ?? "")")
             if entry.state != .sent { ok = false }
         }
-        if viaBuffer != nil {
+        if let (address, key) = viaBuffer {
             print("  route: \(String(describing: model.sendRoute)), waiting on the buffer server: \(String(describing: model.bufferWaiting))")
             if model.sendRoute != .buffer { ok = false }
+            // The sync list kept at the buffer server too (0.31.8).
+            await model.shareWithServer()
+            if let client = BufferClient(address: address, key: key),
+               let data = try? await client.readList("home/Geotag/~Geotag/saved.json"),
+               let list = try? ServerList.decodeSaved(data) {
+                print("  sync list at the buffer server: \(list.entries.count) photos, by \(list.updatedBy)")
+                if list.entries.count != model.rows.count { ok = false }
+            } else {
+                print("  sync list at the buffer server: none")
+                ok = false
+            }
             print(ok ? "flow: all passed" : "flow: FAILED")
             return true
         }

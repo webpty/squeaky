@@ -12,9 +12,14 @@ public struct RootView: View {
             Sidebar()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 210, max: 240)
         } detail: {
-            ScreenView(screen: model.screen)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .background(Color(nsColor: .windowBackgroundColor))
+            // The red internet line, fixed above the page (0.31.8, David).
+            VStack(spacing: 0) {
+                InternetLine()
+                ScreenView(screen: model.screen)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+            .background(Color(nsColor: .windowBackgroundColor))
+            .task { InternetState.shared.start() }
         }
         .navigationTitle(appName)
         .toolbar {

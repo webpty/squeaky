@@ -112,6 +112,10 @@ struct PhoneRoot: View {
     }
 
     var body: some View {
+        // The red internet line, fixed at the top over every tab (0.31.8, David): above
+        // the tabs rather than laid over them, so each page's title row sits under it.
+        VStack(spacing: 0) {
+        InternetLine()
         TabView(selection: $tab) {
             PhotosTab(model: model)
                 .tabItem { Label(Words.t("Photos"), systemImage: "photo.on.rectangle") }
@@ -126,8 +130,10 @@ struct PhoneRoot: View {
                 .tabItem { Label(Words.t("Settings"), systemImage: "gearshape") }
                 .tag(Tab.settings)
         }
+        }
         // Remembered cards are looked for while Geotag is in front.
         .onAppear {
+            InternetState.shared.start()
             if cards == nil { cards = CardWatch(model: model) }
             cards?.start()
             if work == nil {
@@ -226,6 +232,13 @@ struct TrackCheckSheet: View {
                 if check != .ready {
                     Text(Words.t("Not all photos have a track. Make sure this is correct."))
                 }
+                // The choice stays the person's (0.31.8, David: "i always want the choice").
+                let noOffset = model.readyToSave.filter { $0.placement == .review(.offsetNotSet) }.count
+                if noOffset > 0 {
+                    Text(noOffset == 1 ? Words.t("1 photo has no camera time offset. It will be saved without a location.")
+                         : Words.t("{0} photos have no camera time offset. They will be saved without a location.", noOffset.formatted()))
+                        .foregroundStyle(.orange)
+                }
                 if let problem = model.savedListProblem {
                     Text(Words.t("The list of photos already saved couldn't be read: {0} Photos already saved on the Mac may be saved again.", problem))
                         .foregroundStyle(.orange)
@@ -244,7 +257,7 @@ struct TrackCheckSheet: View {
             }
         }
         .padding(24)
-        .presentationDetents([.height(check == .checking ? 140 : 340)])
+        .presentationDetents([.height(check == .checking ? 140 : 400)])
         .interactiveDismissDisabled()
     }
 }

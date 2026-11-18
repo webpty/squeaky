@@ -1,2 +1,3 @@
 "CFBundleDisplayName" = "Geotag";
 "NSPhotoLibraryAddUsageDescription" = "Geotag adds the photos it saves from your cards.";
+"NSPhotoLibraryUsageDescription" = "Geotag adds locations to photos in Photos that have none.";

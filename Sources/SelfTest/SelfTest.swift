@@ -3441,6 +3441,23 @@ extension SelfTest {
         check("send speeds: in between, average", speeds.rating(of: 1_000_000) == .average)
         for _ in 1...300 { speeds.add(bytes: 1, seconds: 1, for: "home") }
         check("send speeds: at most 200 kept a place", speeds.byAddress["home"]?.count == SendSpeeds.kept)
+
+        // The red internet line (0.31.8): two failures within a minute, until two requests get through.
+        let net = NetHealth()
+        let t0 = Date()
+        net.failed(URLError(.timedOut), at: t0)
+        check("internet: one failure is not unstable", !net.unstable(at: t0))
+        net.failed(URLError(.cannotConnectToHost), at: t0.addingTimeInterval(20))
+        check("internet: two within a minute is unstable", net.unstable(at: t0.addingTimeInterval(21)))
+        check("internet: a minute later it has aged out", !net.unstable(at: t0.addingTimeInterval(90)))
+        net.failed(URLError(.timedOut), at: t0.addingTimeInterval(22))
+        net.through()
+        check("internet: one request through is not enough", net.unstable(at: t0.addingTimeInterval(23)))
+        net.through()
+        check("internet: two through clear it", !net.unstable(at: t0.addingTimeInterval(23)))
+        net.failed(URLError(.badServerResponse), at: t0)
+        net.failed(URLError(.cancelled), at: t0)
+        check("internet: an answer or a cancel is not a failure", !net.unstable(at: t0))
     }
 
     /// Copies on this Mac removed once on the NAS long enough, by the record

@@ -1,0 +1,69 @@
+import Combine
+import Foundation
+import GeotagCore
+import Network
+import SwiftUI
+
+/// The internet as Geotag sees it, for the red line at the top (0.31.8,
+/// David, 18 November 2026): none at all, from the device's own network
+/// state, or unstable, from `NetHealth`.
+@MainActor
+public final class InternetState: ObservableObject {
+    public static let shared = InternetState()
+
+    @Published public private(set) var connected = true
+    @Published public private(set) var unstable = false
+    private var monitor: NWPathMonitor?
+    private var timer: Timer?
+
+    /// What the red line says; nil while all is well.
+    public var line: String? {
+        if !connected { return Words.t("No internet connection") }
+        if unstable { return Words.t("The internet connection is unstable") }
+        return nil
+    }
+
+    public func start() {
+        guard monitor == nil else { return }
+        #if DEBUG
+        // Pictures of the red line in the simulator.
+        if CommandLine.arguments.contains("--show-unstable") { unstable = true; return }
+        #endif
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            let on = path.status == .satisfied
+            Task { @MainActor in self?.connected = on }
+        }
+        monitor.start(queue: .global(qos: .utility))
+        self.monitor = monitor
+        // Failures age out after a minute, so it is looked at again every two seconds.
+        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                let now = NetHealth.shared.unstable()
+                if now != self.unstable { self.unstable = now }
+            }
+        }
+    }
+}
+
+/// The red line, fixed at the top of the window or screen while it applies.
+public struct InternetLine: View {
+    @ObservedObject var state: InternetState
+
+    @MainActor public init() { self.state = .shared }
+
+    public var body: some View {
+        if let line = state.line {
+            Text(line)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .padding(.horizontal, 16)
+                .background(Color.red.ignoresSafeArea(edges: .top))
+                .accessibilityAddTraits(.isStaticText)
+        }
+    }
+}

@@ -172,7 +172,7 @@ public final class MapThumbnails {
         request.timeoutInterval = 20
         for attempt in 0..<3 {
             if attempt > 0 { try? await Task.sleep(for: .milliseconds(700 * attempt)) }
-            if let (data, response) = try? await URLSession.shared.data(for: request),
+            if let (data, response) = await fetched(request),
                (response as? HTTPURLResponse)?.statusCode == 200,
                let image = NSImage(data: data) {
                 return image
@@ -374,7 +374,7 @@ public final class MapThumbnails: ObservableObject {
         request.timeoutInterval = 20
         for attempt in 0..<3 {
             if attempt > 0 { try? await Task.sleep(for: .milliseconds(700 * attempt)) }
-            if let (data, response) = try? await URLSession.shared.data(for: request),
+            if let (data, response) = await fetched(request),
                (response as? HTTPURLResponse)?.statusCode == 200, let image = UIImage(data: data) {
                 return image
             }
@@ -410,3 +410,15 @@ actor Gate {
     }
 }
 #endif
+
+/// One request for a map tile, reported to `NetHealth` (0.31.8).
+func fetched(_ request: URLRequest) async -> (Data, URLResponse)? {
+    do {
+        let answer = try await URLSession.shared.data(for: request)
+        NetHealth.shared.through()
+        return answer
+    } catch {
+        NetHealth.shared.failed(error)
+        return nil
+    }
+}
