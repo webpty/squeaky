@@ -991,7 +991,15 @@ public final class AppModel: ObservableObject {
     // MARK: Saving
 
     /// The rows Save photos would save: ticked and placed, or let through.
-    public var readyToSave: [ImportRow] { rows.filter(\.willImport) }
+    public var readyToSave: [ImportRow] {
+        #if os(iOS)
+        // Chosen by hand on the phone: a photo whose camera has no time offset is held,
+        // never saved without its location (0.31.4, David: Amanda's 1,799 photos).
+        return rows.filter { $0.willImport && $0.placement != .review(.offsetNotSet) }
+        #else
+        return rows.filter(\.willImport)
+        #endif
+    }
 
     /// Copies every ready photo into the person's folder with its location,
     /// one at a time, checking each; records them in History and puts them on

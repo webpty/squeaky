@@ -1425,6 +1425,14 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   squares: a named coordinate space put it a row off.
 - The flow tests select every photo before saving.
 
+## Photos held when the camera has no offset (0.31.4, David, 18 November 2026)
+
+- On the phone, a selected photo whose camera has no time offset is not
+  saved: `readyToSave` leaves it out, and the Photos page's reasons say
+  "N photos: Camera time offset not set". 0.31.3 saved all 1,799 photos of
+  Amanda's card without a location, her camera's offset never having been
+  set on David's phone.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

@@ -28,6 +28,12 @@ extension DebugHooks {
         guard var camera = model.book.camera(personId: owner, model: "Canon EOS R5m2"), camera.offsetSeconds == nil,
               model.results.isEmpty else { print("flow: FAILED, camera not added from the card, or saved without an offset"); return true }
         print("camera added from the card: \(camera.model), \(model.photosLine)")
+        // Selected and saved before the offset is set: held, none saved without a location (0.31.4).
+        model.setTicked(Set(model.rows.map(\.id)), true)
+        await model.savePhotos()
+        while model.saving || model.photosBusy { try? await Task.sleep(for: .milliseconds(200)) }
+        guard model.results.isEmpty else { print("flow: FAILED, saved without an offset: \(model.results.count)"); return true }
+        print("held without an offset: \(model.rows.count) photos, none saved")
         camera.offsetSeconds = 0
         model.save(camera)
         // `--buffer <address> <key>`: sent through a stand-in buffer server instead (0.30.0).
