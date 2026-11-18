@@ -1533,6 +1533,14 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   Photos permission texts (`zh-Hant.lproj/InfoPlist.strings`). Everywhere
   else, and in the words inside the app, it stays Geotag.
 
+## Which photos got a location (0.31.11, David, 18 November 2026: "i've no idea which ones they were")
+
+- "Add locations to N photos" opens `LibraryPhotosPage`: each photo with
+  its date and time and the place it will get (OpenStreetMap, else the
+  coordinates), and "Add locations" at the bottom. "Locations added to N
+  photos in Photos" opens the same page for the photos the last batch
+  changed, kept in defaults (`libraryAdded`) until the next batch.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

@@ -25,12 +25,17 @@ final class LibraryLocations: ObservableObject {
         case added(Int, String?)
     }
 
-    struct Found: Equatable {
+    struct Found: Equatable, Codable, Identifiable {
         let id: String
         let position: Position
     }
 
     @Published private(set) var state = State.idle
+    /// The photos given a location by the last batch, to see which they were
+    /// (0.31.11, David: "i've no idea which ones they were"); kept until the next.
+    @Published private(set) var lastAdded: [Found] = {
+        (UserDefaults.standard.data(forKey: "libraryAdded")).flatMap { try? JSONDecoder().decode([Found].self, from: $0) } ?? []
+    }()
     private var lookedFor = ""
 
     /// What was read from each photo once, kept so a photo is read only once
@@ -181,6 +186,8 @@ final class LibraryLocations: ObservableObject {
             }
         }
         lookedFor = ""
+        lastAdded = Array(found.prefix(done))
+        UserDefaults.standard.set(try? JSONEncoder().encode(lastAdded), forKey: "libraryAdded")
         state = .added(done, problem)
     }
 }
@@ -189,8 +196,15 @@ final class LibraryLocations: ObservableObject {
 struct LibraryLocationsSection: View {
     @ObservedObject var model: AppModel
     @ObservedObject var library: LibraryLocations
+    @State private var showing: LibraryShowing?
 
     var body: some View {
+        content
+            .sheet(item: $showing) { which in LibraryPhotosPage(model: model, library: library, showing: which) }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch library.state {
         case .idle:
             EmptyView()
@@ -211,24 +225,125 @@ struct LibraryLocationsSection: View {
         case .found(let found):
             if !found.isEmpty {
                 Section {
+                    // The photos shown first, then added from there (0.31.11, David).
                     Button(found.count == 1 ? Words.t("Add a location to 1 photo")
                            : Words.t("Add locations to {0} photos", found.count.formatted())) {
-                        Task { await library.add(found) }
+                        showing = .toAdd(found)
                     }
                     .disabled(model.saving)
                 }
+            } else if !library.lastAdded.isEmpty {
+                Section { addedButton(library.lastAdded.count, problem: nil) }
             }
         case .adding(let n, let total):
             Section { StatusRow(text: Words.t("Adding locations in Photos: {0} of {1}", n.formatted(), total.formatted()), busy: true) }
         case .added(let n, let problem):
-            Section {
-                if let problem {
-                    Sentences(text: Words.t("Locations added to {0} photos in Photos, then stopped: {1}", n.formatted(), problem))
-                        .foregroundStyle(.orange)
-                } else {
-                    Text(Words.t("Locations added to {0} photos in Photos", n.formatted()))
+            Section { addedButton(n, problem: problem) }
+        }
+    }
+
+    /// Opens the photos the last batch changed.
+    @ViewBuilder
+    private func addedButton(_ n: Int, problem: String?) -> some View {
+        Button {
+            showing = .added(library.lastAdded)
+        } label: {
+            if let problem {
+                Sentences(text: Words.t("Locations added to {0} photos in Photos, then stopped: {1}", n.formatted(), problem))
+                    .foregroundStyle(.orange)
+            } else {
+                Text(Words.t("Locations added to {0} photos in Photos", n.formatted()))
+            }
+        }
+        .disabled(library.lastAdded.isEmpty)
+    }
+}
+
+/// Which photos: those about to get a location, or those the last batch changed.
+enum LibraryShowing: Identifiable {
+    case toAdd([LibraryLocations.Found])
+    case added([LibraryLocations.Found])
+    var id: String {
+        switch self {
+        case .toAdd: return "add"
+        case .added: return "added"
+        }
+    }
+    var photos: [LibraryLocations.Found] {
+        switch self {
+        case .toAdd(let f), .added(let f): return f
+        }
+    }
+}
+
+/// The photos, each with its date and time and its place (0.31.11).
+struct LibraryPhotosPage: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var library: LibraryLocations
+    let showing: LibraryShowing
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List(showing.photos.sorted { $0.position.moment < $1.position.moment }) { photo in
+                LibraryPhotoRow(model: model, photo: photo)
+            }
+            .navigationTitle(showing.photos.count == 1 ? Words.t("1 photo") : Words.t("{0} photos", showing.photos.count.formatted()))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(Words.t("Close")) { dismiss() }
                 }
             }
+            .safeAreaInset(edge: .bottom) {
+                if case .toAdd(let found) = showing {
+                    Button {
+                        dismiss()
+                        Task { await library.add(found) }
+                    } label: {
+                        Text(Words.t("Add locations")).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .padding(16)
+                    .background(.bar)
+                }
+            }
+        }
+    }
+}
+
+struct LibraryPhotoRow: View {
+    @ObservedObject var model: AppModel
+    let photo: LibraryLocations.Found
+    @State private var image: UIImage?
+    @State private var place: String?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Color(.secondarySystemBackground)
+                if let image { Image(uiImage: image).resizable().scaledToFill() }
+            }
+            .frame(width: 64, height: 64)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(When.current.dayAndTime(photo.position.moment)).lineLimit(1)
+                Text(place ?? " ").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .task {
+            if let asset = PHAsset.fetchAssets(withLocalIdentifiers: [photo.id], options: nil).firstObject {
+                let options = PHImageRequestOptions()
+                options.deliveryMode = .highQualityFormat
+                options.isNetworkAccessAllowed = true
+                PHImageManager.default().requestImage(for: asset, targetSize: CGSize(width: 192, height: 192),
+                                                      contentMode: .aspectFill, options: options) { picture, _ in
+                    if let picture { Task { @MainActor in image = picture } }
+                }
+            }
+            place = await model.placeName(lat: photo.position.lat, lon: photo.position.lon)
+                ?? String(format: "%.4f, %.4f", photo.position.lat, photo.position.lon)
         }
     }
 }

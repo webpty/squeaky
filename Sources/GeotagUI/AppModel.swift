@@ -1826,6 +1826,12 @@ public final class AppModel: ObservableObject {
         ["jpg", "jpeg"].contains((photo.fileName as NSString).pathExtension.lowercased())
     }
 
+    /// The town or area at a position, from OpenStreetMap, for showing; nil without an answer.
+    public func placeName(lat: Double, lon: Double) async -> String? {
+        if case .found(let name) = await places.place(lat: lat, lon: lon) { return name }
+        return nil
+    }
+
     /// The photos of the offset code found on cards read since Geotag opened,
     /// by frame: left out of the list, so never shown, copied or sent (0.31.9).
     var offsetCodeFrames = Set<String>()
