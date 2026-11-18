@@ -1433,6 +1433,14 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   Amanda's card without a location, her camera's offset never having been
   set on David's phone.
 
+## Six at a time to the buffer (0.31.5, David, 18 November 2026)
+
+- `sendThroughBuffer` hands over 6 photos at a time, not 30: over one HTTP/2
+  connection all handed-over uploads go at once, and starved ones timed out
+  and started again ("57% then back to 11%"). A stalled upload now waits
+  600 s before the phone starts it again. Watch the record for slower
+  sending while locked: each batch of 6 needs the phone to wake Geotag.
+
 ## Architecture
 
 - `GeotagCore` is the domain and knows nothing about the interface.

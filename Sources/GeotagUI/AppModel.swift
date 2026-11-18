@@ -3559,7 +3559,7 @@ extension AppModel {
         }
     }
 
-    /// Hands waiting photos to the phone's transfers, up to 30 on their way
+    /// Hands waiting photos to the phone's transfers, up to 6 on their way
     /// at once, so a closed or locked phone carries on with them; topped up
     /// as they finish.
     func sendThroughBuffer() async {
@@ -3579,7 +3579,9 @@ extension AppModel {
         for entry in queueEntries where flying.contains(entry.id) && meter.going[entry.id] == nil {
             meter.begin(entry.id, name: (entry.relativePath as NSString).lastPathComponent)
         }
-        var room = 30 - flying.count
+        // Six at a time: thirty shared one connection, and the starved ones started
+        // again from nothing ("57% then back to 11%", 0.31.5, David).
+        var room = 6 - flying.count
         while room > 0, !sendPaused, let entry = nextToSend() {
             guard let folder = book.person(entry.personId)?.nasFolder, NASFolder(folder) != nil else { break }
             let local = URL(fileURLWithPath: entry.localPath)

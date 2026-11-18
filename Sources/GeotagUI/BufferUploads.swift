@@ -29,7 +29,8 @@ public final class BufferUploads: NSObject, URLSessionDataDelegate, @unchecked S
         let config = URLSessionConfiguration.default
         #endif
         config.httpMaximumConnectionsPerHost = 2
-        config.timeoutIntervalForRequest = 120
+        // A photo may stall up to ten minutes before it is started again (0.31.5).
+        config.timeoutIntervalForRequest = 600
         config.timeoutIntervalForResource = 24 * 3600
         return URLSession(configuration: config, delegate: self, delegateQueue: nil)
     }()
