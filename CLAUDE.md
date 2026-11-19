@@ -1604,3 +1604,14 @@ local settings allow `git -C /Users/david/Sites/geotag push` (12 November
 ### Notes only in cross-project changes
 
 Said 26 Oct 2026: in changes made across all projects, only Geotag's notes are aligned, nothing else, unless David names it.
+
+## Watch app, Phase 0: Bluetooth scan test (Watch 0.1.0, David, 19 November 2026)
+
+- Goal: decide whether the watch can see a Canon EOS R5 Mark II that is on, to start tracking on its own. Plan for Phases 1 (watch app) and 2 (receiving in the phone app) in his brief of 19 November; each phase is planned and approved before it is built.
+- David's watch: fēnix 9 Pro - inReach, 51mm, product id `fenix9pro51mm`, Connect IQ 6.0.3, 466x466, watch-app memory 768 KB.
+- `Watch/ScanTest`: a watch-app that scans for Bluetooth LE advertisements, lists them live (Up/Down to move, hold Up or tap to open one, Start drops a numbered marker) and writes every change through `System.println` to `GARMIN/Apps/LOGS/GTSCAN.TXT` on the watch. The log file has to exist on the watch for anything to be written; the program file name must stay 8 characters or fewer.
+- Log lines: `S` start, stop and scan state; `+` new or back; `-` gone after 30 s unheard; `r` signal change of 10 dBm or more; `~` maker data or services changed; `raw` the advertisement bytes; `M` marker.
+- Toolchain, all outside the repo: Java in `~/.local/jdk`, Connect IQ SDK 9.3.0 and the device files in `~/Library/Application Support/Garmin/ConnectIQ` (SdkManager signed in with David's Garmin account), the signing key in `~/.local/garmin/developer_key.der` (never commit it).
+- Build: `monkeyc -f monkey.jungle -d fenix9pro51mm -o build/GTSCAN.prg -y ~/.local/garmin/developer_key.der`.
+- Copying to the watch: macOS has no MTP. libmtp 1.1.22 and libusb 1.0.27 are built from source into `~/.local/mtp` (libusb configured with `ac_cv_func_pipe2=no`, or it crashes on this macOS). Run with `DYLD_LIBRARY_PATH=~/.local/mtp/lib`; `mtp-sendfile <file> /GARMIN/Apps` copies (the destination is the folder, the name comes from the file). The watch installs it when the cable is let go.
+- The watch must be set to USB Mode MTP, and the Mac's "Allow accessory to connect?" answered Allow, or it shows up as Garmin mode (091e:0003) and no file can be copied. In MTP it is 091e:535c.
