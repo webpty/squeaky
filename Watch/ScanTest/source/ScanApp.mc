@@ -22,7 +22,7 @@ class ScanApp extends Application.AppBase {
         model.log("S start " + d.year + "-" + d.month.format("%02d") + "-" + d.day.format("%02d")
             + " fw " + s.firmwareVersion[0] + "." + s.firmwareVersion[1]
             + " ciq " + s.monkeyVersion[0] + "." + s.monkeyVersion[1] + "." + s.monkeyVersion[2]
-            + " app 0.1.1");
+            + " app 0.1.2");
         BluetoothLowEnergy.setDelegate(new ScanBle(model));
         BluetoothLowEnergy.setScanState(BluetoothLowEnergy.SCAN_STATE_SCANNING);
     }

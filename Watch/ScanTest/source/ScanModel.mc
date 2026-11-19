@@ -19,6 +19,7 @@ class Seen {
     var last as Number;
     var gone as Boolean = false;
     var times as Number = 1;
+    var rssiLoggedAt as Number = 0;
 
     function initialize(r as BluetoothLowEnergy.ScanResult, l as String) {
         result = r;
@@ -39,6 +40,8 @@ class Seen {
 class ScanModel {
     static const GONE_AFTER = 30;
     static const MAX_DEVICES = 80;
+    // A device's signal goes in the log at most once a minute.
+    static const RSSI_EVERY = 60;
 
     var list as Array<Seen> = [];
     var selected as Number = 0;
@@ -137,6 +140,9 @@ class ScanModel {
 
         if (d == null) {
             if (list.size() >= MAX_DEVICES) {
+                dropOldestGone();
+            }
+            if (list.size() >= MAX_DEVICES) {
                 if (!full) {
                     full = true;
                     log("S list full at " + MAX_DEVICES + " devices");
@@ -166,8 +172,10 @@ class ScanModel {
             d.times += 1;
             d.loggedRssi = d.rssi;
             log("+ " + d.label + " back " + d.rssi + "dBm");
-        } else if ((d.rssi - d.loggedRssi) >= 10 || (d.loggedRssi - d.rssi) >= 10) {
+        } else if (d.last - d.rssiLoggedAt >= RSSI_EVERY
+                && ((d.rssi - d.loggedRssi) >= 10 || (d.loggedRssi - d.rssi) >= 10)) {
             d.loggedRssi = d.rssi;
+            d.rssiLoggedAt = d.last;
             log("r " + d.label + " " + d.rssi + "dBm");
         }
 
@@ -180,6 +188,20 @@ class ScanModel {
         if (!raw.equals(d.raw)) {
             d.raw = raw;
             log("  " + d.label + " raw " + raw);
+        }
+    }
+
+    // Makes room by forgetting the device gone longest.
+    private function dropOldestGone() as Void {
+        var oldest = -1;
+        for (var i = 0; i < list.size(); i++) {
+            if (list[i].gone && (oldest < 0 || list[i].last < list[oldest].last)) {
+                oldest = i;
+            }
+        }
+        if (oldest >= 0) {
+            log("x " + list[oldest].label + " forgotten, list full");
+            list.remove(list[oldest]);
         }
     }
 
