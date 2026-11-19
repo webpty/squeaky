@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 /// service and the server. Each phone is on its own (David, 15 November 2026).
 struct SettingsTab: View {
     @ObservedObject var model: AppModel
+    @ObservedObject private var watch = WatchLink.shared
     @State private var choosing = false
     @State private var problem: String?
     @State private var nasName = PhoneFolders.savedPath(PhoneFolders.nasKey)
@@ -193,6 +194,19 @@ struct SettingsTab: View {
                         }
                     }
                     StatusRow(text: model.bufferLine, busy: model.bufferBusy)
+                }
+                // The Geotag app on a Garmin watch, picked once in Garmin Connect (0.32.0).
+                Section(Words.t("Watch")) {
+                    LabeledContent(Words.t("Watch")) {
+                        Text(watch.watchName ?? Words.t("Not chosen")).lineLimit(1).truncationMode(.middle)
+                    }
+                    HStack(spacing: 12) {
+                        HalfButton(watch.watchName == nil ? Words.t("Choose watch") : Words.t("Change")) { watch.choose() }
+                        HalfSpace()
+                    }
+                    if let line = watch.problem {
+                        StatusRow(text: line, busy: false)
+                    }
                 }
                 if let problem {
                     Section { Sentences(text: problem).foregroundStyle(.secondary) }

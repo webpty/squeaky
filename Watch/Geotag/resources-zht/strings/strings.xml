@@ -1,0 +1,27 @@
+<strings>
+    <string id="AppName">相途</string>
+    <string id="Searching">搜尋中</string>
+    <string id="Poor">弱</string>
+    <string id="Usable">可用</string>
+    <string id="Good">良好</string>
+    <string id="Resume">繼續</string>
+    <string id="SaveGeotrac">儲存到 Geotrac</string>
+    <string id="SaveBoth">儲存到 Geotrac 和 Garmin</string>
+    <string id="Discard">捨棄</string>
+    <string id="DiscardAsk">捨棄這條軌跡？</string>
+    <string id="Sending">傳送中 $1$/$2$</string>
+    <string id="Waiting">等待手機</string>
+    <string id="Received">手機已收到</string>
+    <string id="Tracks">軌跡</string>
+    <string id="NoTracks">沒有軌跡</string>
+    <string id="Sent">已傳送</string>
+    <string id="NotSent">未傳送</string>
+    <string id="SendAgain">重新傳送</string>
+    <string id="Time">時間</string>
+    <string id="HeartRate">心率</string>
+    <string id="Steps">步數</string>
+    <string id="Battery">電量</string>
+    <string id="Altitude">海拔</string>
+    <string id="Gps">GPS</string>
+    <string id="NoPoints">沒有記錄到位置</string>
+</strings>

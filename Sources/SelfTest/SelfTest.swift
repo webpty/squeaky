@@ -87,6 +87,7 @@ struct SelfTest {
         await buttonsSay(scratch)
         setupNeeded(scratch)
         await tracksLoading(scratch)
+        await watchTracks(scratch)
         timeLeft()
         await quitAndAway(scratch)
         drift()
@@ -3046,6 +3047,65 @@ extension SelfTest {
     }
 
     /// While tracks come in, the line says how many of how many.
+    /// Tracks from the watch (0.32.0): the watch's bytes, parts kept until whole,
+    /// and of two tracks starting within 20 s, the longer listed.
+    static func watchTracks(_ scratch: URL) async {
+        func point(_ t: Int, _ lat: Double, _ lon: Double, _ alt: Int) -> Data {
+            var d = Data()
+            func put32(_ v: Int32) { withUnsafeBytes(of: v.bigEndian) { d.append(contentsOf: $0) } }
+            put32(Int32(t)); put32(Int32((lat * 10_000_000).rounded())); put32(Int32((lon * 10_000_000).rounded()))
+            withUnsafeBytes(of: Int16(alt).bigEndian) { d.append(contentsOf: $0) }
+            return d
+        }
+        let start = 1_795_000_000
+        var first = Data(), second = Data()
+        for i in 0..<290 { first.append(point(start + i, -54.8 - Double(i) / 100_000, -68.3, 12)) }
+        for i in 290..<400 { second.append(point(start + i, -54.8 - Double(i) / 100_000, -68.3, i == 399 ? WatchPart.noAltitude : 15)) }
+        second.append(point(start + 399, 0, 0, 0))
+
+        let p0 = WatchPart(message: ["k": "part", "id": NSNumber(value: start), "n": NSNumber(value: 0), "of": NSNumber(value: 2),
+                                     "pts": NSNumber(value: 400), "d": first.base64EncodedString()])
+        let p1 = WatchPart(message: ["k": "part", "id": NSNumber(value: start), "n": NSNumber(value: 1), "of": NSNumber(value: 2),
+                                     "pts": NSNumber(value: 400), "d": second.base64EncodedString()])
+        check("watch: parts read", p0?.index == 0 && p1?.index == 1 && p0?.count == 2)
+        check("watch: anything else ignored", WatchPart(message: ["k": "ack"]) == nil && WatchPart(message: "hello") == nil)
+
+        let inbox = WatchInbox(folder: scratch.appendingPathComponent("watch"))
+        if let p1 { _ = try? inbox.keep(p1) }
+        check("watch: not whole with one part of two", inbox.whole(start, of: 2) == nil && inbox.received(start, of: 2) == 1)
+        if let p0 { _ = try? inbox.keep(p0) }
+        if let p0 { _ = try? inbox.keep(p0) }
+        let points = inbox.whole(start, of: 2)
+        check("watch: whole once both are here, a part sent twice kept once", points?.count == 400, "\(points?.count ?? -1)")
+        check("watch: positions and times", points?.t.first == start && points?.t.last == start + 399
+              && abs((points?.lat.first ?? 0) + 54.8) < 0.000_001 && points?.lon.first == -68.3)
+        check("watch: altitude, and none where unknown", points?.alt.first == 12 && points?.alt.last == .some(nil))
+
+        let library = TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("watch-library")))
+        guard let points, case .added(let t)? = try? await library.importWatch(id: WatchInbox.libraryId(start), name: "From David's fēnix watch",
+                                                                          points: points, role: .owner) else {
+            check("watch: into the library", false)
+            return
+        }
+        check("watch: waits to upload on the owner's phone", t.status == .waitingToUpload && t.source == .watch)
+        let again = try? await library.importWatch(id: WatchInbox.libraryId(start), name: "x", points: points, role: .owner)
+        if case .alreadyHere? = again { check("watch: same track twice is one", true) } else { check("watch: same track twice is one", false) }
+
+        // A shorter track 15 s later: the same outing, set aside.
+        let short = TrackPoints(t: Array(start + 15 ..< start + 115), lat: Array(repeating: -54.8, count: 100),
+                                lon: Array(repeating: -68.3, count: 100), alt: Array(repeating: nil, count: 100))
+        _ = try? await library.importWatch(id: "watch-short", name: "short", points: short, role: .reader)
+        var listed = await library.listed().map(\.id)
+        check("watch: of two within 20 s, the longer listed", listed == [WatchInbox.libraryId(start)], "\(listed)")
+        // A longer one 25 s after: a different outing, both kept.
+        let other = TrackPoints(t: Array(start + 25 ..< start + 1025), lat: Array(repeating: -54.8, count: 1000),
+                                lon: Array(repeating: -68.3, count: 1000), alt: Array(repeating: nil, count: 1000))
+        _ = try? await library.importWatch(id: "watch-other", name: "other", points: other, role: .owner)
+        listed = await library.listed().map(\.id)
+        check("watch: 25 s apart, both kept", listed.count == 2 && listed.contains("watch-other"), "\(listed)")
+        check("watch: every watch track offered to family phones", await library.watchTracks().count == 3)
+    }
+
     static func tracksLoading(_ scratch: URL) async {
         let lib = TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("tl-lib")))
         let seen = Seen()

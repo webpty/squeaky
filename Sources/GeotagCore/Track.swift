@@ -34,6 +34,8 @@ public struct Bounds: Codable, Equatable, Sendable {
 public enum TrackSource: String, Codable, Sendable {
     case strava
     case file
+    /// Sent by the Geotag app on a Garmin watch, or passed on by a family phone (0.32.0).
+    case watch
 }
 
 /// Where a track stands between this Mac and the track service.
@@ -66,6 +68,8 @@ public struct Track: Codable, Identifiable, Equatable, Sendable {
     public var serviceId: String?
     /// Where it is, named by the track service (0.29.20).
     public var place: String?
+    /// Another track starts within `sameStartSeconds` and is longer: this one is kept but not listed (0.32.0).
+    public var setAside: Bool?
 
     public init(id: String, source: TrackSource, name: String, sport: String?, fileName: String?,
                 start: Date, end: Date, timeZone: String?, pointCount: Int, distance: Double?,
@@ -87,12 +91,14 @@ public struct Track: Codable, Identifiable, Equatable, Sendable {
 
     public var duration: TimeInterval { end.timeIntervalSince(start) }
 
-    /// Shown in the list: uploaded files appear once, as the service's copy.
-    public var isListed: Bool { status != .uploaded }
+    /// Shown in the list: uploaded files appear once, as the service's copy;
+    /// of two starting together, only the longer.
+    public var isListed: Bool { status != .uploaded && setAside != true }
 }
 
-/// Two tracks starting this close together are the same outing.
-public let sameStartSeconds: TimeInterval = 60
+/// Two tracks starting this close together are the same outing; the shorter
+/// is set aside (0.32.0, David: 20 seconds, not 60).
+public let sameStartSeconds: TimeInterval = 20
 
 public enum Geo {
     static let earthMetres = 6_371_008.8

@@ -32,6 +32,9 @@ enum TrackText {
         case (.file, .waitingToUpload): return "File, waiting to upload"
         case (.file, .thisMacOnly): return "File, this Mac only"
         case (.file, _): return "File"
+        case (.watch, .waitingToUpload): return "Watch, waiting to upload"
+        case (.watch, .thisMacOnly): return "Watch, this device only"
+        case (.watch, _): return "Watch"
         }
     }
 }

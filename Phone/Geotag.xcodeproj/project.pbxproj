@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		A10000000000000000000023 /* GeotagUI in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000021 /* GeotagUI */; };
 		A10000000000000000000024 /* GeotagCore in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000022 /* GeotagCore */; };
+		A10000000000000000000027 /* ConnectIQ in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000026 /* ConnectIQ */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +27,7 @@
 			files = (
 				A10000000000000000000023 /* GeotagUI in Frameworks */,
 				A10000000000000000000024 /* GeotagCore in Frameworks */,
+				A10000000000000000000027 /* ConnectIQ in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -70,6 +72,7 @@
 			packageProductDependencies = (
 				A10000000000000000000021 /* GeotagUI */,
 				A10000000000000000000022 /* GeotagCore */,
+				A10000000000000000000026 /* ConnectIQ */,
 			);
 			productName = GeotagPhone;
 			productReference = A10000000000000000000001 /* Geotag.app */;
@@ -99,6 +102,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A10000000000000000000020 /* XCLocalSwiftPackageReference ".." */,
+				A10000000000000000000025 /* XCRemoteSwiftPackageReference "connectiq-companion-app-sdk-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A10000000000000000000005 /* Products */;
@@ -173,6 +177,10 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				INFOPLIST_KEY_CFBundleDisplayName = Geotag;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Geotag receives tracks from the Geotag app on your Garmin watch.";
+				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Geotag receives tracks from the Geotag app on your Garmin watch.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Geotag passes tracks from the watch to family phones nearby.";
+				OTHER_LDFLAGS = "-ObjC";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Geotag adds the photos it saves from your cards.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Geotag adds locations to photos in Photos that have none.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -200,6 +208,10 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				INFOPLIST_KEY_CFBundleDisplayName = Geotag;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Geotag receives tracks from the Geotag app on your Garmin watch.";
+				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Geotag receives tracks from the Geotag app on your Garmin watch.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Geotag passes tracks from the watch to family phones nearby.";
+				OTHER_LDFLAGS = "-ObjC";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Geotag adds the photos it saves from your cards.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Geotag adds locations to photos in Photos that have none.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -225,6 +237,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		A10000000000000000000025 /* XCRemoteSwiftPackageReference "connectiq-companion-app-sdk-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/garmin/connectiq-companion-app-sdk-ios";
+			requirement = {
+				kind = exactVersion;
+				version = 1.8.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		A10000000000000000000021 /* GeotagUI */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -233,6 +256,11 @@
 		A10000000000000000000022 /* GeotagCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = GeotagCore;
+		};
+		A10000000000000000000026 /* ConnectIQ */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000025 /* XCRemoteSwiftPackageReference "connectiq-companion-app-sdk-ios" */;
+			productName = ConnectIQ;
 		};
 /* End XCSwiftPackageProductDependency section */
 

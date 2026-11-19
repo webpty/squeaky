@@ -59,6 +59,8 @@ struct GeotagPhoneApp: App {
         WindowGroup {
             PhoneRoot(model: model)
                 .tint(.heroBlue)
+                // Garmin Connect comes back here after the watch is picked (0.32.0).
+                .onOpenURL { url in _ = WatchLink.shared.handle(url) }
                 .background(KeyboardCloser())
                 .task {
                     #if DEBUG
@@ -142,6 +144,8 @@ struct PhoneRoot: View {
                 work?.start()
             }
             network.start(model: model)
+            WatchLink.shared.start(model: model)
+            TrackShare.shared.start(model: model)
         }
         .onChange(of: phase) { _, now in
             if now == .active { cards?.start() } else { cards?.stop() }
@@ -165,6 +169,14 @@ struct PhoneRoot: View {
             Button(Words.t("Close"), role: .cancel) { UserDefaults.standard.set(true, forKey: Self.remindedKey) }
         } message: {
             Text(Words.t("Geotag sends photos to your server over mobile data when there is no WiFi. To stop it, turn off Mobile Data for Geotag in the iPhone's Settings."))
+        }
+        // Tracks from the watch go up to the track service, tried again every
+        // five minutes while any wait (0.32.0).
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(300))
+                if await model.hasWaitingTracks { await model.uploadWaitingTracks() }
+            }
         }
         .task {
             #if DEBUG

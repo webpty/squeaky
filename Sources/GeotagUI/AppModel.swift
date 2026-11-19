@@ -3460,6 +3460,67 @@ public final class AppModel: ObservableObject {
 
     // MARK: Tracks
 
+    // MARK: Tracks from the watch (0.32.0, David, 19 November 2026)
+
+    /// A track coming in from the watch: how many of its parts are here.
+    @Published public var watchReceiving: (got: Int, of: Int)?
+    /// Tracks a family phone passed on, each waiting for its OK.
+    @Published public var trackNotices: [String] = []
+
+    /// This phone's person, for "From David's fēnix watch".
+    public var ownerName: String? {
+        macOwner.flatMap { book.person($0)?.name }
+    }
+
+    /// A whole track from the watch into the library, used for matching at
+    /// once; on the owner's phone it goes up to the track service when it can.
+    public func addWatchTrack(trackId: Int, points: TrackPoints, watchModel: String?) async throws {
+        let model = Self.shortModel(watchModel)
+        let name = ownerName.map { Words.t("From {0}'s {1} watch", $0, model) } ?? Words.t("From the {0} watch", model)
+        _ = try await library.importWatch(id: WatchInbox.libraryId(trackId), name: name, points: points, role: role)
+        await tracksChanged()
+        Task { await uploadWaitingTracks() }
+    }
+
+    /// A watch track a family phone passed on. Answers true when it was new here.
+    public func addSharedTrack(_ track: Track, points: TrackPoints, from person: String) async -> Bool {
+        guard !(await library.has(track.id)) else { return false }
+        guard (try? await library.importWatch(id: track.id, name: track.name, points: points, role: role)) != nil else { return false }
+        await tracksChanged()
+        let when = When.current.dayAndTime(track.start)
+        trackNotices.append(Words.t("Track received from {0}: {1}, {2}", person, when, Self.length(track.duration)))
+        return true
+    }
+
+    private func tracksChanged() async {
+        tracks = await library.listed()
+        await loadTimeline()
+        rematch()
+    }
+
+    /// Tracks waiting to go up are sent whenever the service can be reached;
+    /// the phone calls this again until none wait.
+    public func uploadWaitingTracks() async {
+        guard role == .owner, await library.waitingCount > 0 else { return }
+        await refresh()
+    }
+
+    public var hasWaitingTracks: Bool {
+        get async { await library.waitingCount > 0 }
+    }
+
+    /// "fēnix" from "fēnix 9 Pro - inReach, 51mm".
+    static func shortModel(_ model: String?) -> String {
+        let words = (model ?? "").split(separator: " ")
+        return words.first.map(String.init) ?? Words.t("Garmin")
+    }
+
+    static func length(_ seconds: TimeInterval) -> String {
+        let s = max(0, Int(seconds))
+        let h = s / 3600, m = (s % 3600) / 60
+        return h > 0 ? Words.t("{0} h {1} min", h, m) : Words.t("{0} min", m)
+    }
+
     /// True when the track service answered.
     @discardableResult
     public func refresh(pullStrava: Bool = false) async -> Bool {

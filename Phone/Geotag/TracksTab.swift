@@ -28,6 +28,9 @@ struct TracksTab: View {
                 // Plain words above the list, no box: it looked like a field (0.29.30).
                 Section {
                     StatusRow(text: model.tracksLine, busy: model.tracksBusy || model.namingTracks)
+                    if let r = model.watchReceiving, r.of > 0 {
+                        StatusRow(text: Words.t("Receiving from the watch: {0}%", r.got * 100 / r.of), busy: true)
+                    }
                     if maps.asked > maps.made {
                         StatusRow(text: Words.t("Making maps: {0} of {1}", maps.made + 1, maps.asked), busy: true)
                     }

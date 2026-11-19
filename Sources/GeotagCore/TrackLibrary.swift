@@ -108,9 +108,10 @@ public actor TrackLibrary {
                 if known.contains(item.id) {
                     // Names and details can change on the service; keep them in step.
                     if let i = all.firstIndex(where: { $0.id == item.id }) {
-                        let status = all[i].status
+                        let status = all[i].status, aside = all[i].setAside
                         all[i] = item.track
                         all[i].status = status
+                        all[i].setAside = aside
                     }
                     continue
                 }
@@ -122,6 +123,7 @@ public actor TrackLibrary {
                 report.added += 1
             }
             if total > 0 { await loading?(report.added, total) }
+            setAsideDuplicates()
             try save()
         } catch ServiceError.offline {
             report.offline = true
@@ -143,6 +145,60 @@ public actor TrackLibrary {
             if answer.added { count += 1 }
         }
         return count
+    }
+
+    /// A track from the watch, or one a family phone passed on. On the owner's
+    /// phone it then waits for upload; elsewhere it stays on this phone.
+    public func importWatch(id: String, name: String, points: TrackPoints, role: KeyRole?) throws -> ImportResult {
+        if let here = all.first(where: { $0.id == id }) { return .alreadyHere(here) }
+        guard points.count > 0 else { throw WatchTrackError.empty }
+        let track = Track(
+            id: id,
+            source: .watch,
+            name: name,
+            sport: nil,
+            fileName: nil,
+            start: Date(timeIntervalSince1970: TimeInterval(points.t[0])),
+            end: Date(timeIntervalSince1970: TimeInterval(points.t[points.count - 1])),
+            timeZone: nil,
+            pointCount: points.count,
+            distance: Geo.distance(points),
+            bounds: Geo.bounds(points),
+            status: role == .owner ? .waitingToUpload : .thisMacOnly
+        )
+        try store.savePoints(track.id, points)
+        all.append(track)
+        setAsideDuplicates()
+        try save()
+        return .added(track)
+    }
+
+    /// Of listed tracks starting within `sameStartSeconds` of each other, the
+    /// longest stays listed and the others are set aside (0.32.0).
+    public func setAsideDuplicates() {
+        let listed = all.indices.filter { all[$0].status != .uploaded && all[$0].setAside != true }
+            .sorted { all[$0].start < all[$1].start }
+        var group: [Int] = []
+        func close() {
+            if group.count > 1, let keep = group.max(by: { all[$0].duration < all[$1].duration }) {
+                for i in group where i != keep { all[i].setAside = true }
+            }
+            group = []
+        }
+        for i in listed {
+            if let first = group.first, all[i].start.timeIntervalSince(all[first].start) > sameStartSeconds { close() }
+            group.append(i)
+        }
+        close()
+    }
+
+    /// Every track that came from a watch, with its points, for family phones nearby.
+    public func watchTracks() -> [Track] {
+        all.filter { $0.source == .watch }
+    }
+
+    public func has(_ id: String) -> Bool {
+        all.contains { $0.id == id }
     }
 
     public var waitingCount: Int {

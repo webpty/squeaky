@@ -94,6 +94,21 @@ public struct NoticeLines: View {
                 .padding(.horizontal, 16)
                 .background(.regularMaterial)
             }
+            // A track a family phone passed on, acknowledged with OK (0.32.0, David).
+            ForEach(model.trackNotices, id: \.self) { line in
+                HStack(spacing: 10) {
+                    Image(systemName: "point.topleft.down.to.point.bottomright.curvepath").foregroundStyle(.green)
+                    Text(line).lineLimit(2).minimumScaleFactor(0.8)
+                    Spacer(minLength: 8)
+                    Button(Words.t("OK")) {
+                        model.trackNotices.removeAll { $0 == line }
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(.vertical, 8)
+                .padding(.horizontal, 16)
+                .background(.regularMaterial)
+            }
         }
     }
 }

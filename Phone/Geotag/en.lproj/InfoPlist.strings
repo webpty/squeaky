@@ -1,3 +1,6 @@
 "CFBundleDisplayName" = "Geotag";
 "NSPhotoLibraryAddUsageDescription" = "Geotag adds the photos it saves from your cards.";
 "NSPhotoLibraryUsageDescription" = "Geotag adds locations to photos in Photos that have none.";
+"NSBluetoothAlwaysUsageDescription" = "Geotag receives tracks from the Geotag app on your Garmin watch.";
+"NSBluetoothPeripheralUsageDescription" = "Geotag receives tracks from the Geotag app on your Garmin watch.";
+"NSLocalNetworkUsageDescription" = "Geotag passes tracks from the watch to family phones nearby.";

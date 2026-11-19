@@ -1,0 +1,27 @@
+<strings>
+    <string id="AppName">Geotag</string>
+    <string id="Searching">Searching</string>
+    <string id="Poor">Poor</string>
+    <string id="Usable">Usable</string>
+    <string id="Good">Good</string>
+    <string id="Resume">Resume</string>
+    <string id="SaveGeotrac">Save Geotrac</string>
+    <string id="SaveBoth">Save Geotrac &amp; Garmin</string>
+    <string id="Discard">Discard</string>
+    <string id="DiscardAsk">Discard this track?</string>
+    <string id="Sending">Sending $1$ of $2$</string>
+    <string id="Waiting">Waiting for the phone</string>
+    <string id="Received">Received by the phone</string>
+    <string id="Tracks">Tracks</string>
+    <string id="NoTracks">No tracks</string>
+    <string id="Sent">Sent</string>
+    <string id="NotSent">Not sent</string>
+    <string id="SendAgain">Send again</string>
+    <string id="Time">Time</string>
+    <string id="HeartRate">HR</string>
+    <string id="Steps">Steps</string>
+    <string id="Battery">Battery</string>
+    <string id="Altitude">Altitude</string>
+    <string id="Gps">GPS</string>
+    <string id="NoPoints">No positions recorded</string>
+</strings>
