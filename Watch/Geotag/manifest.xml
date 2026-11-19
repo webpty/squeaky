@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="3">
-    <iq:application entry="GeotagApp" id="14bdff03a39e49e5b118cbaac67b0534" launcherIcon="@Drawables.LauncherIcon" minSdkVersion="5.0.0" name="@Strings.AppName" type="watch-app" version="0.2.4">
+    <iq:application entry="GeotagApp" id="14bdff03a39e49e5b118cbaac67b0534" launcherIcon="@Drawables.LauncherIcon" minSdkVersion="5.0.0" name="@Strings.AppName" type="watch-app" version="0.2.5">
         <iq:products>
             <iq:product id="fenix9pro51mm"/>
         </iq:products>

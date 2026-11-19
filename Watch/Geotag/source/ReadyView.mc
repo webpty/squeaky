@@ -91,9 +91,11 @@ class ReadyView extends WatchUi.View {
         var pct = gps.percent();
         var ready = gps.ready();
         dc.setColor(ready ? Graphics.COLOR_GREEN : Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 0.38, Graphics.FONT_MEDIUM,
-            WatchUi.loadResource(ready ? Rez.Strings.Ready : Rez.Strings.Loading) as String,
-            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        var word = WatchUi.loadResource(ready ? Rez.Strings.Ready : Rez.Strings.Loading) as String;
+        var font = Graphics.FONT_MEDIUM;
+        if (dc.getTextWidthInPixels(word, font) > w * 0.78) { font = Graphics.FONT_SMALL; }
+        if (dc.getTextWidthInPixels(word, font) > w * 0.78) { font = Graphics.FONT_TINY; }
+        dc.drawText(w / 2, h * 0.38, font, word, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
 
         var barW = (w * 0.64).toNumber();
         var barH = 18;

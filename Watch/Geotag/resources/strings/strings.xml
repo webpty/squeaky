@@ -4,7 +4,7 @@
     <string id="Poor">Poor</string>
     <string id="Usable">Usable</string>
     <string id="Good">Good</string>
-    <string id="Loading">Loading</string>
+    <string id="Loading">Acquiring satellites</string>
     <string id="Ready">Ready</string>
     <string id="Resume">Resume</string>
     <string id="SaveGeotrac">Save Geotrac</string>
@@ -19,6 +19,5 @@
     <string id="Sent">Sent</string>
     <string id="NotSent">Not sent</string>
     <string id="SendAgain">Send again</string>
-    <string id="Gps">GPS</string>
     <string id="NoPoints">No positions recorded</string>
 </strings>

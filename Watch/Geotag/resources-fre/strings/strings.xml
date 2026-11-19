@@ -4,7 +4,7 @@
     <string id="Poor">Faible</string>
     <string id="Usable">Utilisable</string>
     <string id="Good">Bon</string>
-    <string id="Loading">Chargement</string>
+    <string id="Loading">Recherche des satellites</string>
     <string id="Ready">Prêt</string>
     <string id="Resume">Reprendre</string>
     <string id="SaveGeotrac">Enregistrer Geotrac</string>
@@ -19,6 +19,5 @@
     <string id="Sent">Envoyé</string>
     <string id="NotSent">Pas envoyé</string>
     <string id="SendAgain">Renvoyer</string>
-    <string id="Gps">GPS</string>
     <string id="NoPoints">Aucune position enregistrée</string>
 </strings>

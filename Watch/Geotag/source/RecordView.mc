@@ -7,7 +7,7 @@ import Toybox.System;
 import Toybox.Timer;
 import Toybox.WatchUi;
 
-// The one page while recording, laid out like David's fenix watch face (Watch 0.2.3, 0.2.4):
+// The one page while recording, laid out like David's fenix watch face (Watch 0.2.3 to 0.2.5):
 // six fields round the edge inside a purple ring, three in the middle.
 // To change the page, change these two lists.
 module Layout {
@@ -19,7 +19,9 @@ module Layout {
     const RING = 0x7755CC;
     const TICK = 0xAA88FF;
     // Where each side field is centred, degrees counter-clockwise from 3 o'clock.
-    const SIDE_ANGLES = [31, -31, 211, 149];
+    const SIDE_ANGLES = [28, -28, 208, 152];
+    // Where the frames meet the ring, degrees from 3 o'clock.
+    const CORNER = 55;
 }
 
 class RecordView extends WatchUi.View {
@@ -37,7 +39,7 @@ class RecordView extends WatchUi.View {
         var w = dc.getWidth();
         edgeFont = Ring.font((w * 0.073).toNumber());
         topFont = Ring.font((w * 0.094).toNumber());
-        timeFont = Ring.font((w * 0.107).toNumber());
+        timeFont = Ring.font((w * 0.14).toNumber());
         middleFonts = [Ring.font((w * 0.099).toNumber()), Ring.font((w * 0.088).toNumber()), Ring.font((w * 0.077).toNumber())];
     }
 
@@ -84,10 +86,9 @@ class RecordView extends WatchUi.View {
         var font = edgeFont;
         if (font != null) {
             var rt = (R * 0.88).toNumber();
-            var straightY = (R * 0.83).toNumber();
-            // Top and bottom, straight and larger, filling the space beyond the frames.
-            Ring.straight(dc, cx, cy - straightY, topFont != null ? topFont : font, Layout.AROUND[0], info);
-            Ring.straight(dc, cx, cy + straightY, timeFont != null ? timeFont : font, Layout.AROUND[3], info);
+            // Top and bottom, straight, inside the frames.
+            Ring.straight(dc, cx, cy - (R * 0.60).toNumber(), topFont != null ? topFont : font, Layout.AROUND[0], info);
+            Ring.straight(dc, cx, cy + (R * 0.68).toNumber(), timeFont != null ? timeFont : font, Layout.AROUND[3], info);
             // The four sides, along the edge.
             var sides = [Layout.AROUND[1], Layout.AROUND[2], Layout.AROUND[4], Layout.AROUND[5]];
             for (var i = 0; i < 4; i++) {
@@ -97,7 +98,7 @@ class RecordView extends WatchUi.View {
             }
         }
 
-        // The middle: elapsed large, distance above it and pace below it.
+        // The middle: elapsed large, distance above it, pace or speed below it.
         var paused = app().recorder.state == Recorder.PAUSED;
         var big = Fields.value(Layout.MIDDLE[0], info)[1];
         var bigFont = Graphics.FONT_NUMBER_MEDIUM;
@@ -108,7 +109,7 @@ class RecordView extends WatchUi.View {
         var above = Fields.value(Layout.MIDDLE[1], info)[1];
         var below = Fields.value(Layout.MIDDLE[2], info)[1];
         var mid = Ring.fitting(dc, middleFonts, [above, below], (R * 1.15).toNumber());
-        var off = (R * 0.36).toNumber();
+        var off = (R * 0.31).toNumber();
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         if (mid != null) {
             dc.drawText(cx, cy - off, mid, above, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
@@ -153,13 +154,15 @@ module Ring {
     function draw(dc as Dc, cx as Number, cy as Number, rr as Number) as Void {
         dc.setColor(Layout.RING, Graphics.COLOR_TRANSPARENT);
         dc.setPenWidth(4);
-        dc.drawArc(cx, cy, rr, Graphics.ARC_COUNTER_CLOCKWISE, -62, 62);
-        dc.drawArc(cx, cy, rr, Graphics.ARC_COUNTER_CLOCKWISE, 118, 242);
-        var inner = (rr * 0.74).toNumber();
-        var half = (rr * 0.34).toNumber();
+        var k = Layout.CORNER;
+        dc.drawArc(cx, cy, rr, Graphics.ARC_COUNTER_CLOCKWISE, -k, k);
+        dc.drawArc(cx, cy, rr, Graphics.ARC_COUNTER_CLOCKWISE, 180 - k, 180 + k);
+        // Wide and deep, so the battery and the time sit inside them.
+        var inner = (rr * 0.62).toNumber();
+        var half = (rr * 0.42).toNumber();
         for (var s = -1; s <= 1; s += 2) {
-            var p1 = point(cx, cy, rr, s < 0 ? 118 : 242);
-            var p2 = point(cx, cy, rr, s < 0 ? 62 : -62);
+            var p1 = point(cx, cy, rr, s < 0 ? 180 - k : 180 + k);
+            var p2 = point(cx, cy, rr, s < 0 ? k : -k);
             var y = cy + s * inner;
             dc.drawLine(p1[0], p1[1], cx - half, y);
             dc.drawLine(cx - half, y, cx + half, y);
@@ -167,7 +170,7 @@ module Ring {
         }
         dc.setColor(Layout.TICK, Graphics.COLOR_TRANSPARENT);
         dc.setPenWidth(7);
-        var ticks = [0, 62, 118, 180, 242, 298];
+        var ticks = [0, k, 180 - k, 180, 180 + k, 360 - k];
         for (var i = 0; i < ticks.size(); i++) {
             var a = point(cx, cy, rr - 12, ticks[i]);
             var b = point(cx, cy, rr + 12, ticks[i]);
@@ -184,13 +187,14 @@ module Ring {
     }
 
     function hasIcon(field as Symbol) as Boolean {
-        return field == :heartRate || field == :steps || field == :altitude || field == :battery;
+        return field == :heartRate || field == :steps || field == :altitude || field == :battery || field == :gps;
     }
 
     function drawIcon(dc as Dc, field as Symbol, cx as Number, cy as Number, r as Number, deg as Numeric, size as Number, ccw as Boolean) as Void {
         if (field == :heartRate) { Icons.heart(dc, cx, cy, r, deg, size, ccw); }
         else if (field == :steps) { Icons.footsteps(dc, cx, cy, r, deg, size, ccw); }
         else if (field == :altitude) { Icons.mountain(dc, cx, cy, r, deg, size, ccw); }
+        else if (field == :gps) { Icons.satellite(dc, cx, cy, r, deg, size, ccw); }
     }
 
     function colour(field as Symbol) as Number {
@@ -206,8 +210,8 @@ module Ring {
             return;
         }
         var th = dc.getFontHeight(font);
-        var bh = (th * 0.52).toNumber();
-        var bw = (bh * 1.9).toNumber();
+        var bh = (th * 0.46).toNumber();
+        var bw = (bh * 2.0).toNumber();
         var gap = (bh * 0.4).toNumber();
         var textW = dc.getTextWidthInPixels(text, font);
         var left = x - (bw + gap + textW) / 2;
@@ -296,20 +300,38 @@ module Icons {
         dc.fillPolygon(place(cx, cy, r, deg, size, pts, ccw));
     }
 
-    // A battery on its side, filled to its level.
+    // A battery on its side: a thin outline, the level filled inside.
     function battery(dc as Dc, x as Number, y as Number, w as Number, h as Number, level as Float) as Void {
-        var pen = h > 20 ? 3 : 2;
-        var nub = (h * 0.18).toNumber();
-        dc.setPenWidth(pen);
-        dc.drawRoundedRectangle(x, y, w - nub, h, 4);
+        var nub = (h * 0.15).toNumber();
+        var body = w - nub;
+        dc.setPenWidth(2);
+        dc.drawRectangle(x, y, body, h);
         dc.setPenWidth(1);
-        dc.fillRectangle(x + w - nub, y + h * 0.3, nub, h * 0.4);
-        var inset = pen + 2;
-        var inner = w - nub - inset * 2;
+        dc.fillRectangle(x + body, y + h / 3, nub, h - 2 * (h / 3));
         var lv = level < 0 ? 0.0 : (level > 100 ? 100.0 : level);
-        var fill = (inner * lv / 100.0).toNumber();
+        var fill = ((body - 6) * lv / 100.0).toNumber();
         if (fill > 0) {
-            dc.fillRectangle(x + inset, y + inset, fill, h - inset * 2);
+            dc.fillRectangle(x + 3, y + 3, fill, h - 6);
+        }
+    }
+
+    // A satellite: a body between two panels, turned on the diagonal.
+    function satellite(dc as Dc, cx as Number, cy as Number, r as Number, deg as Numeric, size as Number, ccw as Boolean) as Void {
+        var rects = [
+            [-0.13, -0.13, 0.13, 0.13],
+            [-0.58, -0.13, -0.22, 0.13], [0.22, -0.13, 0.58, 0.13],
+            [-0.22, -0.03, -0.13, 0.03], [0.13, -0.03, 0.22, 0.03]
+        ];
+        for (var i = 0; i < rects.size(); i++) {
+            var q = rects[i];
+            var pts = [[q[0], q[1]], [q[2], q[1]], [q[2], q[3]], [q[0], q[3]]];
+            var turned = [];
+            for (var j = 0; j < 4; j++) {
+                var px = pts[j][0];
+                var py = pts[j][1];
+                turned.add([(px - py) * 0.7071, (px + py) * 0.7071]);
+            }
+            dc.fillPolygon(place(cx, cy, r, deg, size, turned, ccw));
         }
     }
 }
@@ -337,6 +359,9 @@ class RecordDelegate extends WatchUi.BehaviorDelegate {
 
 // Each field as [label, value].
 module Fields {
+    // Showing speed rather than pace.
+    var fast as Boolean = false;
+
     function text(id as ResourceId) as String {
         return WatchUi.loadResource(id) as String;
     }
@@ -364,7 +389,7 @@ module Fields {
             return ["", feet ? (alt * 3.28084).format("%d") + " ft" : alt.format("%d") + " m"];
         }
         if (field == :gps) {
-            return [text(Rez.Strings.Gps), app().gps.word()];
+            return ["", app().gps.word().toUpper()];
         }
         if (field == :elapsed) {
             return ["", elapsed(info)];
@@ -375,6 +400,12 @@ module Fields {
         }
         if (field == :pace) {
             var v = info != null && info.currentSpeed != null ? info.currentSpeed as Float : 0.0;
+            // Speed above 10 km/h, pace again below 9, so it does not flicker in between.
+            var kmh = v * 3.6;
+            if (kmh > 10) { fast = true; } else if (kmh < 9) { fast = false; }
+            if (fast) {
+                return ["", statute ? (v * 2.236936).format("%.1f") + " mph" : kmh.format("%.1f") + " km/h"];
+            }
             var unit = statute ? 1609.344 : 1000.0;
             if (v < 0.3) { return ["", "--:-- " + (statute ? "/mi" : "/km")]; }
             var s = (unit / v).toNumber();
