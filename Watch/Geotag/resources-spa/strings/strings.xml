@@ -1,8 +1,8 @@
 <strings>
     <string id="AppName">Geotag</string>
-    <string id="Searching">Buscando</string>
-    <string id="Poor">Débil</string>
-    <string id="Usable">Utilizable</string>
+    <string id="Searching">...</string>
+    <string id="Poor">Mala</string>
+    <string id="Usable">OK</string>
     <string id="Good">Buena</string>
     <string id="Lost">Perdido</string>
     <string id="Loading">Buscando satélites</string>

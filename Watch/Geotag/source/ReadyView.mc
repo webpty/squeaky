@@ -132,7 +132,6 @@ class ReadyDelegate extends WatchUi.BehaviorDelegate {
 
     function onKey(evt as WatchUi.KeyEvent) as Boolean {
         if (evt.getKey() == WatchUi.KEY_ENTER) {
-            if (!app().gps.ready()) { return true; }
             app().recorder.start();
             WatchUi.switchToView(new RecordView(), new RecordDelegate(), WatchUi.SLIDE_IMMEDIATE);
             return true;

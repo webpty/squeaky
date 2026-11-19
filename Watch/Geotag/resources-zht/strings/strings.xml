@@ -1,6 +1,6 @@
 <strings>
     <string id="AppName">相途</string>
-    <string id="Searching">搜尋中</string>
+    <string id="Searching">...</string>
     <string id="Poor">弱</string>
     <string id="Usable">可用</string>
     <string id="Good">良好</string>
