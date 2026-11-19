@@ -124,7 +124,7 @@ class ListDelegate extends WatchUi.BehaviorDelegate {
             WatchUi.requestUpdate();
             return true;
         }
-        return false;
+        return BehaviorDelegate.onKey(evt);
     }
 
     function onSelect() as Boolean {
