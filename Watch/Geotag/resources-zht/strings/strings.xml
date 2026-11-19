@@ -4,6 +4,7 @@
     <string id="Poor">弱</string>
     <string id="Usable">可用</string>
     <string id="Good">良好</string>
+    <string id="Lost">遺失</string>
     <string id="Loading">正在搜尋衛星</string>
     <string id="Ready">就緒</string>
     <string id="Resume">繼續</string>

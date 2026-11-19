@@ -4,6 +4,7 @@
     <string id="Poor">Débil</string>
     <string id="Usable">Utilizable</string>
     <string id="Good">Buena</string>
+    <string id="Lost">Perdido</string>
     <string id="Loading">Buscando satélites</string>
     <string id="Ready">Listo</string>
     <string id="Resume">Reanudar</string>

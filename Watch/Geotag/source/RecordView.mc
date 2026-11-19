@@ -7,7 +7,7 @@ import Toybox.System;
 import Toybox.Timer;
 import Toybox.WatchUi;
 
-// The one page while recording, laid out like David's fenix watch face (Watch 0.2.3 to 0.2.5):
+// The one page while recording, laid out like David's fenix watch face (Watch 0.2.3 to 0.2.6):
 // six fields round the edge inside a purple ring, three in the middle.
 // To change the page, change these two lists.
 module Layout {
@@ -38,9 +38,9 @@ class RecordView extends WatchUi.View {
     function onLayout(dc as Dc) as Void {
         var w = dc.getWidth();
         edgeFont = Ring.font((w * 0.073).toNumber());
-        topFont = Ring.font((w * 0.094).toNumber());
-        timeFont = Ring.font((w * 0.14).toNumber());
-        middleFonts = [Ring.font((w * 0.099).toNumber()), Ring.font((w * 0.088).toNumber()), Ring.font((w * 0.077).toNumber())];
+        topFont = Ring.font((w * 0.12).toNumber());
+        timeFont = Ring.font((w * 0.16).toNumber());
+        middleFonts = [Ring.font((w * 0.12).toNumber()), Ring.font((w * 0.105).toNumber()), Ring.font((w * 0.09).toNumber())];
     }
 
     function onShow() as Void {
@@ -88,7 +88,7 @@ class RecordView extends WatchUi.View {
             var rt = (R * 0.88).toNumber();
             // Top and bottom, straight, inside the frames.
             Ring.straight(dc, cx, cy - (R * 0.60).toNumber(), topFont != null ? topFont : font, Layout.AROUND[0], info);
-            Ring.straight(dc, cx, cy + (R * 0.68).toNumber(), timeFont != null ? timeFont : font, Layout.AROUND[3], info);
+            Ring.straight(dc, cx, cy + (R * 0.70).toNumber(), timeFont != null ? timeFont : font, Layout.AROUND[3], info);
             // The four sides, along the edge.
             var sides = [Layout.AROUND[1], Layout.AROUND[2], Layout.AROUND[4], Layout.AROUND[5]];
             for (var i = 0; i < 4; i++) {
@@ -109,7 +109,7 @@ class RecordView extends WatchUi.View {
         var above = Fields.value(Layout.MIDDLE[1], info)[1];
         var below = Fields.value(Layout.MIDDLE[2], info)[1];
         var mid = Ring.fitting(dc, middleFonts, [above, below], (R * 1.15).toNumber());
-        var off = (R * 0.31).toNumber();
+        var off = (R * 0.32).toNumber();
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         if (mid != null) {
             dc.drawText(cx, cy - off, mid, above, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
@@ -187,14 +187,13 @@ module Ring {
     }
 
     function hasIcon(field as Symbol) as Boolean {
-        return field == :heartRate || field == :steps || field == :altitude || field == :battery || field == :gps;
+        return field == :heartRate || field == :steps || field == :altitude || field == :battery;
     }
 
     function drawIcon(dc as Dc, field as Symbol, cx as Number, cy as Number, r as Number, deg as Numeric, size as Number, ccw as Boolean) as Void {
         if (field == :heartRate) { Icons.heart(dc, cx, cy, r, deg, size, ccw); }
         else if (field == :steps) { Icons.footsteps(dc, cx, cy, r, deg, size, ccw); }
         else if (field == :altitude) { Icons.mountain(dc, cx, cy, r, deg, size, ccw); }
-        else if (field == :gps) { Icons.satellite(dc, cx, cy, r, deg, size, ccw); }
     }
 
     function colour(field as Symbol) as Number {
@@ -210,9 +209,9 @@ module Ring {
             return;
         }
         var th = dc.getFontHeight(font);
-        var bh = (th * 0.46).toNumber();
+        var bh = (th * 0.42).toNumber();
         var bw = (bh * 2.0).toNumber();
-        var gap = (bh * 0.4).toNumber();
+        var gap = (bh * 0.35).toNumber();
         var textW = dc.getTextWidthInPixels(text, font);
         var left = x - (bw + gap + textW) / 2;
         Icons.battery(dc, left, y - bh / 2, bw, bh, System.getSystemStats().battery);
@@ -300,39 +299,14 @@ module Icons {
         dc.fillPolygon(place(cx, cy, r, deg, size, pts, ccw));
     }
 
-    // A battery on its side: a thin outline, the level filled inside.
+    // A battery as one bar: white up to the level, dark grey for the rest.
     function battery(dc as Dc, x as Number, y as Number, w as Number, h as Number, level as Float) as Void {
-        var nub = (h * 0.15).toNumber();
-        var body = w - nub;
-        dc.setPenWidth(2);
-        dc.drawRectangle(x, y, body, h);
-        dc.setPenWidth(1);
-        dc.fillRectangle(x + body, y + h / 3, nub, h - 2 * (h / 3));
         var lv = level < 0 ? 0.0 : (level > 100 ? 100.0 : level);
-        var fill = ((body - 6) * lv / 100.0).toNumber();
-        if (fill > 0) {
-            dc.fillRectangle(x + 3, y + 3, fill, h - 6);
-        }
-    }
-
-    // A satellite: a body between two panels, turned on the diagonal.
-    function satellite(dc as Dc, cx as Number, cy as Number, r as Number, deg as Numeric, size as Number, ccw as Boolean) as Void {
-        var rects = [
-            [-0.13, -0.13, 0.13, 0.13],
-            [-0.58, -0.13, -0.22, 0.13], [0.22, -0.13, 0.58, 0.13],
-            [-0.22, -0.03, -0.13, 0.03], [0.13, -0.03, 0.22, 0.03]
-        ];
-        for (var i = 0; i < rects.size(); i++) {
-            var q = rects[i];
-            var pts = [[q[0], q[1]], [q[2], q[1]], [q[2], q[3]], [q[0], q[3]]];
-            var turned = [];
-            for (var j = 0; j < 4; j++) {
-                var px = pts[j][0];
-                var py = pts[j][1];
-                turned.add([(px - py) * 0.7071, (px + py) * 0.7071]);
-            }
-            dc.fillPolygon(place(cx, cy, r, deg, size, turned, ccw));
-        }
+        var fill = (w * lv / 100.0).toNumber();
+        dc.setColor(0x444444, Graphics.COLOR_TRANSPARENT);
+        dc.fillRectangle(x, y, w, h);
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+        if (fill > 0) { dc.fillRectangle(x, y, fill, h); }
     }
 }
 
@@ -389,7 +363,7 @@ module Fields {
             return ["", feet ? (alt * 3.28084).format("%d") + " ft" : alt.format("%d") + " m"];
         }
         if (field == :gps) {
-            return ["", app().gps.word().toUpper()];
+            return ["GPS", app().gps.word()];
         }
         if (field == :elapsed) {
             return ["", elapsed(info)];

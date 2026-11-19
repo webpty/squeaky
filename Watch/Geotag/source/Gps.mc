@@ -1,6 +1,7 @@
 import Toybox.Attention;
 import Toybox.Lang;
 import Toybox.Position;
+import Toybox.System;
 import Toybox.WatchUi;
 
 // Location events once a second, with the most accurate setting the watch has.
@@ -10,6 +11,8 @@ class Gps {
     // The best quality reached since the app opened: the bar never goes back.
     var best as Number = Position.QUALITY_NOT_AVAILABLE;
     private var beeped as Boolean = false;
+    // When the last position of Poor or better came in, from System.getTimer().
+    private var lastFix as Number?;
 
     function initialize() {}
 
@@ -45,6 +48,7 @@ class Gps {
     function onPosition(i as Position.Info) as Void {
         info = i;
         quality = i.accuracy;
+        if (quality >= Position.QUALITY_POOR) { lastFix = System.getTimer(); }
         if (quality > best) { best = quality; }
         if (best == Position.QUALITY_GOOD && !beeped) {
             beeped = true;
@@ -68,7 +72,13 @@ class Gps {
         return best == Position.QUALITY_GOOD;
     }
 
+    // No position for 5 s after having one: the watch has stopped sending them (indoors).
+    function lost() as Boolean {
+        return lastFix != null && System.getTimer() - (lastFix as Number) > 5000;
+    }
+
     function word() as String {
+        if (lost()) { return WatchUi.loadResource(Rez.Strings.Lost) as String; }
         if (quality == Position.QUALITY_GOOD) { return WatchUi.loadResource(Rez.Strings.Good) as String; }
         if (quality == Position.QUALITY_USABLE) { return WatchUi.loadResource(Rez.Strings.Usable) as String; }
         if (quality == Position.QUALITY_POOR) { return WatchUi.loadResource(Rez.Strings.Poor) as String; }

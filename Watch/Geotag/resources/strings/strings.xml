@@ -4,6 +4,7 @@
     <string id="Poor">Poor</string>
     <string id="Usable">Usable</string>
     <string id="Good">Good</string>
+    <string id="Lost">Lost</string>
     <string id="Loading">Acquiring satellites</string>
     <string id="Ready">Ready</string>
     <string id="Resume">Resume</string>
