@@ -20,8 +20,6 @@
     <string id="NotSent">未傳送</string>
     <string id="SendAgain">重新傳送</string>
     <string id="Time">時間</string>
-    <string id="HeartRate">心率</string>
-    <string id="Steps">步數</string>
     <string id="Battery">電量</string>
     <string id="Altitude">海拔</string>
     <string id="Gps">GPS</string>

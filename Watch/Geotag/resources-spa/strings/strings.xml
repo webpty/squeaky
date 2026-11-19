@@ -19,11 +19,9 @@
     <string id="Sent">Enviado</string>
     <string id="NotSent">No enviado</string>
     <string id="SendAgain">Enviar de nuevo</string>
-    <string id="Time">Hora</string>
-    <string id="HeartRate">FC</string>
-    <string id="Steps">Pasos</string>
-    <string id="Battery">Batería</string>
-    <string id="Altitude">Altitud</string>
+    <string id="Time">HORA</string>
+    <string id="Battery">BAT</string>
+    <string id="Altitude">ALT</string>
     <string id="Gps">GPS</string>
     <string id="NoPoints">No se registró ninguna posición</string>
 </strings>
