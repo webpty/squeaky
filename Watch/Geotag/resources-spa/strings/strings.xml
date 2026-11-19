@@ -4,6 +4,8 @@
     <string id="Poor">Débil</string>
     <string id="Usable">Utilizable</string>
     <string id="Good">Buena</string>
+    <string id="Loading">Cargando</string>
+    <string id="Ready">Listo</string>
     <string id="Resume">Reanudar</string>
     <string id="SaveGeotrac">Guardar Geotrac</string>
     <string id="SaveBoth">Guardar Geotrac y Garmin</string>

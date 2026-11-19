@@ -4,6 +4,8 @@
     <string id="Poor">弱</string>
     <string id="Usable">可用</string>
     <string id="Good">良好</string>
+    <string id="Loading">載入中</string>
+    <string id="Ready">就緒</string>
     <string id="Resume">繼續</string>
     <string id="SaveGeotrac">儲存到 Geotrac</string>
     <string id="SaveBoth">儲存到 Geotrac 和 Garmin</string>

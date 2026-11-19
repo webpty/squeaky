@@ -4,6 +4,8 @@
     <string id="Poor">Poor</string>
     <string id="Usable">Usable</string>
     <string id="Good">Good</string>
+    <string id="Loading">Loading</string>
+    <string id="Ready">Ready</string>
     <string id="Resume">Resume</string>
     <string id="SaveGeotrac">Save Geotrac</string>
     <string id="SaveBoth">Save Geotrac &amp; Garmin</string>

@@ -89,8 +89,11 @@ class ReadyView extends WatchUi.View {
         dc.drawText(w / 2, h * 0.13, Graphics.FONT_SMALL, Draw.clock(), Graphics.TEXT_JUSTIFY_CENTER);
 
         var pct = gps.percent();
-        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 0.36, Graphics.FONT_NUMBER_MEDIUM, pct + "%", Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        var ready = gps.ready();
+        dc.setColor(ready ? Graphics.COLOR_GREEN : Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(w / 2, h * 0.38, Graphics.FONT_MEDIUM,
+            WatchUi.loadResource(ready ? Rez.Strings.Ready : Rez.Strings.Loading) as String,
+            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
 
         var barW = (w * 0.64).toNumber();
         var barH = 18;
@@ -103,8 +106,13 @@ class ReadyView extends WatchUi.View {
             dc.fillRoundedRectangle(x, y, barW * pct / 100, barH, barH / 2);
         }
 
-        dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(w / 2, h * 0.58, Graphics.FONT_SMALL, gps.word(), Graphics.TEXT_JUSTIFY_CENTER);
+        // Ready: a green arc on the edge beside the Start button (top right, about 2 o'clock).
+        if (ready) {
+            dc.setColor(Graphics.COLOR_GREEN, Graphics.COLOR_TRANSPARENT);
+            dc.setPenWidth(12);
+            dc.drawArc(w / 2, h / 2, w / 2 - 7, Graphics.ARC_COUNTER_CLOCKWISE, 18, 42);
+            dc.setPenWidth(1);
+        }
 
         var s = app().sender;
         var id = s.trackId != null ? s.trackId : s.lastDone;
@@ -122,6 +130,7 @@ class ReadyDelegate extends WatchUi.BehaviorDelegate {
 
     function onKey(evt as WatchUi.KeyEvent) as Boolean {
         if (evt.getKey() == WatchUi.KEY_ENTER) {
+            if (!app().gps.ready()) { return true; }
             app().recorder.start();
             WatchUi.switchToView(new RecordView(), new RecordDelegate(), WatchUi.SLIDE_IMMEDIATE);
             return true;

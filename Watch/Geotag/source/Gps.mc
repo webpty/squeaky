@@ -7,6 +7,8 @@ import Toybox.WatchUi;
 class Gps {
     var quality as Number = Position.QUALITY_NOT_AVAILABLE;
     var info as Position.Info?;
+    // The best quality reached since the app opened: the bar never goes back.
+    var best as Number = Position.QUALITY_NOT_AVAILABLE;
     private var beeped as Boolean = false;
 
     function initialize() {}
@@ -43,7 +45,8 @@ class Gps {
     function onPosition(i as Position.Info) as Void {
         info = i;
         quality = i.accuracy;
-        if (quality == Position.QUALITY_GOOD && !beeped) {
+        if (quality > best) { best = quality; }
+        if (best == Position.QUALITY_GOOD && !beeped) {
             beeped = true;
             if (Attention has :playTone) { Attention.playTone(Attention.TONE_SUCCESS); }
             if (Attention has :vibrate) { Attention.vibrate([new Attention.VibeProfile(60, 400)]); }
@@ -52,12 +55,17 @@ class Gps {
         WatchUi.requestUpdate();
     }
 
-    // The loading bar: Garmin gives apps only the fix quality, not the satellite count.
+    // The loading bar, by the best quality reached: Garmin gives apps no satellite count.
     function percent() as Number {
-        if (quality == Position.QUALITY_GOOD) { return 100; }
-        if (quality == Position.QUALITY_USABLE) { return 66; }
-        if (quality == Position.QUALITY_POOR) { return 33; }
+        if (best == Position.QUALITY_GOOD) { return 100; }
+        if (best == Position.QUALITY_USABLE) { return 66; }
+        if (best == Position.QUALITY_POOR) { return 33; }
         return 0;
+    }
+
+    // Start works only once the fix has been Good.
+    function ready() as Boolean {
+        return best == Position.QUALITY_GOOD;
     }
 
     function word() as String {
