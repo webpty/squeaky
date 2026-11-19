@@ -7,13 +7,13 @@ import Toybox.System;
 import Toybox.Timer;
 import Toybox.WatchUi;
 
-// The one page while recording, laid out like David's fenix watch face (Watch 0.2.3):
+// The one page while recording, laid out like David's fenix watch face (Watch 0.2.3, 0.2.4):
 // six fields round the edge inside a purple ring, three in the middle.
 // To change the page, change these two lists.
 module Layout {
     // Top, top right, bottom right, bottom, bottom left, top left.
     const AROUND = [:battery, :steps, :altitude, :time, :gps, :heartRate];
-    // Large in the middle, then below it on the left and on the right.
+    // Large in the middle, then above it and below it.
     const MIDDLE = [:elapsed, :distance, :pace];
 
     const RING = 0x7755CC;
@@ -25,7 +25,9 @@ module Layout {
 class RecordView extends WatchUi.View {
     private var timer as Timer.Timer?;
     private var edgeFont as Graphics.VectorFont?;
-    private var lowerFonts as Array<Graphics.VectorFont?> = [] as Array<Graphics.VectorFont?>;
+    private var topFont as Graphics.VectorFont?;
+    private var timeFont as Graphics.VectorFont?;
+    private var middleFonts as Array<Graphics.VectorFont?> = [] as Array<Graphics.VectorFont?>;
 
     function initialize() {
         View.initialize();
@@ -34,7 +36,9 @@ class RecordView extends WatchUi.View {
     function onLayout(dc as Dc) as Void {
         var w = dc.getWidth();
         edgeFont = Ring.font((w * 0.073).toNumber());
-        lowerFonts = [Ring.font((w * 0.085).toNumber()), Ring.font((w * 0.073).toNumber()), Ring.font((w * 0.062).toNumber())];
+        topFont = Ring.font((w * 0.094).toNumber());
+        timeFont = Ring.font((w * 0.107).toNumber());
+        middleFonts = [Ring.font((w * 0.099).toNumber()), Ring.font((w * 0.088).toNumber()), Ring.font((w * 0.077).toNumber())];
     }
 
     function onShow() as Void {
@@ -80,10 +84,10 @@ class RecordView extends WatchUi.View {
         var font = edgeFont;
         if (font != null) {
             var rt = (R * 0.88).toNumber();
-            var straightY = (R * 0.85).toNumber();
-            // Top and bottom, straight.
-            Ring.straight(dc, cx, cy - straightY, font, Layout.AROUND[0], info);
-            Ring.straight(dc, cx, cy + straightY, font, Layout.AROUND[3], info);
+            var straightY = (R * 0.83).toNumber();
+            // Top and bottom, straight and larger, filling the space beyond the frames.
+            Ring.straight(dc, cx, cy - straightY, topFont != null ? topFont : font, Layout.AROUND[0], info);
+            Ring.straight(dc, cx, cy + straightY, timeFont != null ? timeFont : font, Layout.AROUND[3], info);
             // The four sides, along the edge.
             var sides = [Layout.AROUND[1], Layout.AROUND[2], Layout.AROUND[4], Layout.AROUND[5]];
             for (var i = 0; i < 4; i++) {
@@ -93,23 +97,22 @@ class RecordView extends WatchUi.View {
             }
         }
 
-        // The middle: elapsed large, distance and pace below it.
+        // The middle: elapsed large, distance above it and pace below it.
         var paused = app().recorder.state == Recorder.PAUSED;
         var big = Fields.value(Layout.MIDDLE[0], info)[1];
         var bigFont = Graphics.FONT_NUMBER_MEDIUM;
         if (dc.getTextWidthInPixels(big, bigFont) > rr * 1.8) { bigFont = Graphics.FONT_NUMBER_MILD; }
         dc.setColor(paused ? Graphics.COLOR_YELLOW : Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(cx, cy - (R * 0.06).toNumber(), bigFont, big, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        dc.drawText(cx, cy, bigFont, big, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
 
-        var left = Fields.value(Layout.MIDDLE[1], info)[1];
-        var right = Fields.value(Layout.MIDDLE[2], info)[1];
-        var room = (R * 0.64).toNumber();
-        var lower = Ring.fitting(dc, lowerFonts, [left, right], room);
-        var y = cy + (R * 0.30).toNumber();
+        var above = Fields.value(Layout.MIDDLE[1], info)[1];
+        var below = Fields.value(Layout.MIDDLE[2], info)[1];
+        var mid = Ring.fitting(dc, middleFonts, [above, below], (R * 1.15).toNumber());
+        var off = (R * 0.36).toNumber();
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        if (lower != null) {
-            dc.drawText(cx - (R * 0.34).toNumber(), y, lower, left, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
-            dc.drawText(cx + (R * 0.34).toNumber(), y, lower, right, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        if (mid != null) {
+            dc.drawText(cx, cy - off, mid, above, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+            dc.drawText(cx, cy + off, mid, below, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
         }
     }
 }
@@ -173,27 +176,51 @@ module Ring {
         dc.setPenWidth(1);
     }
 
-    // "BATT 89%": the label in capitals, then the value.
+    // "GPS GOOD": the label in capitals, then the value; fields with an icon have no label.
     function line(field as Symbol, info as Activity.Info?) as String {
         var f = Fields.value(field, info);
-        return f[0].length() > 0 ? f[0].toUpper() + " " + f[1].toUpper() : f[1].toUpper();
+        if (f[0].length() == 0) { return f[1]; }
+        return f[0].toUpper() + " " + f[1].toUpper();
+    }
+
+    function hasIcon(field as Symbol) as Boolean {
+        return field == :heartRate || field == :steps || field == :altitude || field == :battery;
+    }
+
+    function drawIcon(dc as Dc, field as Symbol, cx as Number, cy as Number, r as Number, deg as Numeric, size as Number, ccw as Boolean) as Void {
+        if (field == :heartRate) { Icons.heart(dc, cx, cy, r, deg, size, ccw); }
+        else if (field == :steps) { Icons.footsteps(dc, cx, cy, r, deg, size, ccw); }
+        else if (field == :altitude) { Icons.mountain(dc, cx, cy, r, deg, size, ccw); }
     }
 
     function colour(field as Symbol) as Number {
         return field == :heartRate ? Graphics.COLOR_RED : Graphics.COLOR_WHITE;
     }
 
+    // A top or bottom field; the battery's icon is filled to its level.
     function straight(dc as Dc, x as Number, y as Number, font as Graphics.VectorFont, field as Symbol, info as Activity.Info?) as Void {
+        var text = line(field, info);
         dc.setColor(colour(field), Graphics.COLOR_TRANSPARENT);
-        dc.drawText(x, y, font, line(field, info), Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        if (field != :battery) {
+            dc.drawText(x, y, font, text, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+            return;
+        }
+        var th = dc.getFontHeight(font);
+        var bh = (th * 0.52).toNumber();
+        var bw = (bh * 1.9).toNumber();
+        var gap = (bh * 0.4).toNumber();
+        var textW = dc.getTextWidthInPixels(text, font);
+        var left = x - (bw + gap + textW) / 2;
+        Icons.battery(dc, left, y - bh / 2, bw, bh, System.getSystemStats().battery);
+        dc.drawText(left + bw + gap, y, font, text, Graphics.TEXT_JUSTIFY_LEFT | Graphics.TEXT_JUSTIFY_VCENTER);
     }
 
     // A side field along the edge; the heart and the shoe go before the value.
     function curved(dc as Dc, cx as Number, cy as Number, rt as Number, centre as Number, dir as Graphics.RadialTextDirection,
                     font as Graphics.VectorFont, field as Symbol, info as Activity.Info?) as Void {
         var text = line(field, info);
-        var icon = field == :heartRate || field == :steps;
-        var size = (rt * 0.13).toNumber();
+        var icon = hasIcon(field);
+        var size = (dc.getFontHeight(font) * 0.8).toNumber();
         var gap = icon ? (size * 0.4).toNumber() : 0;
         var iconW = icon ? size : 0;
         var textW = dc.getTextWidthInPixels(text, font);
@@ -204,26 +231,24 @@ module Ring {
         dc.setColor(colour(field), Graphics.COLOR_TRANSPARENT);
         if (icon) {
             var iconDeg = startDeg + sign * Math.toDegrees((iconW / 2.0) / rt);
-            if (field == :heartRate) {
-                Icons.heart(dc, cx, cy, rt, iconDeg, size);
-            } else {
-                Icons.shoe(dc, cx, cy, rt, iconDeg, size);
-            }
+            drawIcon(dc, field, cx, cy, rt, iconDeg, size, sign > 0);
         }
         var textDeg = startDeg + sign * Math.toDegrees((iconW + gap + textW / 2.0) / rt);
         dc.drawRadialText(cx, cy, font, text, Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER, textDeg, rt, dir);
     }
 }
 
-// Small filled icons, turned to sit upright along the top of the ring.
+// Small filled icons, turned to sit upright along the ring, like the text beside them.
 module Icons {
     // Local points (x right, y down, about 1 unit across) placed at an angle on the circle.
-    function place(cx as Number, cy as Number, r as Number, deg as Numeric, size as Number, pts as Array) as Array<[Numeric, Numeric]> {
+    // Along the top (clockwise) the icon's top faces out; along the bottom it faces in.
+    function place(cx as Number, cy as Number, r as Number, deg as Numeric, size as Number, pts as Array, ccw as Boolean) as Array<[Numeric, Numeric]> {
         var a = Math.toRadians(deg);
-        var c = Math.cos(a);
-        var s = Math.sin(a);
-        var ox = cx + r * c;
-        var oy = cy - r * s;
+        var k = ccw ? -1 : 1;
+        var c = Math.cos(a) * k;
+        var s = Math.sin(a) * k;
+        var ox = cx + r * Math.cos(a);
+        var oy = cy - r * Math.sin(a);
         var out = [] as Array<[Numeric, Numeric]>;
         for (var i = 0; i < pts.size(); i++) {
             var lx = pts[i][0] * size;
@@ -233,25 +258,59 @@ module Icons {
         return out;
     }
 
-    function heart(dc as Dc, cx as Number, cy as Number, r as Number, deg as Numeric, size as Number) as Void {
+    function ellipse(x as Float, y as Float, rx as Float, ry as Float) as Array {
+        var pts = [];
+        for (var i = 0; i < 14; i++) {
+            var t = Math.PI * 2 * i / 14;
+            pts.add([x + rx * Math.cos(t), y + ry * Math.sin(t)]);
+        }
+        return pts;
+    }
+
+    function heart(dc as Dc, cx as Number, cy as Number, r as Number, deg as Numeric, size as Number, ccw as Boolean) as Void {
         var pts = [];
         for (var i = 0; i < 28; i++) {
             var t = Math.PI * 2 * i / 28;
             var st = Math.sin(t);
             var x = 16 * st * st * st;
             var y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
-            pts.add([x / 34.0, (y + 2.5) / 34.0]);
+            pts.add([x / 32.0, (y + 2.5) / 30.0]);
         }
-        dc.fillPolygon(place(cx, cy, r, deg, size, pts));
+        dc.fillPolygon(place(cx, cy, r, deg, size, pts, ccw));
     }
 
-    // A trainer seen from the side, toe to the right.
-    function shoe(dc as Dc, cx as Number, cy as Number, r as Number, deg as Numeric, size as Number) as Void {
-        var pts = [
-            [-0.50, 0.30], [0.50, 0.30], [0.50, 0.16], [0.42, 0.06], [0.14, -0.02],
-            [0.00, -0.14], [-0.10, -0.32], [-0.36, -0.32], [-0.44, -0.20], [-0.50, 0.02]
+    // Two footprints, the right one ahead.
+    function footsteps(dc as Dc, cx as Number, cy as Number, r as Number, deg as Numeric, size as Number, ccw as Boolean) as Void {
+        var parts = [
+            ellipse(-0.22, 0.02, 0.15, 0.24), ellipse(-0.22, 0.38, 0.11, 0.11),
+            ellipse(0.22, -0.30, 0.15, 0.24), ellipse(0.22, 0.06, 0.11, 0.11)
         ];
-        dc.fillPolygon(place(cx, cy, r, deg, size, pts));
+        for (var i = 0; i < parts.size(); i++) {
+            dc.fillPolygon(place(cx, cy, r, deg, size, parts[i], ccw));
+        }
+    }
+
+    // Two peaks.
+    function mountain(dc as Dc, cx as Number, cy as Number, r as Number, deg as Numeric, size as Number, ccw as Boolean) as Void {
+        var pts = [[-0.62, 0.40], [-0.18, -0.40], [0.04, -0.04], [0.24, -0.22], [0.62, 0.40]];
+        dc.fillPolygon(place(cx, cy, r, deg, size, pts, ccw));
+    }
+
+    // A battery on its side, filled to its level.
+    function battery(dc as Dc, x as Number, y as Number, w as Number, h as Number, level as Float) as Void {
+        var pen = h > 20 ? 3 : 2;
+        var nub = (h * 0.18).toNumber();
+        dc.setPenWidth(pen);
+        dc.drawRoundedRectangle(x, y, w - nub, h, 4);
+        dc.setPenWidth(1);
+        dc.fillRectangle(x + w - nub, y + h * 0.3, nub, h * 0.4);
+        var inset = pen + 2;
+        var inner = w - nub - inset * 2;
+        var lv = level < 0 ? 0.0 : (level > 100 ? 100.0 : level);
+        var fill = (inner * lv / 100.0).toNumber();
+        if (fill > 0) {
+            dc.fillRectangle(x + inset, y + inset, fill, h - inset * 2);
+        }
     }
 }
 
@@ -285,7 +344,7 @@ module Fields {
     function value(field as Symbol, info as Activity.Info?) as [String, String] {
         var statute = System.getDeviceSettings().distanceUnits == System.UNIT_STATUTE;
         if (field == :time) {
-            return [text(Rez.Strings.Time), Draw.clock()];
+            return ["", Draw.clock()];
         }
         if (field == :heartRate) {
             var hr = info != null ? info.currentHeartRate : null;
@@ -296,13 +355,13 @@ module Fields {
             return ["", n < 1000 ? n.toString() : (n / 1000.0).format("%.1f") + "K"];
         }
         if (field == :battery) {
-            return [text(Rez.Strings.Battery), System.getSystemStats().battery.format("%d") + "%"];
+            return ["", System.getSystemStats().battery.format("%d") + "%"];
         }
         if (field == :altitude) {
             var alt = info != null ? info.altitude : null;
-            if (alt == null) { return [text(Rez.Strings.Altitude), "--"]; }
+            if (alt == null) { return ["", "--"]; }
             var feet = System.getDeviceSettings().elevationUnits == System.UNIT_STATUTE;
-            return [text(Rez.Strings.Altitude), feet ? (alt * 3.28084).format("%d") + " ft" : alt.format("%d") + " m"];
+            return ["", feet ? (alt * 3.28084).format("%d") + " ft" : alt.format("%d") + " m"];
         }
         if (field == :gps) {
             return [text(Rez.Strings.Gps), app().gps.word()];

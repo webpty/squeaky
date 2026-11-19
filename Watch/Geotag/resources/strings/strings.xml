@@ -19,9 +19,6 @@
     <string id="Sent">Sent</string>
     <string id="NotSent">Not sent</string>
     <string id="SendAgain">Send again</string>
-    <string id="Time">TIME</string>
-    <string id="Battery">BATT</string>
-    <string id="Altitude">ALT</string>
     <string id="Gps">GPS</string>
     <string id="NoPoints">No positions recorded</string>
 </strings>

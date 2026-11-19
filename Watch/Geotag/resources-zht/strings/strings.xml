@@ -19,9 +19,6 @@
     <string id="Sent">已傳送</string>
     <string id="NotSent">未傳送</string>
     <string id="SendAgain">重新傳送</string>
-    <string id="Time">時間</string>
-    <string id="Battery">電量</string>
-    <string id="Altitude">海拔</string>
     <string id="Gps">GPS</string>
     <string id="NoPoints">沒有記錄到位置</string>
 </strings>
