@@ -129,10 +129,6 @@ class ReadyDelegate extends WatchUi.BehaviorDelegate {
         return BehaviorDelegate.onKey(evt);
     }
 
-    function onSelect() as Boolean {
-        return true;
-    }
-
     // Holding Up: the tracks kept on the watch.
     function onMenu() as Boolean {
         var menu = new TracksMenu();

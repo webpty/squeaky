@@ -98,10 +98,6 @@ class RecordDelegate extends WatchUi.BehaviorDelegate {
         return BehaviorDelegate.onKey(evt);
     }
 
-    function onSelect() as Boolean {
-        return true;
-    }
-
     // Back never closes the app mid-hike.
     function onBack() as Boolean {
         return true;
