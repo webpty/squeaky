@@ -594,7 +594,6 @@ struct Viewer: View {
         // Lighter than the page, so the panel stands apart from it (0.34.4, David).
         .background(Palette.panel)
         .presentationDetents([.height(Viewer.height(tall: false)), .height(Viewer.height(tall: true))], selection: $detent)
-        .presentationCornerRadius(14)
         .alert(Words.t("Are you sure?"), isPresented: $asking) {
             Button(Words.t("Cancel"), role: .cancel) {}
             Button(Words.t("Delete"), role: .destructive) { delete(frames: frames) }
