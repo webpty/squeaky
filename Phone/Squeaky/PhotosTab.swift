@@ -80,22 +80,23 @@ struct PhotosTab: View {
                     // Only what can be chosen: with "Hide already saved" on, nothing saved (0.34.4).
                     let choosable = model.choosable
                     let everything = !choosable.isEmpty && choosable.allSatisfy(\.ticked)
+                    // Selecting and saving in one card (0.34.5, David).
                     Section {
-                        Button(everything ? Words.t("Deselect all") : Words.t("Select all")) {
-                            model.setTicked(Set(choosable.map(\.id)), !everything)
-                        }
-                        .buttonStyle(WideButton(everything ? .purple : .blue)).buttonRow()
-                        .disabled(choosable.isEmpty || model.photosBusy)
-                    }.cardRows()
-                    Section {
-                        // Side by side, one above the other where the words are too long (0.34.4, David).
-                        ViewThatFits(in: .horizontal) {
-                            HStack(spacing: 10) { saveButtons }
-                            VStack(spacing: 10) { saveButtons }
+                        VStack(spacing: 12) {
+                            Button(everything ? Words.t("Deselect all") : Words.t("Select all")) {
+                                model.setTicked(Set(choosable.map(\.id)), !everything)
+                            }
+                            .buttonStyle(WideButton(everything ? .purple : .blue))
+                            .disabled(choosable.isEmpty || model.photosBusy)
+                            // Side by side, one above the other where the words are too long (0.34.4, David).
+                            ViewThatFits(in: .horizontal) {
+                                HStack(spacing: 10) { saveButtons }
+                                VStack(spacing: 10) { saveButtons }
+                            }
+                            Toggle(Words.t("Hide already saved"), isOn: $model.hideSaved)
+                                .disabled(model.photosBusy || model.saving)
                         }
                         .buttonRow()
-                        Toggle(Words.t("Hide already saved"), isOn: $model.hideSaved)
-                            .disabled(model.photosBusy || model.saving)
                     }.cardRows()
                     // No "Done with this card": the iPhone has no eject; the card is let go of
                     // once every photo is saved, or when it is taken out (0.34.4, David).
@@ -452,12 +453,9 @@ struct WhoseCard: View {
         VStack(alignment: .leading, spacing: 16) {
             Text(Words.t("Is this your card?")).font(.headline)
             HStack(spacing: 10) {
-                Button { pick(model.macOwner) } label: { Text(Words.t("Yes")).frame(maxWidth: .infinity) }
-                    .buttonStyle(.borderedProminent)
-                Button { pick(PhoneFolders.othersId) } label: { Text(Words.t("No")).frame(maxWidth: .infinity) }
-                    .buttonStyle(.bordered)
+                Button(Words.t("Yes")) { pick(model.macOwner) }.buttonStyle(WideButton(.blue))
+                Button(Words.t("No")) { pick(PhoneFolders.othersId) }.buttonStyle(WideButton(.grey))
             }
-            .controlSize(.large)
         }
         .padding(24)
         .presentationDetents([.height(170)])
@@ -577,13 +575,14 @@ struct Viewer: View {
             // Room below the photo for Delete, while the card is in (0.34.2, David).
             ZStack {
                 if let frame, onCard(frame) {
+                    // Apple's round button, in red (0.34.5, David).
                     Button { asking = true } label: {
-                        Image(systemName: "trash")
-                            .font(.system(size: 22))
-                            .foregroundStyle(.white)
-                            .frame(width: 56, height: 56)
-                            .background(Circle().fill(Color.red))
+                        Image(systemName: "trash").font(.system(size: 20)).frame(width: 30, height: 30)
                     }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.circle)
+                    .controlSize(.large)
+                    .tint(.red)
                     .accessibilityLabel(Words.t("Delete"))
                     .disabled(model.saving || model.photosBusy)
                 }

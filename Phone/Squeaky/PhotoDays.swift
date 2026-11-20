@@ -135,7 +135,7 @@ struct DayHeader: View {
             // Blue to select, purple to deselect (0.34.2, David); greyed out while the
             // day is folded, whose photos keep whatever they were.
             Button(all ? Words.t("Deselect {0}", count) : Words.t("Select {0}", count)) { selectAll(!all) }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
                 .tint(all ? Color.purple : Color.heroBlue)
                 .controlSize(.small)
                 .lineLimit(1)

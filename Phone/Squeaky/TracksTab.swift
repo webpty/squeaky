@@ -52,7 +52,8 @@ struct TracksTab: View {
                                 Text(Self.line(track)).font(.caption).foregroundStyle(.secondary)
                                 Button(Words.t("Recheck")) { Task { await model.recheckPhotos(for: track) } }
                                     .font(.caption)
-                                    .buttonStyle(.bordered)
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(Palette.greyButton)
                                     .disabled(model.tracksBusy || model.saving || model.placingLater)
                             }
                             .lineLimit(1)

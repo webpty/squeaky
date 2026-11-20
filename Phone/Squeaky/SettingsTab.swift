@@ -101,7 +101,7 @@ struct SettingsTab: View {
                         }
                         if editingService, model.serviceKeySaved {
                             Button(Words.t("Cancel")) { model.revertService(); editingService = false }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(WideButton(.grey))
                         }
                     } else {
                         LabeledContent(Words.t("Address")) {
@@ -176,7 +176,7 @@ struct SettingsTab: View {
                         }
                         if editingBuffer, model.bufferKeySaved {
                             Button(Words.t("Cancel")) { model.revertBuffer(); editingBuffer = false }
-                                .buttonStyle(.bordered)
+                                .buttonStyle(WideButton(.grey))
                         }
                     } else {
                         LabeledContent(Words.t("Address")) {

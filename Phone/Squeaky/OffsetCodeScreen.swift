@@ -115,9 +115,8 @@ struct OffsetCodeScreen: View {
                         .font(.footnote)
                         .foregroundStyle(check == nil && checked ? .orange : .secondary)
                         .multilineTextAlignment(.center)
-                    Button { dismiss() } label: { Text(Words.t("Close")).frame(maxWidth: .infinity) }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
+                    Button(Words.t("Close")) { dismiss() }
+                        .buttonStyle(WideButton(.grey))
                 }
                 .padding(24)
                 .frame(width: geo.size.width, height: geo.size.height)

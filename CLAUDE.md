@@ -1737,3 +1737,11 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   zone); one already there is not added again, AirDrops included, and the line
   says "3 already in Photos, not added again." It still goes to the server.
   Needs full access to Photos, asked once.
+- 0.34.5 (David): buttons are Apple's own (`WideButton` is a
+  PrimitiveButtonStyle around `.borderedProminent`, large, tinted; grey is
+  `Palette.greyButton`), never an invented shape; the panel's delete is
+  Apple's round button. Button rows have 16 points on every side. Switches are
+  green (`SwitchToggleStyle(tint: .green)` at the root). Select all sits in the
+  saving card. The panel before saving says "None of the photos have a
+  track..." or "12 of 40 photos have no track...", and offers "Save only
+  those with a track" (`saveOnlyTracked`: the rest stay selected).

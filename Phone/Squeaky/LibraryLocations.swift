@@ -304,10 +304,9 @@ struct LibraryPhotosPage: View {
                         dismiss()
                         Task { await library.add(found) }
                     } label: {
-                        Text(Words.t("Add locations")).frame(maxWidth: .infinity)
+                        Text(Words.t("Add locations"))
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
+                    .buttonStyle(WideButton(.blue))
                     .padding(16)
                     .background(.bar)
                 }

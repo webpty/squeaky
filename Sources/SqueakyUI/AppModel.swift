@@ -1023,7 +1023,7 @@ public final class AppModel: ObservableObject {
     /// the upload queue. Stop, or Eject, ends it after the current photo.
     /// `hold`: the track service could not be reached, so photos without a
     /// track wait on this Mac until the tracks have been checked again.
-    public func savePhotos(hold: Bool = false) async {
+    public func savePhotos(hold: Bool = false, only: Set<String>? = nil) async {
         guard !saving else { return }
         guard let source else {
             photosLine = rows.isEmpty ? Words.t("Insert a card.") : Self.cardOut
@@ -1047,7 +1047,8 @@ public final class AppModel: ObservableObject {
                 fix: .chooseFolder(personId))
             return
         }
-        var todo = readyToSave
+        // "Save only those with a track": the others stay selected for later (0.34.5, David).
+        var todo = only.map { ids in readyToSave.filter { ids.contains($0.id) } } ?? readyToSave
         // No duplicates (0.31.8, David): just before copying, every photo selected
         // is checked against everything known to be copied, from any device, and
         // those are left out.
@@ -2438,6 +2439,13 @@ public final class AppModel: ObservableObject {
 
     /// Saved as they are. With the track service away, those without a track
     /// stay on this Mac until the tracks can be checked again.
+    /// The selected photos that have a track, saved; those without stay selected (0.34.5, David).
+    public func saveOnlyTracked() {
+        trackCheck = nil
+        let ids = Set(readyToSave.filter { $0.placement != .review(.noTrack) }.map(\.id))
+        Task { await savePhotos(only: ids) }
+    }
+
     public func saveAnyway() {
         let hold: Bool
         if case .offline? = trackCheck { hold = true } else { hold = false }

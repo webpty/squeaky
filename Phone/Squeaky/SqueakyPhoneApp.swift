@@ -134,6 +134,8 @@ struct PhoneRoot: View {
                 .tag(Tab.settings)
         }
         }
+        // Every switch green when on (0.34.5, David).
+        .toggleStyle(SwitchToggleStyle(tint: .green))
         // Remembered cards are looked for while Squeaky is in front.
         .onAppear {
             InternetState.shared.start()
@@ -250,8 +252,11 @@ struct TrackCheckSheet: View {
                               + Words.t("starts {0}", When.current.dayAndTime(latest.start, zone: latest.timeZone.flatMap(TimeZone.init(identifier:)) ?? .current)))
                         .font(.headline)
                 }
-                if check != .ready {
-                    Text(Words.t("Not all photos have a track. Make sure this is correct."))
+                // How many have no track, and "none" when none has one (0.34.5, David).
+                let missing = model.noTrackCount, total = model.readyToSave.count
+                if check != .ready, missing > 0 {
+                    Text(missing >= total ? Words.t("None of the photos have a track. Make sure this is correct.")
+                         : Words.t("{0} of {1} photos have no track. Make sure this is correct.", missing.formatted(), total.formatted()))
                 }
                 // The choice stays the person's (0.31.8, David: "i always want the choice").
                 let noOffset = model.readyToSave.filter { $0.placement == .review(.offsetNotSet) }.count
@@ -265,20 +270,22 @@ struct TrackCheckSheet: View {
                         .foregroundStyle(.orange)
                 }
                 VStack(spacing: 10) {
-                    Button { model.saveAnyway() } label: {
-                        Text(model.savedListProblem == nil ? Words.t("Save photos") : Words.t("Save anyway")).frame(maxWidth: .infinity)
+                    Button(model.savedListProblem == nil ? Words.t("Save") : Words.t("Save anyway")) { model.saveAnyway() }
+                        .buttonStyle(WideButton(.blue))
+                    // Only some without a track: those with one saved, the rest kept selected (0.34.5, David).
+                    if check != .ready, missing > 0, missing < total {
+                        Button(Words.t("Save only those with a track")) { model.saveOnlyTracked() }
+                            .buttonStyle(WideButton(.blue))
                     }
-                        .buttonStyle(.borderedProminent)
-                    Button { model.checkTracksAgain() } label: { Text(Words.t("Check tracks again")).frame(maxWidth: .infinity) }
-                        .buttonStyle(.bordered)
-                    Button { model.dontSave() } label: { Text(Words.t("Don't save")).frame(maxWidth: .infinity) }
-                        .buttonStyle(.bordered)
+                    Button(Words.t("Check tracks again")) { model.checkTracksAgain() }
+                        .buttonStyle(WideButton(.grey))
+                    Button(Words.t("Don't save")) { model.dontSave() }
+                        .buttonStyle(WideButton(.grey))
                 }
-                .controlSize(.large)
             }
         }
         .padding(24)
-        .presentationDetents([.height(check == .checking ? 140 : 590)])
+        .presentationDetents([.height(check == .checking ? 140 : 650)])
         .interactiveDismissDisabled()
     }
 }
@@ -354,54 +361,43 @@ enum Palette {
     static let card = dynamic(dark: 0.20, light: .secondarySystemGroupedBackground)
     /// The photo panel, lighter than the page so it stands apart.
     static let panel = dynamic(dark: 0.25, light: .systemGray5)
-    static let greyButton = dynamic(dark: 0.31, light: .systemGray5)
+    static let greyButton = dynamic(dark: 0.36, light: .systemGray)
 }
 
-/// A real button, full width, on a coloured background (0.34.4, David: "those
-/// are links not buttons").
-struct WideButton: ButtonStyle {
-    enum Kind { case blue, purple, softBlue, teal, grey, red }
+/// Apple's own filled button, full width, in its colour (0.34.5, David: "apple
+/// shape, not invented"); clearly active, dimmed by the iPhone when it is not.
+struct WideButton: PrimitiveButtonStyle {
+    enum Kind { case blue, purple, teal, grey, red }
     let kind: Kind
     init(_ kind: Kind) { self.kind = kind }
-    @Environment(\.isEnabled) private var enabled
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.body.weight(.semibold))
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
-            .foregroundStyle(text)
-            .padding(.horizontal, 14)
-            .frame(maxWidth: .infinity, minHeight: 46)
-            .background(RoundedRectangle(cornerRadius: 12).fill(fill))
-            .opacity(enabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
-            .contentShape(RoundedRectangle(cornerRadius: 12))
+        Button(role: configuration.role, action: configuration.trigger) {
+            configuration.label
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .tint(Self.colour(kind))
     }
 
-    var fill: Color {
+    static func colour(_ kind: Kind) -> Color {
         switch kind {
         case .blue: return .heroBlue
         case .purple: return .purple
-        case .softBlue: return Color.heroBlue.opacity(0.22)
         case .teal: return .teal
         case .grey: return Palette.greyButton
         case .red: return .red
         }
     }
-
-    var text: Color {
-        switch kind {
-        case .softBlue: return .heroBlue
-        case .grey: return .primary
-        default: return .white
-        }
-    }
 }
 
 extension View {
-    /// A row holding a wide button: no separator, even margins.
+    /// A row holding buttons: the same space above, below and on the sides (0.34.5, David).
     func buttonRow() -> some View {
-        listRowInsets(EdgeInsets(top: 6, leading: 14, bottom: 6, trailing: 14)).listRowSeparator(.hidden)
+        listRowInsets(EdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16)).listRowSeparator(.hidden)
     }
 
     /// Every row of a page on the app's card colour.

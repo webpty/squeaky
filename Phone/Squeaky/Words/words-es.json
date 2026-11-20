@@ -471,5 +471,8 @@
  "Photo deleted": "Foto eliminada",
  "Video deleted": "Vídeo eliminado",
  "Checking Photos for copies already there": "Buscando en Fotos copias ya presentes",
- "{0} already in Photos, not added again.": "{0} ya en Fotos, no se añadieron de nuevo."
+ "{0} already in Photos, not added again.": "{0} ya en Fotos, no se añadieron de nuevo.",
+ "Save only those with a track": "Guardar solo los que tienen recorrido",
+ "None of the photos have a track. Make sure this is correct.": "Ninguna de las fotos tiene recorrido. Comprueba que es correcto.",
+ "{0} of {1} photos have no track. Make sure this is correct.": "{0} de {1} fotos no tienen recorrido. Comprueba que es correcto."
 }
