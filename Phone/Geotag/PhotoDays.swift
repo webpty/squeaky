@@ -24,6 +24,11 @@ struct PhotoFrame: Identifiable {
     let picture: URL
     let taken: String
     var ticked: Bool { rows.contains(where: \.ticked) }
+    /// A video's length, shown on its square (0.33.0).
+    var duration: Double? { rows.first(where: \.photo.isVideo)?.photo.duration }
+    var isVideo: Bool { PhotoKinds.isVideo(picture) }
+    /// Played from its context menu; a RAW video cannot be (0.33.0).
+    var playable: Bool { isVideo && !PhotoKinds.isRawVideo(picture) }
 }
 
 enum PhotoDays {
@@ -145,9 +150,23 @@ struct PickSquare: View {
     let ticked: Bool
     let saved: Bool
     let failed: Bool
+    var video = false
+    var duration: Double?
 
     var body: some View {
         Square(image: image, saved: saved, failed: failed)
+            // A video: a play mark and its length, bottom left (0.33.0, David: "10:07").
+            .overlay(alignment: .bottomLeading) {
+                if video {
+                    HStack(spacing: 3) {
+                        Image(systemName: "play.fill").font(.system(size: 10))
+                        if let duration { Text(MovieFrames.length(duration)).font(.system(size: 12, weight: .semibold)).monospacedDigit() }
+                    }
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.6), radius: 1.5)
+                    .padding(5)
+                }
+            }
             .overlay(alignment: .topLeading) {
                 Image(systemName: ticked ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 22))

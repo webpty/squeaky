@@ -1,5 +1,6 @@
 import GeotagCore
 import GeotagUI
+import AVKit
 import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
@@ -19,6 +20,7 @@ struct PhotosTab: View {
     @State private var fingerAt: CGPoint?
     @State private var listFrame: CGRect = .zero
     @State private var rolling: Task<Void, Never>?
+    @State private var playing: Playing?
 
     var body: some View {
         NavigationStack {
@@ -32,7 +34,7 @@ struct PhotosTab: View {
                     StatusRow(text: model.photosLine, busy: model.photosBusy || model.saving || model.movingOutOfFiles)
                     // Who the SD card belongs to: said, not changed here (0.29.19); changed in Settings.
                     if let id = model.importPerson, model.book.person(id) != nil {
-                        LabeledContent(Words.t("SD card belongs to"),
+                        LabeledContent(Words.t("Card belongs to"),
                                        value: id == PhoneFolders.othersId ? Words.t("someone else") : Words.t("you"))
                     }
                     if !model.rows.isEmpty {
@@ -102,8 +104,16 @@ struct PhotosTab: View {
                                 ForEach(day.frames) { frame in
                                     PickSquare(image: pictures.made[frame.picture], ticked: frame.ticked,
                                                saved: frame.rows.allSatisfy { model.isSaved($0) },
-                                               failed: frame.rows.contains { if case .failed? = model.results[$0.id] { return true }; return false })
+                                               failed: frame.rows.contains { if case .failed? = model.results[$0.id] { return true }; return false },
+                                               video: frame.isVideo, duration: frame.duration)
                                         .id(frame.id)
+                                        .contextMenu {
+                                            if frame.playable {
+                                                Button { playing = Playing(url: frame.picture) } label: {
+                                                    Label(Words.t("Play"), systemImage: "play.fill")
+                                                }
+                                            }
+                                        }
                                         .background(GeometryReader { g in
                                             Color.clear.preference(key: FrameSpots.self, value: [frame.id: g.frame(in: .global)])
                                         })
@@ -161,6 +171,7 @@ struct PhotosTab: View {
             await library.lookIfAllowed(model)
         }
         .sheet(isPresented: $showingFailed) { NotSaved(model: model) }
+        .fullScreenCover(item: $playing) { video in VideoPlaying(url: video.url) }
         // Apart from the Files list above: two on one view and neither opens.
         .sheet(isPresented: Binding(get: { model.askingWhose != nil }, set: { if !$0 { model.askingWhose = nil } })) {
             WhoseCard(model: model)
@@ -180,11 +191,15 @@ struct PhotosTab: View {
             return cardIn
         }
         var seen = Set<String>()
-        let jpgFirst = waiting.sorted { a, b in
-            let ja = ["jpg", "jpeg"].contains((a.photo.fileName as NSString).pathExtension.lowercased())
-            let jb = ["jpg", "jpeg"].contains((b.photo.fileName as NSString).pathExtension.lowercased())
-            return ja && !jb
+        // A JPG stands for its raw; a video for its RAW video (0.33.0).
+        func rank(_ r: ImportRow) -> Int {
+            switch (r.photo.fileName as NSString).pathExtension.lowercased() {
+            case "jpg", "jpeg": return 0
+            case "mp4", "mov": return 1
+            default: return 2
+            }
         }
+        let jpgFirst = waiting.sorted { rank($0) < rank($1) }
         var keep = Set<String>()
         for row in jpgFirst {
             let frame = (row.photo.fileName as NSString).deletingPathExtension + "|" + (row.photo.taken ?? "")
@@ -348,6 +363,7 @@ final class Pictures: ObservableObject {
     /// A JPG's own picture, not the small preview inside it, which carries
     /// black bands; a raw's preview, which has none and is quick.
     nonisolated static func picture(_ url: URL) -> UIImage? {
+        if PhotoKinds.isVideo(url) { return MovieFrames.picture(url, maxPixel: 360).map(UIImage.init(cgImage:)) }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let jpg = ["jpg", "jpeg"].contains(url.pathExtension.lowercased())
         let options: [CFString: Any] = [
@@ -452,5 +468,34 @@ struct NotSaved: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(Words.t("Close")) { dismiss() } } }
         }
+    }
+}
+
+/// A video chosen to play.
+struct Playing: Identifiable {
+    let url: URL
+    var id: String { url.path }
+}
+
+/// A video from the card, full screen, with Close (0.33.0).
+struct VideoPlaying: View {
+    let url: URL
+    @State private var player: AVPlayer?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+            if let player { VideoPlayer(player: player).ignoresSafeArea() }
+            Button(Words.t("Close")) { dismiss() }
+                .buttonStyle(.borderedProminent)
+                .padding()
+        }
+        .onAppear {
+            let p = AVPlayer(url: url)
+            player = p
+            p.play()
+        }
+        .onDisappear { player?.pause() }
     }
 }

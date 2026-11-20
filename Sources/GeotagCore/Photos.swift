@@ -2,11 +2,19 @@ import Foundation
 
 /// The kinds of file a camera card holds that Geotag imports.
 public enum PhotoKinds {
-    public static let extensions: Set<String> = ["cr3", "cr2", "nef", "nrw", "arw", "dng", "jpg", "jpeg", "heic", "heif", "hif"]
+    public static let photos: Set<String> = ["cr3", "cr2", "nef", "nrw", "arw", "dng", "jpg", "jpeg", "heic", "heif", "hif"]
+    /// Videos, on the phone and the Mac alike (0.33.0, David); CRM is Canon's RAW video.
+    public static let videos: Set<String> = ["mp4", "mov", "crm"]
+    public static let extensions: Set<String> = photos.union(videos)
 
+    /// A file Geotag lists from a card: a photo or a video.
     public static func isPhoto(_ url: URL) -> Bool {
         extensions.contains(url.pathExtension.lowercased())
     }
+
+    public static func isVideo(_ url: URL) -> Bool { videos.contains(url.pathExtension.lowercased()) }
+    /// A RAW video: copied and sent, never played or added to Photos.
+    public static func isRawVideo(_ url: URL) -> Bool { url.pathExtension.lowercased() == "crm" }
 }
 
 /// One photo found on a card, as its camera recorded it.
@@ -35,6 +43,9 @@ public struct ScannedPhoto: Identifiable, Codable, Equatable, Sendable {
     /// Canon's drive mode (its ContinuousDrive value), for finding bursts;
     /// nil when the camera records none, or before 0.29.6.
     public var drive: Int?
+    /// A video's length in seconds; nil for a photo (0.33.0).
+    public var duration: Double?
+    public var isVideo: Bool { PhotoKinds.isVideo(url) }
 
     public init(url: URL, fileName: String, size: Int64, taken: String?, subSeconds: String?, zone: String?, model: String?,
                 hasLocation: Bool = false, ownLat: Double? = nil, ownLon: Double? = nil, firmware: String? = nil,
@@ -93,9 +104,13 @@ public struct PhotoScanner: Sendable {
 
     #if os(macOS)
     /// The photos' details, a batch at a time; `progress` hears how many are read.
-    public func scan(_ files: [URL], progress: @Sendable (Int) -> Void) throws -> [ScannedPhoto] {
-        var out: [ScannedPhoto] = []
-        var done = 0
+    public func scan(_ all: [URL], progress: @Sendable (Int) -> Void) throws -> [ScannedPhoto] {
+        // Videos through Geotag's own reader, as on the phone, so both read them alike (0.33.0).
+        let videos = all.filter(PhotoKinds.isVideo)
+        let files = all.filter { !PhotoKinds.isVideo($0) }
+        var out: [ScannedPhoto] = NativeMetadata.scan(videos) { _ in }
+        var done = videos.count
+        progress(done)
         for start in stride(from: 0, to: files.count, by: 100) {
             let batch = Array(files[start..<min(start + 100, files.count)])
             let data = try exifTool.run(["-j", "-q", "-q", "-fast2", "-charset", "filename=utf8",
@@ -127,7 +142,9 @@ public struct PhotoScanner: Sendable {
         }
         readFirmware(&out)
         readDrives(&out)
-        return out
+        // In the card's order, as before.
+        let order = Dictionary(uniqueKeysWithValues: all.enumerated().map { ($1.path, $0) })
+        return out.sorted { (order[$0.url.path] ?? 0) < (order[$1.url.path] ?? 0) }
     }
 
     /// The drive mode of photos taken within two seconds of another by the same
@@ -136,7 +153,7 @@ public struct PhotoScanner: Sendable {
     func readDrives(_ photos: inout [ScannedPhoto]) {
         var byModel: [String: [(Int, Date)]] = [:]
         for (i, p) in photos.enumerated() {
-            if let model = p.model, let at = Moments.clockReading(p) { byModel[model, default: []].append((i, at)) }
+            if !p.isVideo, let model = p.model, let at = Moments.clockReading(p) { byModel[model, default: []].append((i, at)) }
         }
         var wanted = Set<Int>()
         for (_, list) in byModel {
@@ -167,7 +184,7 @@ public struct PhotoScanner: Sendable {
     func readFirmware(_ photos: inout [ScannedPhoto]) {
         var newest: [String: Int] = [:]
         for (i, photo) in photos.enumerated() {
-            guard let model = photo.model else { continue }
+            guard let model = photo.model, !photo.isVideo else { continue }
             if let j = newest[model], (photos[j].taken ?? "") > (photo.taken ?? "") { continue }
             newest[model] = i
         }

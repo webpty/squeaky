@@ -42,13 +42,14 @@ public enum PhoneLibrary {
 
     public static func isJPG(_ url: URL) -> Bool { ["jpg", "jpeg"].contains(url.pathExtension.lowercased()) }
 
-    /// A file added as it is, its place and moment given to Photos alone (HIF, 0.29.28).
-    public static func add(_ url: URL, at position: Position?, taken: Date?) async throws {
+    /// A file added as it is, its place and moment given to Photos alone (HIF, 0.29.28;
+    /// videos, 0.33.0: Photos does not read Canon's location inside a video).
+    public static func add(_ url: URL, at position: Position?, taken: Date?, video: Bool = false) async throws {
         try await PHPhotoLibrary.shared().performChanges {
             let options = PHAssetResourceCreationOptions()
             options.originalFilename = url.lastPathComponent
             let request = PHAssetCreationRequest.forAsset()
-            request.addResource(with: .photo, fileURL: url, options: options)
+            request.addResource(with: video ? .video : .photo, fileURL: url, options: options)
             if let position {
                 request.location = CLLocation(coordinate: CLLocationCoordinate2D(latitude: position.lat, longitude: position.lon),
                                               altitude: position.alt ?? 0, horizontalAccuracy: 10, verticalAccuracy: position.alt == nil ? -1 : 10,

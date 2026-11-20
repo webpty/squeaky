@@ -19,14 +19,19 @@ public enum NativeMetadata {
         public var errorDescription: String? { message }
     }
 
-    public enum Kind: Sendable { case jpeg, cr3 }
+    /// `movie`: a video, MP4, MOV or Canon's RAW video CRM (0.33.0). Canon
+    /// keeps the same CMT boxes in its videos as in a CR3, so the location is
+    /// written into the same padded room; read and written the same way on the
+    /// phone and the Mac, never through ExifTool.
+    public enum Kind: Sendable { case jpeg, cr3, movie }
 
-    public static let extensions: Set<String> = ["cr3", "jpg", "jpeg"]
+    public static let extensions: Set<String> = ["cr3", "jpg", "jpeg", "mp4", "mov", "crm"]
 
     public static func kind(_ url: URL) -> Kind? {
         switch url.pathExtension.lowercased() {
         case "jpg", "jpeg": return .jpeg
         case "cr3": return .cr3
+        case "mp4", "mov", "crm": return .movie
         default: return nil
         }
     }
@@ -51,6 +56,8 @@ public enum NativeMetadata {
         public var mapDatum: String?
         /// Canon's drive mode: CameraSettings, the sixth value (0.29.6).
         public var drive: Int?
+        /// A video's length in seconds (0.33.0).
+        public var duration: Double?
     }
 
     public static func read(_ url: URL) throws -> Details {
@@ -88,6 +95,12 @@ public enum NativeMetadata {
             if let raw = ifd.bytes(0x001B), raw.count >= 8 {
                 d.processingMethod = String(decoding: raw.dropFirst(8).prefix { $0 != 0 }, as: UTF8.self)
             }
+        }
+        d.duration = layout.duration
+        // A video without Canon's details: its container's start, which is in UTC.
+        if layout.kind == .movie, d.taken == nil, let start = layout.created {
+            d.taken = Moments.reading.string(from: start)
+            d.zone = "+00:00"
         }
         return d
     }
@@ -127,6 +140,7 @@ public enum NativeMetadata {
                                     ownLat: located ? d.lat : nil, ownLon: located ? d.lon : nil,
                                     firmware: d.firmware, lens: d.lens, lensSerial: d.lensSerial))
             out[out.count - 1].drive = d.drive
+            out[out.count - 1].duration = d.duration
             if (i + 1) % 25 == 0 || i + 1 == files.count { progress(i + 1) }
         }
         return out
@@ -204,11 +218,7 @@ public enum NativeMetadata {
         guard Saver.sha256(copy) == expected else {
             return position == nil && shift == 0 ? Words.t("The copy differs from the card's file.") : Words.t("Other details changed in the copy.")
         }
-        guard let src = CGImageSourceCreateWithURL(copy as CFURL, nil), CGImageSourceGetCount(src) > 0,
-              CGImageSourceCreateThumbnailAtIndex(src, 0, [kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-                                                           kCGImageSourceThumbnailMaxPixelSize: 256] as CFDictionary) != nil else {
-            return Words.t("The copy does not open.")
-        }
+        guard opens(copy) else { return Words.t("The copy does not open.") }
         guard position != nil || shift != 0 else { return nil }
         let after: Details
         do { after = try read(copy) } catch { return Words.t("The copy could not be read back: {0}", error.localizedDescription) }
@@ -233,11 +243,7 @@ public enum NativeMetadata {
     /// The copy opens, the location and dates read back as written, and every
     /// other byte is the card's. Nil when all is well; else what failed.
     public static func check(copy: URL, original: URL, position: Position?, shift: Int) -> String? {
-        guard let src = CGImageSourceCreateWithURL(copy as CFURL, nil), CGImageSourceGetCount(src) > 0,
-              CGImageSourceCreateThumbnailAtIndex(src, 0, [kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-                                                           kCGImageSourceThumbnailMaxPixelSize: 256] as CFDictionary) != nil else {
-            return Words.t("The copy does not open.")
-        }
+        guard opens(copy) else { return Words.t("The copy does not open.") }
         let expected: [Patch]
         do {
             expected = try patches(for: original, position: position, shift: shift)
@@ -269,6 +275,24 @@ public enum NativeMetadata {
             }
         }
         return nil
+    }
+
+    /// A photo opens as a picture; a video's boxes read through to its media
+    /// data, every byte of which the byte check then proves is the card's.
+    static func opens(_ copy: URL) -> Bool {
+        if kind(copy) == .movie { return (try? Layout.load(copy))?.picture != nil }
+        guard let src = CGImageSourceCreateWithURL(copy as CFURL, nil), CGImageSourceGetCount(src) > 0,
+              CGImageSourceCreateThumbnailAtIndex(src, 0, [kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                                                           kCGImageSourceThumbnailMaxPixelSize: 256] as CFDictionary) != nil else { return false }
+        return true
+    }
+
+    /// The picture a video carries of itself, Canon's preview or thumbnail, as
+    /// JPG bytes: the only frame of a RAW video the phone and the Mac can show.
+    public static func moviePreview(_ url: URL) -> Data? {
+        guard let layout = try? Layout.load(url), let range = layout.preview,
+              let bytes = try? Layout.headAt(url, range.lowerBound, range.count) else { return nil }
+        return Data(bytes)
     }
 
     /// Byte for byte: the copy is the original with `patches` applied.
@@ -462,6 +486,11 @@ struct Layout {
     var containerDates: [(Int, Int, Int64)] = []
     /// Where the picture itself is in the file.
     var picture: Range<Int>?
+    /// A video's length in seconds, and its container's start (UTC).
+    var duration: Double?
+    var created: Date?
+    /// A video's own picture of itself, a JPG, in the file.
+    var preview: Range<Int>?
 
     typealias Failure = NativeMetadata.Failure
 
@@ -475,6 +504,7 @@ struct Layout {
         switch NativeMetadata.kind(url) {
         case .jpeg: return try jpeg(url)
         case .cr3: return try cr3(url)
+        case .movie: return try movie(url)
         case nil: throw Failure(Words.t("Geotag on the iPhone only handles CR3 and JPG."))
         }
     }
@@ -604,6 +634,129 @@ struct Layout {
             if b.type == "mdat" { layout.picture = (p + b.header)..<min(p + b.size, size); break }
             p += b.size
         }
+        return layout
+    }
+
+    /// Canon's preview box in a CR3 or CRM, holding a JPG.
+    static let previewUUID: [UInt8] = [0xEA, 0xF4, 0x2B, 0x5E, 0x1C, 0x98, 0x4B, 0x88, 0xB9, 0xFB, 0xB7, 0xDC, 0x40, 0x6E, 0x4D, 0x16]
+
+    /// A video (0.33.0): every box at the top read by its header alone, the
+    /// moov and Canon's boxes read whole, wherever they sit (a camera may put
+    /// moov after the media data). Kept apart from `cr3`, which stays as it was.
+    static func movie(_ url: URL) throws -> Layout {
+        func box(_ d: [UInt8], _ p: Int) -> (size: Int, type: String, header: Int)? {
+            guard p >= 0, p + 8 <= d.count else { return nil }
+            var size = (0..<4).reduce(0) { $0 << 8 | Int(d[p + $1]) }
+            let type = String(decoding: d[(p + 4)..<(p + 8)], as: UTF8.self)
+            var header = 8
+            if size == 1 {
+                guard p + 16 <= d.count else { return nil }
+                size = (8..<16).reduce(0) { $0 << 8 | Int(d[p + $1]) }
+                header = 16
+            }
+            if size == 0 { size = Int.max }   // to the end of what holds it
+            return size >= header ? (size, type, header) : nil
+        }
+        let fileSize = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0 } ?? 0
+        var layout = Layout(kind: .movie)
+        var cmt: [String: TIFFBlock] = [:]
+        var cmt4Payload: Range<Int>?
+        var thumb: Range<Int>?
+
+        /// The first JPG start in the first bytes of a box's payload, to its end.
+        func jpeg(_ d: [UInt8], _ base: Int, _ from: Int, _ to: Int) -> Range<Int>? {
+            var i = from
+            while i + 3 <= min(to, from + 64) {
+                if d[i] == 0xFF, d[i + 1] == 0xD8, d[i + 2] == 0xFF { return (base + i)..<(base + to) }
+                i += 1
+            }
+            return nil
+        }
+
+        // `d` holds a box read whole, which starts at `base` in the file.
+        func walk(_ d: [UInt8], _ base: Int, _ from: Int, _ to: Int) {
+            var p = from
+            while p < to, let b = box(d, p) {
+                let end = b.size == Int.max ? to : p + b.size
+                guard end <= to else { break }
+                let inner = p + b.header
+                switch b.type {
+                case "trak", "mdia", "udta":
+                    walk(d, base, inner, end)
+                case "mvhd", "tkhd", "mdhd":
+                    guard inner < d.count else { break }
+                    let width = d[inner] == 1 ? 8 : 4
+                    func value(_ at: Int, _ w: Int) -> Int64? {
+                        guard at + w <= d.count else { return nil }
+                        return (0..<w).reduce(Int64(0)) { $0 << 8 | Int64(d[at + $1]) }
+                    }
+                    for at in [inner + 4, inner + 4 + width] {
+                        if let v = value(at, width) { layout.containerDates.append((base + at, width, v)) }
+                    }
+                    if b.type == "mvhd", let scale = value(inner + 4 + 2 * width, 4), scale > 0,
+                       let length = value(inner + 8 + 2 * width, width) {
+                        layout.duration = Double(length) / Double(scale)
+                        if let start = value(inner + 4, width), start > 0 {
+                            layout.created = Date(timeIntervalSince1970: Double(start) - 2_082_844_800)
+                        }
+                    }
+                case "uuid" where inner + 16 <= d.count && Array(d[inner..<(inner + 16)]) == canonUUID:
+                    var q = inner + 16
+                    while q < end, let c = box(d, q), c.size != Int.max, q + c.size <= end {
+                        if c.type.hasPrefix("CMT"), let t = TIFFBlock(Array(d[(q + c.header)..<(q + c.size)]), base: base + q + c.header) {
+                            cmt[c.type] = t
+                            if c.type == "CMT4" { cmt4Payload = 0..<(c.size - c.header) }
+                        }
+                        if c.type == "THMB" { thumb = jpeg(d, base, q + c.header, q + c.size) }
+                        q += c.size
+                    }
+                case "uuid" where inner + 16 <= d.count && Array(d[inner..<(inner + 16)]) == previewUUID:
+                    var q = inner + 16 + 8
+                    while q < end, let c = box(d, q), c.size != Int.max, q + c.size <= end {
+                        if c.type == "PRVW" { layout.preview = jpeg(d, base, q + c.header, q + c.size) }
+                        q += c.size
+                    }
+                default: break
+                }
+                if b.size == Int.max { break }
+                p = end
+            }
+        }
+
+        var p = 0
+        while p + 8 <= fileSize {
+            let h = try headAt(url, p, 16)
+            guard let b = box(h, 0) else { break }
+            let size = b.size == Int.max ? fileSize - p : b.size
+            if p == 0, b.type != "ftyp" { throw Failure(Words.t("This video could not be read.")) }
+            switch b.type {
+            case "moov", "uuid":
+                guard size < 64 << 20 else {
+                    if b.type == "moov" { throw Failure(Words.t("This video could not be read.")) }
+                    break
+                }
+                let d = try headAt(url, p, size)
+                guard d.count == size else { throw Failure(Words.t("This video could not be read.")) }
+                if b.type == "moov" { walk(d, p, b.header, size) } else { walk(d, p, 0, size) }
+            case "mdat":
+                if layout.picture == nil { layout.picture = (p + b.header)..<min(p + size, fileSize) }
+            default: break
+            }
+            p += size
+        }
+        guard layout.picture != nil else { throw Failure(Words.t("This video could not be read.")) }
+        if layout.preview == nil { layout.preview = thumb }
+
+        if let t = cmt["CMT1"], let o = t.firstIFD, let ifd = t.ifd(at: o) {
+            layout.ifd0 = (t, o)
+            if let e = ifd.entry(0x0132) { layout.dates.append(t.base + e.data) }
+        }
+        if let t = cmt["CMT2"], let o = t.firstIFD, let ifd = t.ifd(at: o) {
+            layout.exif = (t, o)
+            for tag in [0x9003, 0x9004] { if let e = ifd.entry(tag), e.size >= 19 { layout.dates.append(t.base + e.data) } }
+        }
+        if let t = cmt["CMT3"], let o = t.firstIFD { layout.maker = (t, o) }
+        if let t = cmt["CMT4"], let o = t.firstIFD, let room = cmt4Payload { layout.gps = (t, o, o..<room.upperBound) }
         return layout
     }
 

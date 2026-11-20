@@ -1083,6 +1083,8 @@ public final class AppModel: ObservableObject {
                                      subSeconds: photo.subSeconds, imported: Date()))
         }
         var savedCount = 0, failedCount = 0
+        // Videos whose file has no room for a location, saved without one (0.33.0).
+        var videosWithoutRoom = 0
         var cardGone: String?
         #if os(iOS)
         var libraryFailed = 0
@@ -1180,6 +1182,30 @@ public final class AppModel: ObservableObject {
             case .saved(let url):
                 savedCount += 1
                 remember(row.photo)
+                if row.photo.isVideo, named.position != nil, (try? NativeMetadata.read(url))?.lat == nil { videosWithoutRoom += 1 }
+                #if os(iOS)
+                // A video into Photos with its place and moment given to Photos; a RAW video never (0.33.0).
+                if row.photo.isVideo, !PhotoKinds.isRawVideo(url) {
+                    if libraryAllowed == nil {
+                        photosLine = Words.t("Waiting for permission to add to Photos")
+                        libraryAllowed = await PhoneLibrary.allowed()
+                    }
+                    if libraryAllowed == true {
+                        do {
+                            let zone = Double(Moments.zoneSeconds(row.photo.zone ?? "") ?? 0)
+                            let taken = Moments.clockReading(row.photo).map { $0.addingTimeInterval(Double(named.shift) - zone) }
+                            try await PhoneLibrary.add(url, at: named.position, taken: named.position?.moment ?? taken, video: true)
+                            if !goesToServer(personId) { try? FileManager.default.removeItem(at: url) }
+                        } catch {
+                            libraryFailed += 1
+                            libraryProblem = error.localizedDescription
+                        }
+                    } else {
+                        libraryFailed += 1
+                        libraryProblem = Words.t("Geotag isn't allowed to add photos: allow it in the phone's Settings, Privacy, Photos, Geotag.")
+                    }
+                }
+                #endif
                 #if os(iOS)
                 // Into the Photos library, then the working copy of someone else's photo is no longer needed (0.29.15).
                 if PhoneLibrary.isJPG(url) {
@@ -1273,6 +1299,10 @@ public final class AppModel: ObservableObject {
         }
         if results.values.contains(.failed(Saver.diskFull)) { line = Words.t("Stopped: {0}. {1} saved before that.", Words.t(Saver.diskFull).lowercased(), savedCount) }
         if !skippedLine.isEmpty { line += " " + skippedLine }
+        if videosWithoutRoom > 0 {
+            line += " " + (videosWithoutRoom == 1 ? Words.t("1 video saved without a location: its file has no room for one.")
+                                                   : Words.t("{0} videos saved without a location: their files have no room for one.", videosWithoutRoom))
+        }
         // Done before the last line is said, so the menu bar never shows it.
         saving = false
         photosLine = line
@@ -1295,7 +1325,9 @@ public final class AppModel: ObservableObject {
             letGo(done: onPhone)
         }
         #else
-        if !stopped, failedCount == 0, savedCount > 0, source.bsd != nil, self.source?.id == source.id {
+        // Only once every photo on the card is saved (0.33.0, as the phone since 0.32.1).
+        if !stopped, failedCount == 0, savedCount > 0, source.bsd != nil, self.source?.id == source.id,
+           rows.allSatisfy({ isSaved($0) }) {
             let onMac = Words.t("{0} {1} on this Mac; the NAS copies go from there.", savedCount.formatted(), savedCount == 1 ? Words.t("photo is") : Words.t("photos are"))
             eject(done: onMac)
         }
@@ -1637,7 +1669,7 @@ public final class AppModel: ObservableObject {
         let names = defaults.dictionary(forKey: "cardNames") as? [String: String] ?? [:]
         return owners.compactMap { id, person in
             guard let person = UUID(uuidString: person), book.person(person) != nil else { return nil }
-            return KnownCard(id: id, name: names[id] ?? Words.t("SD card"), personId: person)
+            return KnownCard(id: id, name: names[id] ?? Words.t("Card"), personId: person)
         }.sorted { $0.name < $1.name }
     }
 
@@ -1695,7 +1727,8 @@ public final class AppModel: ObservableObject {
         var files = await Task.detached { PhotoScanner.files(in: url) }.value
         #if os(iOS)
         // Someone else's card: its JPGs only, the raws left on the card (0.29.5).
-        if personId == PhoneFolders.othersId { files = files.filter { ["jpg", "jpeg"].contains($0.pathExtension.lowercased()) } }
+        // Its videos too, not its RAW videos (0.33.0).
+        if personId == PhoneFolders.othersId { files = files.filter { ["jpg", "jpeg", "mp4", "mov"].contains($0.pathExtension.lowercased()) } }
         #endif
         let total = files.count
         readProgress = (0, total)

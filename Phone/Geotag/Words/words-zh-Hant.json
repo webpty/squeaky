@@ -226,13 +226,13 @@
  "Refresh": "重新整理",
  "Remove": "移除",
  "Rename": "重新命名",
- "Rename SD card": "重新命名 SD 卡",
+ "Rename card": "重新命名記憶卡",
  "Resume": "繼續",
  "Retry failed": "重試失敗項目",
  "Retry failed uploads": "重試失敗的上傳",
- "SD card": "SD 卡",
- "SD card belongs to": "SD 卡屬於",
- "SD cards": "SD 卡",
+ "Card": "記憶卡",
+ "Card belongs to": "記憶卡屬於",
+ "Cards": "記憶卡",
  "Save": "儲存",
  "Save anyway": "仍要儲存",
  "Save photos": "儲存照片",
@@ -461,5 +461,9 @@
  "{0}: clock {1}, set from the offset code.": "{0}：時鐘{1}，依時差碼設定。",
  "{0}: connected through {1}.": "{0}：已透過 {1} 連接。",
  "Save all": "全部儲存",
- "Include previously saved": "包括先前已儲存的"
+ "Include previously saved": "包括先前已儲存的",
+ "Play": "播放",
+ "This video could not be read.": "無法讀取此影片。",
+ "1 video saved without a location: its file has no room for one.": "1 段影片未加位置即儲存：檔案沒有可寫入位置的空間。",
+ "{0} videos saved without a location: their files have no room for one.": "{0} 段影片未加位置即儲存：檔案沒有可寫入位置的空間。"
 }

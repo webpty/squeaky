@@ -226,13 +226,13 @@
  "Refresh": "Actualiser",
  "Remove": "Supprimer",
  "Rename": "Renommer",
- "Rename SD card": "Renommer la carte SD",
+ "Rename card": "Renommer la carte",
  "Resume": "Reprendre",
  "Retry failed": "Réessayer les échecs",
  "Retry failed uploads": "Réessayer les envois échoués",
- "SD card": "Carte SD",
- "SD card belongs to": "La carte SD appartient à",
- "SD cards": "Cartes SD",
+ "Card": "Carte",
+ "Card belongs to": "La carte appartient à",
+ "Cards": "Cartes",
  "Save": "Enregistrer",
  "Save anyway": "Enregistrer quand même",
  "Save photos": "Enregistrer les photos",
@@ -461,5 +461,9 @@
  "{0}: clock {1}, set from the offset code.": "{0} : horloge {1}, réglée d'après le code de décalage.",
  "{0}: connected through {1}.": "{0} : connecté via {1}.",
  "Save all": "Tout enregistrer",
- "Include previously saved": "Inclure celles déjà copiées"
+ "Include previously saved": "Inclure celles déjà copiées",
+ "Play": "Lire",
+ "This video could not be read.": "Cette vidéo n'a pas pu être lue.",
+ "1 video saved without a location: its file has no room for one.": "1 vidéo enregistrée sans lieu : son fichier n'a pas de place pour en recevoir un.",
+ "{0} videos saved without a location: their files have no room for one.": "{0} vidéos enregistrées sans lieu : leurs fichiers n'ont pas de place pour en recevoir un."
 }

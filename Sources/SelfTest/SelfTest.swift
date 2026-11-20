@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Foundation
 import GeotagCore
 import GeotagUI
@@ -103,6 +104,7 @@ struct SelfTest {
         cardKinds()
         cards(scratch)
         matching(scratch)
+        await videos(scratch)
         names()
         if ProcessInfo.processInfo.environment["GEOTAG_MOUNT_TEST"] != nil { await cardArrives(scratch) }
         if ProcessInfo.processInfo.environment["GEOTAG_GUARD_TEST"] != nil { await guardTest(scratch) }
@@ -4056,5 +4058,123 @@ struct WorkIconProbe: View {
         }
         .padding(12)
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+extension SelfTest {
+    /// A small video made here, then the same with Canon's boxes added at its
+    /// end as a Canon camera keeps them: read, pictured, saved with and without
+    /// room for a location, every other byte the card's (0.33.0).
+    static func videos(_ scratch: URL) async {
+        let fm = FileManager.default
+        let card = scratch.appendingPathComponent("video-card/DCIM/100CANON", isDirectory: true)
+        try? fm.createDirectory(at: card, withIntermediateDirectories: true)
+        let plain = card.appendingPathComponent("MVI_0001.MP4")
+        guard await makeVideo(plain, seconds: 2) else { check("videos: a test video is made", false); return }
+        check("videos: listed with the photos", PhotoScanner.files(in: card).map(\.lastPathComponent) == ["MVI_0001.MP4"])
+        guard let read = NativeMetadata.scan([plain], progress: { _ in }).first else { check("videos: read", false); return }
+        check("videos: length read", abs((read.duration ?? 0) - 2) < 0.2, "\(read.duration ?? -1)")
+        check("videos: start time read from the container", read.taken != nil && read.zone == "+00:00", read.taken ?? "-")
+        check("videos: a frame is made", MovieFrames.picture(plain, maxPixel: 120) != nil)
+        check("videos: length written 10:07", MovieFrames.length(607) == "10:07" && MovieFrames.length(3727) == "1:02:07")
+
+        let position = Position(lat: 45.123456, lon: -6.654321, alt: 1234.5, moment: Date(timeIntervalSince1970: 1_790_000_000), fromPoint: 0)
+        let out = scratch.appendingPathComponent("video-out", isDirectory: true)
+        let saver = Saver(engine: .native, folder: out)
+        // No room for a location: saved without one, unchanged.
+        let item = SaveItem(photo: read, placement: .matched(position), withoutLocation: false)
+        if case .saved(let url) = saver.save(item) {
+            check("videos: no room, saved unchanged without a location",
+                  Saver.sha256(url) == Saver.sha256(plain) && (try? NativeMetadata.read(url))?.lat == nil)
+        } else { check("videos: no room, saved unchanged without a location", false) }
+
+        // Canon's boxes: the location goes in, every other byte is the card's.
+        let canon = card.appendingPathComponent("MVI_0002.MP4")
+        guard var bytes = try? Data(contentsOf: plain) else { return }
+        bytes.append(canonBoxes(taken: "2026:11:20 10:30:00"))
+        try? bytes.write(to: canon)
+        guard let canonRead = NativeMetadata.scan([canon], progress: { _ in }).first else { check("videos: Canon read", false); return }
+        check("videos: Canon's time read", canonRead.taken == "2026:11:20 10:30:00" && canonRead.model == "Canon EOS R5m2",
+              "\(canonRead.taken ?? "-") \(canonRead.model ?? "-")")
+        check("videos: Canon video still plays", MovieFrames.picture(canon, maxPixel: 120) != nil)
+        let canonItem = SaveItem(photo: canonRead, placement: .matched(position), withoutLocation: false)
+        if case .saved(let url) = saver.save(canonItem) {
+            let back = try? NativeMetadata.read(url)
+            check("videos: location written into Canon's room",
+                  abs((back?.lat ?? 0) - position.lat) < 1e-6 && abs((back?.lon ?? 0) - position.lon) < 1e-6, "\(back?.lat ?? 0)")
+            let patches = (try? NativeMetadata.patches(for: canon, position: position, shift: 0)) ?? []
+            check("videos: every other byte is the card's", NativeMetadata.compare(copy: url, original: canon, patches: patches) == nil)
+            check("videos: same size as on the card", (try? fm.attributesOfItem(atPath: url.path)[.size] as? Int) == bytes.count)
+        } else { check("videos: location written into Canon's room", false) }
+        // The Mac's own saver takes videos the same way.
+        #if os(macOS)
+        do {
+            let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
+            let mac = Saver(exifTool: tool, folder: scratch.appendingPathComponent("video-mac", isDirectory: true))
+            if case .saved(let url) = mac.save(canonItem) {
+                check("videos: the Mac writes the location the same way", (try? NativeMetadata.read(url))?.lat != nil)
+            } else { check("videos: the Mac writes the location the same way", false) }
+        }
+        #endif
+    }
+
+    /// Canon's uuid box with its CMT1, CMT2 and a padded CMT4, as in a CR3.
+    static func canonBoxes(taken: String) -> Data {
+        func be32(_ v: Int) -> [UInt8] { [UInt8(v >> 24 & 0xFF), UInt8(v >> 16 & 0xFF), UInt8(v >> 8 & 0xFF), UInt8(v & 0xFF)] }
+        func le16(_ v: Int) -> [UInt8] { [UInt8(v & 0xFF), UInt8(v >> 8 & 0xFF)] }
+        func le32(_ v: Int) -> [UInt8] { [UInt8(v & 0xFF), UInt8(v >> 8 & 0xFF), UInt8(v >> 16 & 0xFF), UInt8(v >> 24 & 0xFF)] }
+        func box(_ type: String, _ payload: [UInt8]) -> [UInt8] { be32(8 + payload.count) + Array(type.utf8) + payload }
+        // A TIFF block with one IFD of ASCII entries whose values follow the table.
+        func tiff(_ entries: [(Int, String)], pad: Int = 0) -> [UInt8] {
+            var head: [UInt8] = [0x49, 0x49, 42, 0] + le32(8)
+            let tableEnd = 8 + 2 + 12 * entries.count + 4
+            var data: [UInt8] = []
+            head += le16(entries.count)
+            for (tag, text) in entries {
+                let raw = Array(text.utf8) + [0]
+                head += le16(tag) + le16(2) + le32(raw.count)
+                if raw.count <= 4 { head += raw + [UInt8](repeating: 0, count: 4 - raw.count) }
+                else { head += le32(tableEnd + data.count); data += raw }
+            }
+            head += le32(0)
+            return head + data + [UInt8](repeating: 0, count: pad)
+        }
+        let gps: [UInt8] = [0x49, 0x49, 42, 0] + le32(8) + le16(1) + le16(0) + le16(1) + le32(4) + [2, 3, 0, 0] + le32(0)
+            + [UInt8](repeating: 0, count: 600)
+        let uuid: [UInt8] = [0x85, 0xC0, 0xB6, 0x87, 0x82, 0x0F, 0x11, 0xE0, 0x81, 0x11, 0xF4, 0xCE, 0x46, 0x2B, 0x6A, 0x48]
+        let inner = box("CMT1", tiff([(0x0110, "Canon EOS R5m2"), (0x0132, taken)]))
+            + box("CMT2", tiff([(0x9003, taken), (0x9004, taken)]))
+            + box("CMT4", gps)
+        return Data(box("uuid", uuid + inner))
+    }
+
+    /// A few seconds of grey frames, written the way the phone writes a video.
+    static func makeVideo(_ url: URL, seconds: Int) async -> Bool {
+        try? FileManager.default.removeItem(at: url)
+        guard let writer = try? AVAssetWriter(outputURL: url, fileType: .mp4) else { return false }
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 160, AVVideoHeightKey: 120,
+        ])
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey as String: 160,
+            kCVPixelBufferHeightKey as String: 120,
+        ])
+        writer.add(input)
+        guard writer.startWriting() else { return false }
+        writer.startSession(atSourceTime: .zero)
+        for frame in 0...(seconds * 10) {
+            while !input.isReadyForMoreMediaData { try? await Task.sleep(for: .milliseconds(5)) }
+            guard let pool = adaptor.pixelBufferPool else { return false }
+            var buffer: CVPixelBuffer?
+            CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
+            guard let buffer else { return false }
+            CVPixelBufferLockBaseAddress(buffer, [])
+            memset(CVPixelBufferGetBaseAddress(buffer), Int32(60 + frame), CVPixelBufferGetDataSize(buffer))
+            CVPixelBufferUnlockBaseAddress(buffer, [])
+            adaptor.append(buffer, withPresentationTime: CMTime(value: CMTimeValue(frame), timescale: 10))
+        }
+        input.markAsFinished()
+        await writer.finishWriting()
+        return writer.status == .completed
     }
 }

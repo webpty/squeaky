@@ -226,13 +226,13 @@
  "Refresh": "Refresh",
  "Remove": "Remove",
  "Rename": "Rename",
- "Rename SD card": "Rename SD card",
+ "Rename card": "Rename card",
  "Resume": "Resume",
  "Retry failed": "Retry failed",
  "Retry failed uploads": "Retry failed uploads",
- "SD card": "SD card",
- "SD card belongs to": "SD card belongs to",
- "SD cards": "SD cards",
+ "Card": "Card",
+ "Card belongs to": "Card belongs to",
+ "Cards": "Cards",
  "Save": "Save",
  "Save anyway": "Save anyway",
  "Save photos": "Save photos",
@@ -461,5 +461,9 @@
  "{0}: clock {1}, set from the offset code.": "{0}: clock {1}, set from the offset code.",
  "{0}: connected through {1}.": "{0}: connected through {1}.",
  "Save all": "Save all",
- "Include previously saved": "Include previously saved"
+ "Include previously saved": "Include previously saved",
+ "Play": "Play",
+ "This video could not be read.": "This video could not be read.",
+ "1 video saved without a location: its file has no room for one.": "1 video saved without a location: its file has no room for one.",
+ "{0} videos saved without a location: their files have no room for one.": "{0} videos saved without a location: their files have no room for one."
 }

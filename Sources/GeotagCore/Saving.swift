@@ -165,15 +165,25 @@ public struct Saver: Sendable {
             return .failed(why)
         }
 
+        // A video goes through Geotag's own writer on the Mac too (0.33.0). One
+        // whose file has no room for a location is saved without one: never rebuilt.
+        let video = PhotoKinds.isVideo(source)
+        var position = item.position
+        if video, position != nil, (try? NativeMetadata.patches(for: source, position: position, shift: item.shift)) == nil {
+            position = nil
+        }
+        var native = video
+        if case .native = engine { native = true }
+
         // Geotag's own writer: the card read once, copied with the location written on the way (0.29.9).
         var expected: String?
-        if case .native = engine {
+        if native {
             do {
-                expected = try NativeMetadata.copyPatched(from: source, to: work, position: item.position, shift: item.shift)
+                expected = try NativeMetadata.copyPatched(from: source, to: work, position: position, shift: item.shift)
             } catch {
                 if (error as NSError).code == NSFileWriteOutOfSpaceError { return fail(Self.diskFull) }
-                return fail(item.position == nil ? Words.t("It could not be copied from the card: {0}", error.localizedDescription)
-                                                 : Words.t("The location could not be written: {0}", error.localizedDescription))
+                return fail(position == nil ? Words.t("It could not be copied from the card: {0}", error.localizedDescription)
+                                            : Words.t("The location could not be written: {0}", error.localizedDescription))
             }
         } else {
             do {
@@ -202,7 +212,7 @@ public struct Saver: Sendable {
             return fail(Words.t("The card's dates could not be kept: {0}", error.localizedDescription))
         }
 
-        let problem = expected.map { NativeMetadata.checkCopy(work, expected: $0, position: item.position, shift: item.shift, taken: item.photo.taken) }
+        let problem = expected.map { NativeMetadata.checkCopy(work, expected: $0, position: position, shift: item.shift, taken: item.photo.taken) }
             ?? check(copy: work, original: source, position: item.position, shift: item.shift)
         if let problem { return fail(problem) }
 
@@ -240,6 +250,10 @@ public struct Saver: Sendable {
     /// Writes the location and the corrected dates into `work`, a copy of
     /// `original`: through ExifTool on the Mac, Geotag's own writer on the phone.
     func write(_ work: URL, original: URL, position: Position?, shift: Int) throws {
+        if PhotoKinds.isVideo(work) {
+            _ = try NativeMetadata.write(into: work, original: original, position: position, shift: shift)
+            return
+        }
         switch engine {
         #if os(macOS)
         case .exifTool(let exifTool):
@@ -319,6 +333,7 @@ public struct Saver: Sendable {
     /// its dates moved by exactly `shift` when they were to be corrected, and
     /// no other detail moved. Nil when all is well; else what failed.
     public func check(copy: URL, original: URL, position: Position?, shift: Int = 0) -> String? {
+        if PhotoKinds.isVideo(copy) { return NativeMetadata.check(copy: copy, original: original, position: position, shift: shift) }
         #if os(macOS)
         guard case .exifTool(let exifTool) = engine else {
             return NativeMetadata.check(copy: copy, original: original, position: position, shift: shift)
@@ -426,6 +441,7 @@ public struct Saver: Sendable {
 
     /// Two files carry the same GPS position, or neither has one.
     func sameLocation(_ a: URL, _ b: URL) -> Bool {
+        if PhotoKinds.isVideo(a) { return NativeMetadata.sameLocation(a, b) }
         #if os(macOS)
         guard case .exifTool(let exifTool) = engine else { return NativeMetadata.sameLocation(a, b) }
         guard let data = try? exifTool.run(["-j", "-n", "-q", "-q", "-GPS:GPSLatitude", "-GPS:GPSLatitudeRef",
@@ -444,6 +460,7 @@ public struct Saver: Sendable {
 
     /// Two files hold the same photo: the same picture and the same moment.
     func samePhoto(_ a: URL, _ b: URL) -> Bool {
+        if PhotoKinds.isVideo(a) { return NativeMetadata.samePhoto(a, b) }
         #if os(macOS)
         guard case .exifTool(let exifTool) = engine else { return NativeMetadata.samePhoto(a, b) }
         guard let data = try? exifTool.run(["-j", "-q", "-q", "-api", "ImageHashType=SHA256", "-ImageDataHash",

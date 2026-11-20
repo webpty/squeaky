@@ -54,7 +54,7 @@ struct SettingsTab: View {
                 }
                 // Each SD card read, and who it belongs to; changed only here (0.29.19).
                 if !model.knownCards.isEmpty {
-                    Section(Words.t("SD cards")) {
+                    Section(Words.t("Cards")) {
                         ForEach(model.knownCards) { card in
                             VStack(alignment: .leading, spacing: 8) {
                                 // Name and owner on one line (0.29.33).

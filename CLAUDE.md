@@ -1645,3 +1645,23 @@ Said 26 Oct 2026: in changes made across all projects, only Geotag's notes are a
 - Family phones: `TrackShare`, MultipeerConnectivity service `geotag-trk`, only between phones whose track service address is the same (a hash of it in the discovery info and the invitation). Each sends the watch tracks the other lacks; the receiving phone shows "Track received from David: date, length" with OK.
 - Duplicates: `sameStartSeconds` is 20 (was 60). Of listed tracks starting within 20 s, the longest stays listed, the others are set aside (`Track.setAside`). geotrac.cc still uses 60 s and keeps the first: changing it belongs to the tracks project.
 - Camera auto-start waits for the Phase 0 scan result.
+
+## Videos (0.33.0, David, 20 November 2026)
+
+- MP4, MOV and CRM (Canon RAW video) are listed, selected, matched and saved
+  like photos, on the phone and the Mac alike (`PhotoKinds.videos`).
+- Videos are read and written by `NativeMetadata` on both, never ExifTool:
+  Canon keeps the CR3's CMT1 to CMT4 boxes in its videos, so the location goes
+  into the padded CMT4 and every other byte stays the card's
+  (`Layout.movie`, kept apart from `cr3`). A video with no such room is
+  saved unchanged without a location, and the save line says how many.
+  Without Canon's boxes the start time is the container's, in UTC.
+- Untested on a real Canon video at 0.33.0 (none on the Mac): the self-test
+  builds one (`SelfTest.videos`) with Canon's boxes appended. Check on the
+  first real card.
+- Squares and the Mac's preview show a frame (`MovieFrames.picture`; a CRM's
+  own preview JPG), a play mark and the length bottom left ("10:07"). Play
+  is in the context menu, never for a CRM. On the phone, videos go into Photos
+  with the location given to Photos (it does not read CMT4); CRM never does.
+- A CRM and an MP4 of the same name and moment are one square, the MP4's.
+- Someone else's card on the phone: its MP4 and MOV too, not its CRM.

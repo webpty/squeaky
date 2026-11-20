@@ -130,6 +130,17 @@ struct PhotosScreen: View {
                     }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!model.canSave)
+                    // Every photo on the card, the saved ones too when asked (0.33.0, as the phone).
+                    Button {
+                        model.saveAll()
+                    } label: {
+                        Text("Save all").buttonLabel()
+                    }
+                    .disabled(model.source == nil || model.rows.isEmpty || model.photosBusy || model.importPerson == nil)
+                    Toggle("Include previously saved", isOn: $model.includeSaved)
+                        .toggleStyle(.checkbox)
+                        .fixedSize()
+                        .disabled(model.source == nil || model.photosBusy)
                 }
             }
 
@@ -235,7 +246,7 @@ struct PhotosScreen: View {
                 .customizationID("done")
                 .disabledCustomizationBehavior(.visibility)
                 TableColumn("") { line in
-                    if let url = model.pictureURL(line.row) { PhotoPreview(url: url) }
+                    if let url = model.pictureURL(line.row) { PhotoPreview(url: url, duration: line.row.photo.duration) }
                 }
                 .width(56)
                 .customizationID("preview")
@@ -305,6 +316,13 @@ struct PhotosScreen: View {
                 if previewing != nil, let line = shown.first(where: { now.contains($0.id) }) { previewing = model.pictureURL(line.row) }
             }
             .quickLookPreview($previewing, in: shown.compactMap { model.pictureURL($0.row) })
+            // A video plays in Quick Look; a RAW video cannot (0.33.0).
+            .contextMenu(forSelectionType: String.self) { ids in
+                if let line = shown.first(where: { ids.contains($0.id) }), line.row.photo.isVideo,
+                   !PhotoKinds.isRawVideo(line.row.photo.url), let url = model.pictureURL(line.row) {
+                    Button("Play") { previewing = url }
+                }
+            }
         }
         .padding(Style.pad * 1.5)
         .onAppear {
@@ -538,17 +556,31 @@ struct WhoseCard: View {
 /// The photo's small preview, as Finder makes it.
 struct PhotoPreview: View {
     let url: URL
+    var duration: Double?
     @State private var image: NSImage?
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .bottomLeading) {
             RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: .controlBackgroundColor))
             if let image {
-                Image(nsImage: image).resizable().scaledToFit()
+                Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            // A video's length, bottom left, as on the phone (0.33.0).
+            if PhotoKinds.isVideo(url), let duration {
+                Text(MovieFrames.length(duration))
+                    .font(.system(size: 9, weight: .semibold)).monospacedDigit()
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.7), radius: 1)
+                    .padding(.leading, 2).padding(.bottom, 1)
             }
         }
         .frame(width: 48, height: 32)
         .task(id: url) {
+            if PhotoKinds.isVideo(url) {
+                let u = url
+                image = await Task.detached { MovieFrames.picture(u, maxPixel: 96) }.value.map { NSImage(cgImage: $0, size: .zero) }
+                return
+            }
             let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 48, height: 32),
                                                        scale: 2, representationTypes: .thumbnail)
             image = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request).nsImage
