@@ -151,10 +151,11 @@ struct PickSquare: View {
     let saved: Bool
     let failed: Bool
     var video = false
+    var raw = false
     var duration: Double?
 
     var body: some View {
-        Square(image: image, saved: saved, failed: failed)
+        Square(image: image, saved: saved, failed: failed, raw: raw)
             // A video: a play mark and its length, bottom left (0.33.0, David: "10:07").
             .overlay(alignment: .bottomLeading) {
                 if video {

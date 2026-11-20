@@ -1659,9 +1659,15 @@ Said 26 Oct 2026: in changes made across all projects, only Geotag's notes are a
 - Untested on a real Canon video at 0.33.0 (none on the Mac): the self-test
   builds one (`SelfTest.videos`) with Canon's boxes appended. Check on the
   first real card.
-- Squares and the Mac's preview show a frame (`MovieFrames.picture`; a CRM's
-  own preview JPG), a play mark and the length bottom left ("10:07"). Play
-  is in the context menu, never for a CRM. On the phone, videos go into Photos
-  with the location given to Photos (it does not read CMT4); CRM never does.
+- Squares and the Mac's preview show a frame (`MovieFrames.picture`), a play
+  mark and the length bottom left ("10:07"). A CRM is purple with a broken
+  video icon (0.33.1, David), never a picture. On the phone, videos go into
+  Photos with the location given to Photos (it does not read CMT4); CRM never
+  does.
+- Holding a square on the phone opens a half-height panel (`Viewer`, 0.33.1,
+  David): photos and videos larger, swiped sideways through every day in
+  order, closed by swiping down. A video has a round black (90%) button with a
+  white play icon in the middle and plays in the panel; a CRM shows purple.
+  No context menu on the squares: in a List the menu lifted the whole day.
 - A CRM and an MP4 of the same name and moment are one square, the MP4's.
 - Someone else's card on the phone: its MP4 and MOV too, not its CRM.

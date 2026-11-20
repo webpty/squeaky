@@ -562,7 +562,12 @@ struct PhotoPreview: View {
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             RoundedRectangle(cornerRadius: 4).fill(Color(nsColor: .controlBackgroundColor))
-            if let image {
+            // A RAW video: purple with a broken video, as on the phone (0.33.1).
+            if PhotoKinds.isRawVideo(url) {
+                RoundedRectangle(cornerRadius: 4).fill(Color.purple)
+                Image(systemName: "video.slash.fill").font(.system(size: 13)).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let image {
                 Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             // A video's length, bottom left, as on the phone (0.33.0).
@@ -576,6 +581,7 @@ struct PhotoPreview: View {
         }
         .frame(width: 48, height: 32)
         .task(id: url) {
+            if PhotoKinds.isRawVideo(url) { return }
             if PhotoKinds.isVideo(url) {
                 let u = url
                 image = await Task.detached { MovieFrames.picture(u, maxPixel: 96) }.value.map { NSImage(cgImage: $0, size: .zero) }

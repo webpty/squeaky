@@ -20,7 +20,7 @@ struct PhotosTab: View {
     @State private var fingerAt: CGPoint?
     @State private var listFrame: CGRect = .zero
     @State private var rolling: Task<Void, Never>?
-    @State private var playing: Playing?
+    @State private var viewing: Viewing?
 
     var body: some View {
         NavigationStack {
@@ -105,15 +105,10 @@ struct PhotosTab: View {
                                     PickSquare(image: pictures.made[frame.picture], ticked: frame.ticked,
                                                saved: frame.rows.allSatisfy { model.isSaved($0) },
                                                failed: frame.rows.contains { if case .failed? = model.results[$0.id] { return true }; return false },
-                                               video: frame.isVideo, duration: frame.duration)
+                                               video: frame.isVideo, raw: PhotoKinds.isRawVideo(frame.picture), duration: frame.duration)
                                         .id(frame.id)
-                                        .contextMenu {
-                                            if frame.playable {
-                                                Button { playing = Playing(url: frame.picture) } label: {
-                                                    Label(Words.t("Play"), systemImage: "play.fill")
-                                                }
-                                            }
-                                        }
+                                        // Held: the panel, larger, to go through them (0.33.1, David).
+                                        .onLongPressGesture(minimumDuration: 0.4) { viewing = Viewing(id: frame.id) }
                                         .background(GeometryReader { g in
                                             Color.clear.preference(key: FrameSpots.self, value: [frame.id: g.frame(in: .global)])
                                         })
@@ -171,7 +166,11 @@ struct PhotosTab: View {
             await library.lookIfAllowed(model)
         }
         .sheet(isPresented: $showingFailed) { NotSaved(model: model) }
-        .fullScreenCover(item: $playing) { video in VideoPlaying(url: video.url) }
+        .sheet(item: $viewing) { start in
+            Viewer(frames: days().flatMap(\.frames), current: start.id)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
         // Apart from the Files list above: two on one view and neither opens.
         .sheet(isPresented: Binding(get: { model.askingWhose != nil }, set: { if !$0 { model.askingWhose = nil } })) {
             WhoseCard(model: model)
@@ -363,7 +362,11 @@ final class Pictures: ObservableObject {
     /// A JPG's own picture, not the small preview inside it, which carries
     /// black bands; a raw's preview, which has none and is quick.
     nonisolated static func picture(_ url: URL) -> UIImage? {
-        if PhotoKinds.isVideo(url) { return MovieFrames.picture(url, maxPixel: 360).map(UIImage.init(cgImage:)) }
+        if PhotoKinds.isVideo(url) {
+            // A RAW video shows as purple with its icon, never a picture (0.33.1, David).
+            if PhotoKinds.isRawVideo(url) { return nil }
+            return MovieFrames.picture(url, maxPixel: 360).map(UIImage.init(cgImage:))
+        }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let jpg = ["jpg", "jpeg"].contains(url.pathExtension.lowercased())
         let options: [CFString: Any] = [
@@ -380,12 +383,15 @@ struct Square: View {
     let image: UIImage?
     var saved = false
     var failed = false
+    var raw = false
 
     var body: some View {
         Color(.secondarySystemBackground)
             .aspectRatio(1, contentMode: .fit)
             .overlay {
-                if let image {
+                if raw {
+                    RawVideoMark(size: 26)
+                } else if let image {
                     Image(uiImage: image).resizable().scaledToFill()
                 }
             }
@@ -471,31 +477,92 @@ struct NotSaved: View {
     }
 }
 
-/// A video chosen to play.
-struct Playing: Identifiable {
-    let url: URL
-    var id: String { url.path }
+/// The square held, which the panel opens on.
+struct Viewing: Identifiable {
+    let id: String
 }
 
-/// A video from the card, full screen, with Close (0.33.0).
-struct VideoPlaying: View {
-    let url: URL
-    @State private var player: AVPlayer?
-    @Environment(\.dismiss) private var dismiss
+/// Half the screen from the bottom: the photos and videos larger, one at a time,
+/// swiped through sideways, closed by swiping down (0.33.1, David).
+struct Viewer: View {
+    let frames: [PhotoFrame]
+    @State var current: String
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Color.black.ignoresSafeArea()
-            if let player { VideoPlayer(player: player).ignoresSafeArea() }
-            Button(Words.t("Close")) { dismiss() }
-                .buttonStyle(.borderedProminent)
-                .padding()
+        TabView(selection: $current) {
+            ForEach(frames) { frame in
+                ViewerPage(frame: frame, shown: frame.id == current).tag(frame.id)
+            }
         }
-        .onAppear {
-            let p = AVPlayer(url: url)
-            player = p
-            p.play()
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .background(Color.black)
+    }
+}
+
+/// One photo or video in the panel.
+struct ViewerPage: View {
+    let frame: PhotoFrame
+    let shown: Bool
+    @State private var image: UIImage?
+    @State private var player: AVPlayer?
+
+    var body: some View {
+        ZStack {
+            Color.black
+            if PhotoKinds.isRawVideo(frame.picture) {
+                RawVideoMark(size: 64)
+            } else if let player {
+                VideoPlayer(player: player)
+            } else {
+                if let image { Image(uiImage: image).resizable().scaledToFit() }
+                if frame.playable {
+                    Button {
+                        let p = AVPlayer(url: frame.picture)
+                        player = p
+                        p.play()
+                    } label: {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 30))
+                            .foregroundStyle(.white)
+                            .frame(width: 72, height: 72)
+                            .background(Circle().fill(Color.black.opacity(0.9)))
+                    }
+                    .accessibilityLabel(Words.t("Play"))
+                }
+            }
+        }
+        .task(id: frame.picture) {
+            guard image == nil, !PhotoKinds.isRawVideo(frame.picture) else { return }
+            let url = frame.picture
+            image = await Task.detached(priority: .userInitiated) { ViewerPage.large(url) }.value
+        }
+        // Swiped away: the video stops.
+        .onChange(of: shown) { _, now in
+            if !now { player?.pause(); player = nil }
         }
         .onDisappear { player?.pause() }
+    }
+
+    nonisolated static func large(_ url: URL) -> UIImage? {
+        if PhotoKinds.isVideo(url) { return MovieFrames.picture(url, maxPixel: 1600).map(UIImage.init(cgImage:)) }
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 1600,
+        ] as CFDictionary).map(UIImage.init(cgImage:))
+    }
+}
+
+/// A RAW video, which cannot be shown: purple, with a broken video (0.33.1, David).
+struct RawVideoMark: View {
+    let size: CGFloat
+    var body: some View {
+        ZStack {
+            Color.purple
+            Image(systemName: "video.slash.fill")
+                .font(.system(size: size))
+                .foregroundStyle(.white)
+        }
     }
 }
