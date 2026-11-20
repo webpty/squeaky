@@ -797,6 +797,10 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 
 ## The iPhone (0.28.0, David, 14 November 2026)
 
+- The Mac app is to be rewritten to work exactly like the phone (David, 20
+  November 2026: "a full rewrite to have it exactly like the phone in the near
+  future"). Until then new features go on the phone only (videos first).
+
 - Same approach as Countries: built on this Mac with Xcode, signed with
   David's free Apple ID, installed over the cable with
   `Phone/install_phone.sh`; it runs for 7 days, then is installed again.
