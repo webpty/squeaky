@@ -76,6 +76,11 @@ struct PhotosTab: View {
                             .disabled(model.rows.isEmpty || model.photosBusy)
                             Button(Words.t("Save selected photos")) { Task { await model.checkTracksBeforeSave() } }
                                 .disabled(!model.canSave)
+                            // Every photo on the card, the saved ones too when asked (0.32.1, David).
+                            Button(Words.t("Save all")) { model.saveAll() }
+                                .disabled(model.rows.isEmpty || model.photosBusy || model.importPerson == nil)
+                            Toggle(Words.t("Include previously saved"), isOn: $model.includeSaved)
+                                .disabled(model.photosBusy)
                             Button(Words.t("Done with this card")) { model.letGo() }
                                 .disabled(model.photosBusy)
                         }
@@ -294,11 +299,9 @@ struct PhotosTab: View {
     }
 
     /// "340 new, 12 already saved".
-    /// Every photo to save is saved: none failed, none still waiting (0.29.40).
+    /// Every photo on the card is saved, selected or not (0.32.1; 0.29.40 counted only the selected).
     var allSaved: Bool {
-        !model.rows.isEmpty
-            && !model.results.values.contains(where: { if case .failed = $0 { return true }; return false })
-            && !model.rows.contains(where: { $0.willImport && model.results[$0.id] == nil })
+        !model.rows.isEmpty && model.rows.allSatisfy { model.isSaved($0) }
     }
 
     var counts: String {

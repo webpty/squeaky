@@ -459,5 +459,7 @@
  "{0}'s save folder can't be found: {1}. If it is on a drive, plug the drive in, or choose another folder.": "{0}'s save folder can't be found: {1}. If it is on a drive, plug the drive in, or choose another folder.",
  "{0}. {1} {2} on the service.": "{0}. {1} {2} on the service.",
  "{0}: clock {1}, set from the offset code.": "{0}: clock {1}, set from the offset code.",
- "{0}: connected through {1}.": "{0}: connected through {1}."
+ "{0}: connected through {1}.": "{0}: connected through {1}.",
+ "Save all": "Save all",
+ "Include previously saved": "Include previously saved"
 }

@@ -459,5 +459,7 @@
  "{0}'s save folder can't be found: {1}. If it is on a drive, plug the drive in, or choose another folder.": "找不到 {0} 的儲存資料夾：{1}。如果它在外接磁碟上，請接上磁碟，或選擇其他資料夾。",
  "{0}. {1} {2} on the service.": "{0}。服務上有 {1} {2}。",
  "{0}: clock {1}, set from the offset code.": "{0}：時鐘{1}，依時差碼設定。",
- "{0}: connected through {1}.": "{0}：已透過 {1} 連接。"
+ "{0}: connected through {1}.": "{0}：已透過 {1} 連接。",
+ "Save all": "全部儲存",
+ "Include previously saved": "包括先前已儲存的"
 }

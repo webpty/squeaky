@@ -459,5 +459,7 @@
  "{0}'s save folder can't be found: {1}. If it is on a drive, plug the drive in, or choose another folder.": "No se encuentra la carpeta de guardado de {0}: {1}. Si está en un disco, conéctalo o elige otra carpeta.",
  "{0}. {1} {2} on the service.": "{0}. {1} {2} en el servicio.",
  "{0}: clock {1}, set from the offset code.": "{0}: reloj {1}, ajustado con el código de desfase.",
- "{0}: connected through {1}.": "{0}: conectado mediante {1}."
+ "{0}: connected through {1}.": "{0}: conectado mediante {1}.",
+ "Save all": "Guardar todo",
+ "Include previously saved": "Incluir las ya guardadas"
 }

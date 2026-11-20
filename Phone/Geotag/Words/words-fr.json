@@ -459,5 +459,7 @@
  "{0}'s save folder can't be found: {1}. If it is on a drive, plug the drive in, or choose another folder.": "Le dossier d'enregistrement de {0} est introuvable : {1}. S'il se trouve sur un disque, branchez le disque ou choisissez un autre dossier.",
  "{0}. {1} {2} on the service.": "{0}. {1} {2} sur le service.",
  "{0}: clock {1}, set from the offset code.": "{0} : horloge {1}, réglée d'après le code de décalage.",
- "{0}: connected through {1}.": "{0} : connecté via {1}."
+ "{0}: connected through {1}.": "{0} : connecté via {1}.",
+ "Save all": "Tout enregistrer",
+ "Include previously saved": "Inclure celles déjà copiées"
 }

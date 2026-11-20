@@ -827,7 +827,14 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   opened is remembered (`CardWatch`, David, 16 November 2026): plugged in
   while Geotag is open, or when it opens, it is read by itself, looked for
   every 3 s while Geotag is in front. No eject: the card is let go of once
-  saved, and not read again until it has been taken out. Copies go in Geotag's folder on the phone
+  every photo on it is saved (0.32.1, David: copying some photos must leave
+  the card open to choose more), or with Done with this card, and not read
+  again until it has been taken out. "Copy done. Remove the card." only when
+  every photo on it is saved.
+- Save all (0.32.1) selects every photo on the card and saves; photos copied
+  before are left out unless the "Include previously saved" switch is on
+  (`includeSaved`, off again as each save starts). With it on, a copy still
+  in its folder counts as saved and goes on the queue again if missing. Copies go in Geotag's folder on the phone
   (On My iPhone, Geotag, one folder per person). Paths kept in the queue and
   records, and the Photos list's copies (0.29.14), are moved to the new
   install's folder after each reinstall; matched on

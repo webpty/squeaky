@@ -998,6 +998,16 @@ public final class AppModel: ObservableObject {
         rows.filter(\.willImport)
     }
 
+    /// The next save copies photos saved before as well; off again once it starts (0.32.1, David).
+    @Published public var includeSaved = false
+
+    /// Every photo on the card, whatever is selected (0.32.1, David: "Save all").
+    public func saveAll() {
+        guard !saving, !photosBusy else { return }
+        setTicked(Set(rows.map(\.id)), true)
+        Task { await checkTracksBeforeSave() }
+    }
+
     /// Copies every ready photo into the person's folder with its location,
     /// one at a time, checking each; records them in History and puts them on
     /// the upload queue. Stop, or Eject, ends it after the current photo.
@@ -1031,8 +1041,11 @@ public final class AppModel: ObservableObject {
         // No duplicates (0.31.8, David): just before copying, every photo selected
         // is checked against everything known to be copied, from any device, and
         // those are left out.
-        let copiedBefore = alreadyCopied(personId)
-        let skipped = todo.filter { copiedBefore.contains($0.photo.key) || isSaved($0) }
+        // Unless "Include previously saved" is on (0.32.1, David).
+        let again = includeSaved
+        includeSaved = false
+        let copiedBefore = again ? [] : alreadyCopied(personId)
+        let skipped = again ? [] : todo.filter { copiedBefore.contains($0.photo.key) || isSaved($0) }
         if !skipped.isEmpty {
             let left = Set(skipped.map(\.id))
             todo.removeAll { left.contains($0.id) }
@@ -1274,7 +1287,10 @@ public final class AppModel: ObservableObject {
         // card is not needed any more (David, 1 November 2026).
         #if os(iOS)
         // No eject on the phone: the card is let go of, and can come out.
-        if !stopped, failedCount == 0, savedCount > 0, source.isCard, self.source?.id == source.id {
+        // Only once every photo on the card is saved: with some left, the card stays
+        // open to choose more (0.32.1, David).
+        if !stopped, failedCount == 0, savedCount > 0, source.isCard, self.source?.id == source.id,
+           rows.allSatisfy({ isSaved($0) }) {
             let onPhone = Words.t("{0} {1} on this iPhone; the NAS copies go from there.", savedCount.formatted(), savedCount == 1 ? Words.t("photo is") : Words.t("photos are"))
             letGo(done: onPhone)
         }
