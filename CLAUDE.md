@@ -799,7 +799,8 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 
 - Every feature goes on both the phone and the Mac, built together (David, 20
   November 2026: "all features go everywhere. i dont want to be knee capped on
-  one side"). The Mac is also to be rewritten later to work exactly like the
+  one side", "and no surprise"): the same behaviour on both, no feature
+  quietly different on one. The Mac is also to be rewritten later to work exactly like the
   phone.
 
 - Same approach as Countries: built on this Mac with Xcode, signed with
