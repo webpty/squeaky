@@ -231,12 +231,12 @@ struct TrackCheckSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             switch check {
             case .checking:
-                Text(Words.t("Checking for matching tracks")).font(.headline)
+                Text(Words.t("Checking for matching tracks"))
                 LoaderDots().frame(maxWidth: .infinity)
             case .ready, .noTrack, .offline:
                 // Before every save on the phone (0.29.5, David, 16 November 2026).
                 if case .offline = check {
-                    Text(Words.t("The track service isn't answering.")).font(.headline)
+                    Text(Words.t("The track service isn't answering."))
                 }
                 if let latest {
                     // Its map, as on the Tracks page (0.31.9, David).
@@ -250,7 +250,8 @@ struct TrackCheckSheet: View {
                     // The place stays whole; the start goes on its own line when it does not fit (0.29.35).
                     Sentences(text: Words.t("Latest track: {0}", model.trackTitle(latest)) + LineBreaks.soft
                               + Words.t("starts {0}", When.current.dayAndTime(latest.start, zone: latest.timeZone.flatMap(TimeZone.init(identifier:)) ?? .current)))
-                        .font(.headline)
+                        // The same text as the Photos page's rows (0.34.6, David).
+                        .font(.body)
                 }
                 // How many have no track, and "none" when none has one (0.34.5, David).
                 let missing = model.noTrackCount, total = model.readyToSave.count
@@ -279,8 +280,8 @@ struct TrackCheckSheet: View {
                     }
                     Button(Words.t("Check tracks again")) { model.checkTracksAgain() }
                         .buttonStyle(WideButton(.grey))
-                    Button(Words.t("Don't save")) { model.dontSave() }
-                        .buttonStyle(WideButton(.grey))
+                    Button(Words.t("Cancel")) { model.dontSave() }
+                        .buttonStyle(WideButton(.red))
                 }
             }
         }

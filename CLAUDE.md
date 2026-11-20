@@ -1745,3 +1745,4 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   saving card. The panel before saving says "None of the photos have a
   track..." or "12 of 40 photos have no track...", and offers "Save only
   those with a track" (`saveOnlyTracked`: the rest stay selected).
+- 0.34.6 (David): the panel before saving says "Cancel" in red, not "Don't save"; its text is body, as the Photos page; "Save selected" is dimmed with everything selected.
