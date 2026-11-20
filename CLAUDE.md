@@ -1709,3 +1709,9 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   in `SpotBox`: neither redraws the page, which shook while a card loaded.
 - Select is blue, Deselect purple (each day and Select all photos); a folded
   day's button is greyed out, and folding never changes what is selected.
+- The panel (0.34.3, David): the shown square, then the next and previous,
+  made ready large (`LargePictures`, the last nine kept); until then the grid's
+  picture, enlarged, never black. A 40-point strip above the photo keeps it
+  clear of the corners (radius 14) and holds "Photo deleted" / "Video deleted"
+  for two seconds. Delete sits in 64 points below. The height follows what is
+  shown: a portrait photo (2:3) or a portrait video (9:16) across the width.

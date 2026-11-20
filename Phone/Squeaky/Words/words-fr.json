@@ -469,5 +469,7 @@
  "Are you sure?": "Êtes-vous sûr ?",
  "Delete": "Supprimer",
  "{0} could not be deleted from the card: {1}": "{0} n'a pas pu être supprimé de la carte : {1}",
- "The card is not open.": "La carte n'est pas ouverte."
+ "The card is not open.": "La carte n'est pas ouverte.",
+ "Photo deleted": "Photo supprimée",
+ "Video deleted": "Vidéo supprimée"
 }

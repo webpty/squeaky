@@ -169,8 +169,7 @@ struct PhotosTab: View {
         }
         .sheet(isPresented: $showingFailed) { NotSaved(model: model) }
         .sheet(item: $viewing) { start in
-            Viewer(model: model, framesNow: { days().flatMap(\.frames) }, current: start.id)
-                .presentationDetents([.height(Viewer.height)])
+            Viewer(model: model, pictures: pictures, framesNow: { days().flatMap(\.frames) }, current: start.id)
                 .presentationDragIndicator(.visible)
         }
         // Apart from the Files list above: two on one view and neither opens.
@@ -500,23 +499,58 @@ struct Viewing: Identifiable {
 /// swiped through sideways, closed by swiping down (0.33.1, David).
 struct Viewer: View {
     @ObservedObject var model: AppModel
+    /// The grid's small pictures, shown until the large one is ready.
+    let pictures: Pictures
+    @StateObject private var large = LargePictures()
     /// The squares as they are now: a deleted one is gone at once.
     let framesNow: () -> [PhotoFrame]
     @State var current: String
     @State private var asking = false
     @State private var problem: String?
+    /// "Photo deleted", at the top of the panel for two seconds (0.34.3, David).
+    @State private var note: String?
+    @State private var detent: PresentationDetent = .height(Viewer.height(tall: false))
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         let frames = framesNow()
         let frame = frames.first { $0.id == current }
         VStack(spacing: 0) {
+            // A strip above the photo, under the panel's corners: they never cut it,
+            // and the note that a photo was deleted never covers one (0.34.3, David).
+            ZStack {
+                if let note {
+                    Text(note)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 6)
+                        .background(Capsule().fill(Color.white.opacity(0.18)))
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: Viewer.topRoom)
+            .animation(.easeOut(duration: 0.25), value: note)
             TabView(selection: $current) {
                 ForEach(frames) { frame in
-                    ViewerPage(frame: frame, shown: frame.id == current).tag(frame.id)
+                    ViewerPage(frame: frame, shown: frame.id == current, large: large.box(frame.picture),
+                               small: pictures.made[frame.picture]).tag(frame.id)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
+            // The one shown, then the next and the previous, made ready (0.34.3, David).
+            .onAppear {
+                large.prepare(around: current, in: frames)
+                detent = .height(Viewer.height(tall: tall(frames.first { $0.id == current })))
+            }
+            .onChange(of: current) { _, now in
+                let all = framesNow()
+                large.prepare(around: now, in: all)
+                // Taller for a portrait video than a photo: each fills from side to side.
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    detent = .height(Viewer.height(tall: tall(all.first { $0.id == now })))
+                }
+            }
             // Room below the photo for Delete, while the card is in (0.34.2, David).
             ZStack {
                 if let frame, onCard(frame) {
@@ -534,6 +568,8 @@ struct Viewer: View {
             .frame(height: Viewer.buttonRoom)
         }
         .background(Color.black)
+        .presentationDetents([.height(Viewer.height(tall: false)), .height(Viewer.height(tall: true))], selection: $detent)
+        .presentationCornerRadius(14)
         .alert(Words.t("Are you sure?"), isPresented: $asking) {
             Button(Words.t("Cancel"), role: .cancel) {}
             Button(Words.t("Delete"), role: .destructive) { delete(frames: frames) }
@@ -543,12 +579,21 @@ struct Viewer: View {
         }
     }
 
-    static let buttonRoom: CGFloat = 96
+    static let topRoom: CGFloat = 40
+    static let buttonRoom: CGFloat = 64
 
-    /// A portrait photo fills the panel's width, with Delete below it.
-    static var height: CGFloat {
+    /// A portrait photo (2:3), or a portrait video (9:16) when `tall`, fills the
+    /// panel's width, with the strip above and Delete below.
+    static func height(tall: Bool) -> CGFloat {
         let screen = UIScreen.main.bounds.size
-        return min(screen.height * 0.92, screen.width * 1.5 + buttonRoom)
+        let bottom = (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.keyWindow?.safeAreaInsets.bottom ?? 0
+        return min(screen.height * 0.95, topRoom + screen.width * (tall ? 16.0 / 9.0 : 1.5) + buttonRoom + bottom)
+    }
+
+    /// A video taller than a photo: from its picture's own shape.
+    func tall(_ frame: PhotoFrame?) -> Bool {
+        guard let frame, frame.isVideo, let image = pictures.made[frame.picture], image.size.width > 0 else { return false }
+        return image.size.height / image.size.width > 1.6
     }
 
     func onCard(_ frame: PhotoFrame) -> Bool {
@@ -560,8 +605,16 @@ struct Viewer: View {
     func delete(frames: [PhotoFrame]) {
         guard let i = frames.firstIndex(where: { $0.id == current }) else { return }
         let next = i + 1 < frames.count ? frames[i + 1].id : (i > 0 ? frames[i - 1].id : nil)
+        let video = frames[i].isVideo
         problem = model.deleteFromCard(Set(frames[i].rows.map(\.id)))
-        if let next { current = next } else if problem == nil { dismiss() }
+        guard problem == nil else { return }
+        if let next { current = next } else { dismiss(); return }
+        let said = video ? Words.t("Video deleted") : Words.t("Photo deleted")
+        note = said
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            if note == said { note = nil }
+        }
     }
 }
 
@@ -569,7 +622,9 @@ struct Viewer: View {
 struct ViewerPage: View {
     let frame: PhotoFrame
     let shown: Bool
-    @State private var image: UIImage?
+    @ObservedObject var large: PictureBox
+    /// The grid's picture, enlarged until the large one is ready: never black.
+    let small: UIImage?
     @State private var player: AVPlayer?
     @State private var started = false
 
@@ -579,7 +634,7 @@ struct ViewerPage: View {
             if PhotoKinds.isRawVideo(frame.picture) {
                 RawVideoMark(size: 64)
             } else {
-                if let image { Image(uiImage: image).resizable().scaledToFit() }
+                if let image = large.image ?? small { Image(uiImage: image).resizable().scaledToFit() }
                 // Over the picture, seen only once its first frame shows: no black (0.34.2, David).
                 if let player {
                     VideoPlayer(player: player).opacity(started ? 1 : 0)
@@ -604,11 +659,6 @@ struct ViewerPage: View {
                     .accessibilityLabel(Words.t("Play"))
                 }
             }
-        }
-        .task(id: frame.picture) {
-            guard image == nil, !PhotoKinds.isRawVideo(frame.picture) else { return }
-            let url = frame.picture
-            image = await Task.detached(priority: .userInitiated) { ViewerPage.large(url) }.value
         }
         // Swiped away: the video stops.
         .onChange(of: shown) { _, now in
@@ -651,4 +701,46 @@ final class PictureBox: ObservableObject {
 /// Where the squares are on screen, for the slide; changing it redraws nothing.
 final class SpotBox {
     var all: [String: CGRect] = [:]
+}
+
+/// The panel's large pictures: the one shown first, then its neighbours, and
+/// the last few seen kept, so a swipe never shows black (0.34.3, David).
+@MainActor
+final class LargePictures: ObservableObject {
+    private var boxes: [URL: PictureBox] = [:]
+    private var order: [URL] = []
+    private var queue: [URL] = []
+    private var running = false
+    static let keep = 9
+
+    func box(_ url: URL) -> PictureBox {
+        if let b = boxes[url] { return b }
+        let b = PictureBox(nil)
+        boxes[url] = b
+        return b
+    }
+
+    func prepare(around id: String, in frames: [PhotoFrame]) {
+        guard let i = frames.firstIndex(where: { $0.id == id }) else { return }
+        let wanted = [i, i + 1, i - 1, i + 2].filter { frames.indices.contains($0) }.map { frames[$0].picture }
+            .filter { !PhotoKinds.isRawVideo($0) }
+        queue = wanted.filter { box($0).image == nil }
+        for url in wanted { order.removeAll { $0 == url }; order.append(url) }
+        // Only the last few kept: the rest let go, to spare the phone's memory.
+        while order.count > Self.keep {
+            let old = order.removeFirst()
+            boxes[old]?.image = nil
+            boxes[old] = nil
+        }
+        guard !running else { return }
+        running = true
+        Task {
+            while !queue.isEmpty {
+                let url = queue.removeFirst()
+                guard let b = boxes[url], b.image == nil else { continue }
+                b.image = await Task.detached(priority: .userInitiated) { ViewerPage.large(url) }.value
+            }
+            running = false
+        }
+    }
 }

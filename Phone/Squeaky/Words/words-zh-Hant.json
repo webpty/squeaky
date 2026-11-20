@@ -469,5 +469,7 @@
  "Are you sure?": "確定嗎？",
  "Delete": "刪除",
  "{0} could not be deleted from the card: {1}": "無法從記憶卡刪除 {0}：{1}",
- "The card is not open.": "記憶卡未開啟。"
+ "The card is not open.": "記憶卡未開啟。",
+ "Photo deleted": "已刪除照片",
+ "Video deleted": "已刪除影片"
 }

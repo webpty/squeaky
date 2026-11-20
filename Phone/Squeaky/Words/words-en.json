@@ -469,5 +469,7 @@
  "Are you sure?": "Are you sure?",
  "Delete": "Delete",
  "{0} could not be deleted from the card: {1}": "{0} could not be deleted from the card: {1}",
- "The card is not open.": "The card is not open."
+ "The card is not open.": "The card is not open.",
+ "Photo deleted": "Photo deleted",
+ "Video deleted": "Video deleted"
 }
