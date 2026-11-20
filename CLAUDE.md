@@ -1703,7 +1703,7 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   Delete in the middle of the screen; Delete removes every file of the square
   from the card (`AppModel.deleteFromCard`), the only thing Squeaky writes to a
   card. Copies already saved stay. The panel moves on to the next square.
-- The Mac opens cards read-only (`CardGuard`), so it has no Delete yet.
+- No Delete on the Mac (David, 20 November 2026: "no"): it keeps opening cards read-only (`CardGuard`), never writable, not even for a delete. The one exception to every feature on both.
 - A video starts behind its picture and shows once its first frame is there.
 - Each square watches its own picture (`PictureBox`) and square positions sit
   in `SpotBox`: neither redraws the page, which shook while a card loaded.
