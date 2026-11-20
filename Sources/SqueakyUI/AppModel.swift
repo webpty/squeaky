@@ -2031,6 +2031,29 @@ public final class AppModel: ObservableObject {
         return row.status == .alreadyImported
     }
 
+    /// Deletes these files from the card, and their rows (0.34.2, David: the
+    /// only thing Squeaky changes on a card). Copies already saved stay.
+    /// Nil when done; else why not, with what was deleted gone from the list.
+    public func deleteFromCard(_ ids: Set<String>) -> String? {
+        guard let source, !saving, !ids.isEmpty else { return Words.t("The card is not open.") }
+        var gone = Set<String>()
+        var problem: String?
+        for row in rows where ids.contains(row.id) && row.photo.url.path.hasPrefix(source.url.path) {
+            do {
+                try FileManager.default.removeItem(at: row.photo.url)
+                gone.insert(row.id)
+            } catch {
+                problem = Words.t("{0} could not be deleted from the card: {1}", row.photo.fileName, error.localizedDescription)
+            }
+        }
+        if !gone.isEmpty {
+            rows.removeAll { gone.contains($0.id) }
+            for id in gone { results[id] = nil }
+            keepList()
+        }
+        return problem
+    }
+
     public func setWithoutLocation(_ id: String, _ on: Bool) {
         guard let i = rows.firstIndex(where: { $0.id == id }) else { return }
         rows[i].withoutLocation = on

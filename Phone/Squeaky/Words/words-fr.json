@@ -465,5 +465,9 @@
  "Play": "Lire",
  "This video could not be read.": "Cette vidéo n'a pas pu être lue.",
  "1 video saved without a location: its file has no room for one.": "1 vidéo enregistrée sans lieu : son fichier n'a pas de place pour en recevoir un.",
- "{0} videos saved without a location: their files have no room for one.": "{0} vidéos enregistrées sans lieu : leurs fichiers n'ont pas de place pour en recevoir un."
+ "{0} videos saved without a location: their files have no room for one.": "{0} vidéos enregistrées sans lieu : leurs fichiers n'ont pas de place pour en recevoir un.",
+ "Are you sure?": "Êtes-vous sûr ?",
+ "Delete": "Supprimer",
+ "{0} could not be deleted from the card: {1}": "{0} n'a pas pu être supprimé de la carte : {1}",
+ "The card is not open.": "La carte n'est pas ouverte."
 }

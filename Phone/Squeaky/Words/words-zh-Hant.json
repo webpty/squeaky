@@ -465,5 +465,9 @@
  "Play": "播放",
  "This video could not be read.": "無法讀取此影片。",
  "1 video saved without a location: its file has no room for one.": "1 段影片未加位置即儲存：檔案沒有可寫入位置的空間。",
- "{0} videos saved without a location: their files have no room for one.": "{0} 段影片未加位置即儲存：檔案沒有可寫入位置的空間。"
+ "{0} videos saved without a location: their files have no room for one.": "{0} 段影片未加位置即儲存：檔案沒有可寫入位置的空間。",
+ "Are you sure?": "確定嗎？",
+ "Delete": "刪除",
+ "{0} could not be deleted from the card: {1}": "無法從記憶卡刪除 {0}：{1}",
+ "The card is not open.": "記憶卡未開啟。"
 }

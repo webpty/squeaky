@@ -1695,3 +1695,17 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   "~Squeaky": until then the phone cannot read the lists through it.
 - The server photo folders (homes/david/Geotag, homes/amanda/Geotag) are
   David's to rename on the NAS; each device's Server setting then follows.
+
+## Phone panel, delete and selecting (0.34.2, David, 20 November 2026)
+
+- The panel is tall enough for a portrait photo across its width, with a round
+  red bin button below while the card is in. "Are you sure?" with Cancel and
+  Delete in the middle of the screen; Delete removes every file of the square
+  from the card (`AppModel.deleteFromCard`), the only thing Squeaky writes to a
+  card. Copies already saved stay. The panel moves on to the next square.
+- The Mac opens cards read-only (`CardGuard`), so it has no Delete yet.
+- A video starts behind its picture and shows once its first frame is there.
+- Each square watches its own picture (`PictureBox`) and square positions sit
+  in `SpotBox`: neither redraws the page, which shook while a card loaded.
+- Select is blue, Deselect purple (each day and Select all photos); a folded
+  day's button is greyed out, and folding never changes what is selected.

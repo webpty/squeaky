@@ -14,7 +14,8 @@ struct PhotosTab: View {
     @State private var showingFailed = false
     // Days and selecting (0.31.0).
     @State private var foldChanged = 0
-    @State private var spots: [String: CGRect] = [:]
+    /// Where each square is, kept without redrawing the page as it scrolls (0.34.2).
+    @State private var spotBox = SpotBox()
     @State private var slide: Slide?
     @State private var ignoring = false
     @State private var fingerAt: CGPoint?
@@ -75,6 +76,7 @@ struct PhotosTab: View {
                             Button(everything ? Words.t("Deselect all photos") : Words.t("Select all photos")) {
                                 model.setTicked(Set(model.rows.map(\.id)), !everything)
                             }
+                            .tint(everything ? Color.purple : Color.heroBlue)
                             .disabled(model.rows.isEmpty || model.photosBusy)
                             Button(Words.t("Save selected photos")) { Task { await model.checkTracksBeforeSave() } }
                                 .disabled(!model.canSave)
@@ -102,7 +104,7 @@ struct PhotosTab: View {
                         if open {
                             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 3), spacing: 3) {
                                 ForEach(day.frames) { frame in
-                                    PickSquare(image: pictures.made[frame.picture], ticked: frame.ticked,
+                                    PickSquare(box: pictures.box(frame.picture), ticked: frame.ticked,
                                                saved: frame.rows.allSatisfy { model.isSaved($0) },
                                                failed: frame.rows.contains { if case .failed? = model.results[$0.id] { return true }; return false },
                                                video: frame.isVideo, raw: PhotoKinds.isRawVideo(frame.picture), duration: frame.duration)
@@ -125,7 +127,7 @@ struct PhotosTab: View {
                     }
                 }
             }
-            .onPreferenceChange(FrameSpots.self) { spots = $0 }
+            .onPreferenceChange(FrameSpots.self) { spotBox.all = $0 }
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { listFrame = $0 }
             .scrollDisabled(slide != nil)
             .simultaneousGesture(sliding(days: days(), scroller: scroller))
@@ -167,8 +169,8 @@ struct PhotosTab: View {
         }
         .sheet(isPresented: $showingFailed) { NotSaved(model: model) }
         .sheet(item: $viewing) { start in
-            Viewer(frames: days().flatMap(\.frames), current: start.id)
-                .presentationDetents([.medium])
+            Viewer(model: model, framesNow: { days().flatMap(\.frames) }, current: start.id)
+                .presentationDetents([.height(Viewer.height)])
                 .presentationDragIndicator(.visible)
         }
         // Apart from the Files list above: two on one view and neither opens.
@@ -249,7 +251,7 @@ struct PhotosTab: View {
 
     /// The square under a point, if any.
     func frame(at point: CGPoint) -> String? {
-        spots.first { $0.value.contains(point) }?.key
+        spotBox.all.first { $0.value.contains(point) }?.key
     }
 
     /// Everything from the start of the slide to the square under the finger set as the slide says.
@@ -277,7 +279,7 @@ struct PhotosTab: View {
             while !Task.isCancelled, slide != nil {
                 try? await Task.sleep(for: .milliseconds(180))
                 guard let point = fingerAt, let s = slide, listFrame.height > 0 else { continue }
-                let visible = s.order.enumerated().filter { spots[$0.element].map { $0.maxY > listFrame.minY && $0.minY < listFrame.maxY } ?? false }.map(\.offset)
+                let visible = s.order.enumerated().filter { spotBox.all[$0.element].map { $0.maxY > listFrame.minY && $0.minY < listFrame.maxY } ?? false }.map(\.offset)
                 guard let low = visible.min(), let high = visible.max() else { continue }
                 if point.y > listFrame.minY + listFrame.height * 0.9, high + 1 < s.order.count {
                     withAnimation(.linear(duration: 0.17)) { scroller.scrollTo(s.order[min(high + 3, s.order.count - 1)], anchor: .bottom) }
@@ -339,9 +341,20 @@ struct PhotosTab: View {
 /// they appear from the first to the last (0.29.9), and kept while Squeaky runs.
 @MainActor
 final class Pictures: ObservableObject {
-    @Published private(set) var made: [URL: UIImage] = [:]
+    /// Not published: a picture made redraws its own square alone, never the
+    /// whole page, which shook the scrolling while a card loaded (0.34.2, David).
+    private(set) var made: [URL: UIImage] = [:]
+    private var boxes: [URL: PictureBox] = [:]
     private var queue: [URL] = []
     private var running = false
+
+    /// The square's own holder of its picture.
+    func box(_ url: URL) -> PictureBox {
+        if let b = boxes[url] { return b }
+        let b = PictureBox(made[url])
+        boxes[url] = b
+        return b
+    }
 
     func make(_ urls: [URL]) {
         queue = urls.filter { made[$0] == nil }
@@ -353,6 +366,7 @@ final class Pictures: ObservableObject {
                 if made[url] != nil { continue }
                 if let image = await Task.detached(priority: .userInitiated, operation: { Pictures.picture(url) }).value {
                     made[url] = image
+                    boxes[url]?.image = image
                 }
             }
             running = false
@@ -485,17 +499,69 @@ struct Viewing: Identifiable {
 /// Half the screen from the bottom: the photos and videos larger, one at a time,
 /// swiped through sideways, closed by swiping down (0.33.1, David).
 struct Viewer: View {
-    let frames: [PhotoFrame]
+    @ObservedObject var model: AppModel
+    /// The squares as they are now: a deleted one is gone at once.
+    let framesNow: () -> [PhotoFrame]
     @State var current: String
+    @State private var asking = false
+    @State private var problem: String?
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        TabView(selection: $current) {
-            ForEach(frames) { frame in
-                ViewerPage(frame: frame, shown: frame.id == current).tag(frame.id)
+        let frames = framesNow()
+        let frame = frames.first { $0.id == current }
+        VStack(spacing: 0) {
+            TabView(selection: $current) {
+                ForEach(frames) { frame in
+                    ViewerPage(frame: frame, shown: frame.id == current).tag(frame.id)
+                }
             }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            // Room below the photo for Delete, while the card is in (0.34.2, David).
+            ZStack {
+                if let frame, onCard(frame) {
+                    Button { asking = true } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 22))
+                            .foregroundStyle(.white)
+                            .frame(width: 56, height: 56)
+                            .background(Circle().fill(Color.red))
+                    }
+                    .accessibilityLabel(Words.t("Delete"))
+                    .disabled(model.saving || model.photosBusy)
+                }
+            }
+            .frame(height: Viewer.buttonRoom)
         }
-        .tabViewStyle(.page(indexDisplayMode: .never))
         .background(Color.black)
+        .alert(Words.t("Are you sure?"), isPresented: $asking) {
+            Button(Words.t("Cancel"), role: .cancel) {}
+            Button(Words.t("Delete"), role: .destructive) { delete(frames: frames) }
+        }
+        .alert(problem ?? "", isPresented: Binding(get: { problem != nil }, set: { if !$0 { problem = nil } })) {
+            Button(Words.t("Close"), role: .cancel) {}
+        }
+    }
+
+    static let buttonRoom: CGFloat = 96
+
+    /// A portrait photo fills the panel's width, with Delete below it.
+    static var height: CGFloat {
+        let screen = UIScreen.main.bounds.size
+        return min(screen.height * 0.92, screen.width * 1.5 + buttonRoom)
+    }
+
+    func onCard(_ frame: PhotoFrame) -> Bool {
+        guard let source = model.source, !model.saving else { return false }
+        return frame.rows.allSatisfy { $0.photo.url.path.hasPrefix(source.url.path) }
+    }
+
+    /// Every file of the square from the card, then on to the next one.
+    func delete(frames: [PhotoFrame]) {
+        guard let i = frames.firstIndex(where: { $0.id == current }) else { return }
+        let next = i + 1 < frames.count ? frames[i + 1].id : (i > 0 ? frames[i - 1].id : nil)
+        problem = model.deleteFromCard(Set(frames[i].rows.map(\.id)))
+        if let next { current = next } else if problem == nil { dismiss() }
     }
 }
 
@@ -505,21 +571,29 @@ struct ViewerPage: View {
     let shown: Bool
     @State private var image: UIImage?
     @State private var player: AVPlayer?
+    @State private var started = false
 
     var body: some View {
         ZStack {
             Color.black
             if PhotoKinds.isRawVideo(frame.picture) {
                 RawVideoMark(size: 64)
-            } else if let player {
-                VideoPlayer(player: player)
             } else {
                 if let image { Image(uiImage: image).resizable().scaledToFit() }
-                if frame.playable {
+                // Over the picture, seen only once its first frame shows: no black (0.34.2, David).
+                if let player {
+                    VideoPlayer(player: player).opacity(started ? 1 : 0)
+                }
+                if player == nil, frame.playable {
                     Button {
                         let p = AVPlayer(url: frame.picture)
                         player = p
+                        started = false
                         p.play()
+                        Task { @MainActor in
+                            while player === p, p.currentTime().seconds <= 0.05 { try? await Task.sleep(for: .milliseconds(40)) }
+                            if player === p { started = true }
+                        }
                     } label: {
                         Image(systemName: "play.fill")
                             .font(.system(size: 30))
@@ -565,4 +639,16 @@ struct RawVideoMark: View {
                 .foregroundStyle(.white)
         }
     }
+}
+
+/// One square's picture, watched by that square alone (0.34.2).
+@MainActor
+final class PictureBox: ObservableObject {
+    @Published var image: UIImage?
+    init(_ image: UIImage?) { self.image = image }
+}
+
+/// Where the squares are on screen, for the slide; changing it redraws nothing.
+final class SpotBox {
+    var all: [String: CGRect] = [:]
 }

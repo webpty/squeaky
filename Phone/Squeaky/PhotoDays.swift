@@ -132,12 +132,15 @@ struct DayHeader: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // Blue to select, purple to deselect (0.34.2, David); greyed out while the
+            // day is folded, whose photos keep whatever they were.
             Button(all ? Words.t("Deselect {0}", count) : Words.t("Select {0}", count)) { selectAll(!all) }
                 .buttonStyle(.bordered)
+                .tint(all ? Color.purple : Color.heroBlue)
                 .controlSize(.small)
                 .lineLimit(1)
                 .fixedSize()
-                .disabled(!canChange)
+                .disabled(!canChange || !open)
         }
         .textCase(nil)
         .foregroundStyle(.primary)
@@ -146,7 +149,7 @@ struct DayHeader: View {
 
 /// A square with its blue tick, top left.
 struct PickSquare: View {
-    let image: UIImage?
+    @ObservedObject var box: PictureBox
     let ticked: Bool
     let saved: Bool
     let failed: Bool
@@ -155,7 +158,7 @@ struct PickSquare: View {
     var duration: Double?
 
     var body: some View {
-        Square(image: image, saved: saved, failed: failed, raw: raw)
+        Square(image: box.image, saved: saved, failed: failed, raw: raw)
             // A video: a play mark and its length, bottom left (0.33.0, David: "10:07").
             .overlay(alignment: .bottomLeading) {
                 if video {

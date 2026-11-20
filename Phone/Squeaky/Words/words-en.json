@@ -465,5 +465,9 @@
  "Play": "Play",
  "This video could not be read.": "This video could not be read.",
  "1 video saved without a location: its file has no room for one.": "1 video saved without a location: its file has no room for one.",
- "{0} videos saved without a location: their files have no room for one.": "{0} videos saved without a location: their files have no room for one."
+ "{0} videos saved without a location: their files have no room for one.": "{0} videos saved without a location: their files have no room for one.",
+ "Are you sure?": "Are you sure?",
+ "Delete": "Delete",
+ "{0} could not be deleted from the card: {1}": "{0} could not be deleted from the card: {1}",
+ "The card is not open.": "The card is not open."
 }
