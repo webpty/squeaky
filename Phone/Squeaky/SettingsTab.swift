@@ -46,11 +46,12 @@ struct SettingsTab: View {
                         ForEach(model.book.cameras(of: owner.id)) { CameraLine(camera: $0) }
                     }
                     Button(Words.t("Show offset code")) { showingCode = true }
-                }
+                        .buttonStyle(WideButton(.grey)).buttonRow()
+                }.cardRows()
                 if !model.book.cameras(of: PhoneFolders.othersId).isEmpty {
                     Section(Words.t("Other cameras")) {
                         ForEach(model.book.cameras(of: PhoneFolders.othersId)) { CameraLine(camera: $0) }
-                    }
+                    }.cardRows()
                 }
                 // Each SD card read, and who it belongs to; changed only here (0.29.19).
                 if !model.knownCards.isEmpty {
@@ -80,7 +81,7 @@ struct SettingsTab: View {
                                 }
                             }
                         }
-                    }
+                    }.cardRows()
                 }
                 Section {
                     if serviceFields {
@@ -122,7 +123,7 @@ struct SettingsTab: View {
                     StatusRow(text: model.settingsLine, busy: model.settingsBusy)
                 } header: {
                     InfoHeader(title: Words.t("GPS tracks service")) { showingFormat = true }
-                }
+                }.cardRows()
                 Section {
                     LabeledContent(Words.t("Folder")) {
                         // The path being worked out: the wheel (0.29.26).
@@ -155,7 +156,7 @@ struct SettingsTab: View {
                 } header: {
                     // The steps to connect a file server, behind the i (0.29.30).
                     InfoHeader(title: Words.t("Server")) { showingHowTo = true }
-                }
+                }.cardRows()
                 // Away from home, photos go here first; the NAS fetches them (0.30.0, David).
                 Section(Words.t("Buffer server")) {
                     if bufferFields {
@@ -194,7 +195,7 @@ struct SettingsTab: View {
                         }
                     }
                     StatusRow(text: model.bufferLine, busy: model.bufferBusy)
-                }
+                }.cardRows()
                 // The Squeaky app on a Garmin watch, picked once in Garmin Connect (0.32.0).
                 Section(Words.t("Watch")) {
                     LabeledContent(Words.t("Watch")) {
@@ -207,25 +208,24 @@ struct SettingsTab: View {
                     if let line = watch.problem {
                         StatusRow(text: line, busy: false)
                     }
-                }
+                }.cardRows()
                 if let problem {
-                    Section { Sentences(text: problem).foregroundStyle(.secondary) }
+                    Section { Sentences(text: problem).foregroundStyle(.secondary) }.cardRows()
                 }
                 // What the iPhone keeps for Squeaky, one tap away (0.29.38, David).
                 Section {
-                    Button {
-                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(Words.t("Open iPhone Settings for Squeaky"))
-                            Text(Words.t("Language, access to Photos, notifications and mobile data"))
-                                .font(.footnote).foregroundStyle(Color(uiColor: .secondaryLabel))
+                    VStack(alignment: .leading, spacing: 8) {
+                        Button(Words.t("Open iPhone Settings for Squeaky")) {
+                            if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                         }
+                        .buttonStyle(WideButton(.grey))
+                        Text(Words.t("Language, access to Photos, notifications and mobile data"))
+                            .font(.footnote).foregroundStyle(Color(uiColor: .secondaryLabel))
                     }
-                }
+                }.cardRows()
                 Section {
                     LabeledContent(Words.t("Version"), value: appVersion)
-                }
+                }.cardRows()
             }
             .scrollContentBackground(.hidden)
             // The last card's photo behind every tab, veiled (0.29.5, David, 16 November 2026).

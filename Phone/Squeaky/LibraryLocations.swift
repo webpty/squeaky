@@ -211,17 +211,19 @@ struct LibraryLocationsSection: View {
         case .notAsked:
             Section {
                 Button(Words.t("Add locations to photos in Photos")) { Task { await library.askAndLook(model) } }
+                    .buttonStyle(WideButton(.blue)).buttonRow()
                     .disabled(model.tracks.isEmpty)
-            }
+            }.cardRows()
         case .refused:
             Section {
                 Sentences(text: Words.t("Squeaky has no full access to Photos, so it can't add locations there.")).foregroundStyle(.secondary)
                 Button(Words.t("Open iPhone Settings")) {
                     if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                 }
-            }
+                .buttonStyle(WideButton(.grey)).buttonRow()
+            }.cardRows()
         case .looking(let n, let total):
-            Section { StatusRow(text: Words.t("Looking through Photos: {0} of {1}", n.formatted(), total.formatted()), busy: true) }
+            Section { StatusRow(text: Words.t("Looking through Photos: {0} of {1}", n.formatted(), total.formatted()), busy: true) }.cardRows()
         case .found(let found):
             if !found.isEmpty {
                 Section {
@@ -230,15 +232,16 @@ struct LibraryLocationsSection: View {
                            : Words.t("Add locations to {0} photos", found.count.formatted())) {
                         showing = .toAdd(found)
                     }
+                    .buttonStyle(WideButton(.blue)).buttonRow()
                     .disabled(model.saving)
-                }
+                }.cardRows()
             } else if !library.lastAdded.isEmpty {
-                Section { addedButton(library.lastAdded.count, problem: nil) }
+                Section { addedButton(library.lastAdded.count, problem: nil) }.cardRows()
             }
         case .adding(let n, let total):
-            Section { StatusRow(text: Words.t("Adding locations in Photos: {0} of {1}", n.formatted(), total.formatted()), busy: true) }
+            Section { StatusRow(text: Words.t("Adding locations in Photos: {0} of {1}", n.formatted(), total.formatted()), busy: true) }.cardRows()
         case .added(let n, let problem):
-            Section { addedButton(n, problem: problem) }
+            Section { addedButton(n, problem: problem) }.cardRows()
         }
     }
 

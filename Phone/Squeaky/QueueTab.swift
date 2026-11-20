@@ -43,7 +43,7 @@ struct QueueTab: View {
                                     .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] + 20 }
                             }
                         }
-                    }
+                    }.cardRows()
                 }
                 Section {
                     // Which way photos go now (0.30.0, David).
@@ -71,7 +71,7 @@ struct QueueTab: View {
                                 .accessibilityLabel(Words.t("Retry failed uploads"))
                         }
                     }
-                }
+                }.cardRows()
                 if !failed.isEmpty {
                     Section(Words.t("Failed")) {
                         ForEach(failed) { entry in
@@ -80,7 +80,7 @@ struct QueueTab: View {
                                 Sentences(text: QueueText.status(entry)).font(.caption).foregroundStyle(.secondary)
                             }
                         }
-                    }
+                    }.cardRows()
                 }
                 // The time, the time per photo and the speed, at the bottom (0.29.41).
                 if let estimate {
@@ -92,7 +92,7 @@ struct QueueTab: View {
                         if let speed = model.sendingSpeed() {
                             LabeledContent(Words.t("Speed"), value: Words.t(speed.rawValue))
                         }
-                    }
+                    }.cardRows()
                 }
             }
             // Rows keep their places; one done fades and the rest slide up (0.31.1, David).

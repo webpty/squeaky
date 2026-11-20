@@ -340,12 +340,72 @@ struct HalfButton: View {
     }
 
     var body: some View {
-        Button(role: role, action: action) {
-            Text(title).lineLimit(1).minimumScaleFactor(0.8).frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.bordered)
-        .tint(role == .destructive ? .red : nil)
+        Button(role: role, action: action) { Text(title) }
+            .buttonStyle(WideButton(role == .destructive ? .red : .grey))
     }
+}
+
+/// The app's colours: dark grey rather than black in dark mode (0.34.4, David).
+enum Palette {
+    static func dynamic(dark: CGFloat, light: UIColor) -> Color {
+        Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: dark, alpha: 1) : light })
+    }
+    static let page = dynamic(dark: 0.12, light: .systemGroupedBackground)
+    static let card = dynamic(dark: 0.20, light: .secondarySystemGroupedBackground)
+    /// The photo panel, lighter than the page so it stands apart.
+    static let panel = dynamic(dark: 0.25, light: .systemGray5)
+    static let greyButton = dynamic(dark: 0.31, light: .systemGray5)
+}
+
+/// A real button, full width, on a coloured background (0.34.4, David: "those
+/// are links not buttons").
+struct WideButton: ButtonStyle {
+    enum Kind { case blue, purple, softBlue, teal, grey, red }
+    let kind: Kind
+    init(_ kind: Kind) { self.kind = kind }
+    @Environment(\.isEnabled) private var enabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body.weight(.semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .foregroundStyle(text)
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .background(RoundedRectangle(cornerRadius: 12).fill(fill))
+            .opacity(enabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    var fill: Color {
+        switch kind {
+        case .blue: return .heroBlue
+        case .purple: return .purple
+        case .softBlue: return Color.heroBlue.opacity(0.22)
+        case .teal: return .teal
+        case .grey: return Palette.greyButton
+        case .red: return .red
+        }
+    }
+
+    var text: Color {
+        switch kind {
+        case .softBlue: return .heroBlue
+        case .grey: return .primary
+        default: return .white
+        }
+    }
+}
+
+extension View {
+    /// A row holding a wide button: no separator, even margins.
+    func buttonRow() -> some View {
+        listRowInsets(EdgeInsets(top: 6, leading: 14, bottom: 6, trailing: 14)).listRowSeparator(.hidden)
+    }
+
+    /// Every row of a page on the app's card colour.
+    func cardRows() -> some View { listRowBackground(Palette.card) }
 }
 
 /// The empty half beside a button on its own, so it keeps half the width.
@@ -381,14 +441,14 @@ struct Backdrop: View {
     var body: some View {
         GeometryReader { box in
             ZStack {
-                Color(.systemGroupedBackground)
+                Palette.page
                 if let image {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
                         .frame(width: box.size.width, height: box.size.height)
                         .clipped()
-                    (scheme == .dark ? Color.black : Color.white).opacity(scheme == .dark ? 0.6 : 0.65)
+                    (scheme == .dark ? Color(white: 0.12) : Color.white).opacity(scheme == .dark ? 0.6 : 0.65)
                 }
             }
         }

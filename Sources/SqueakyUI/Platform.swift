@@ -42,6 +42,46 @@ public enum PhoneLibrary {
 
     public static func isJPG(_ url: URL) -> Bool { ["jpg", "jpeg"].contains(url.pathExtension.lowercased()) }
 
+    /// What the Photos library already holds around some dates, by original
+    /// file name and moment (0.34.4, David): a photo AirDropped or added
+    /// before is not added again. Nil without full access to Photos.
+    public struct Index: Sendable {
+        var moments: [String: [Date]] = [:]
+
+        static func key(_ name: String) -> String {
+            let lower = name.lowercased()
+            let ext = (lower as NSString).pathExtension
+            let stem = (lower as NSString).deletingPathExtension
+            return stem + "." + (ext == "jpeg" ? "jpg" : ext)
+        }
+
+        /// The same name, taken within two seconds; within a day when the camera gave no zone.
+        public func contains(name: String, moment: Date?, zoneKnown: Bool) -> Bool {
+            guard let list = moments[Self.key(name)] else { return false }
+            guard let moment else { return true }
+            let slack: TimeInterval = zoneKnown ? 2 : 14 * 3600
+            return list.contains { abs($0.timeIntervalSince(moment)) <= slack }
+        }
+    }
+
+    public static func index(around range: ClosedRange<Date>) async -> Index? {
+        var status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        if status == .notDetermined { status = await PHPhotoLibrary.requestAuthorization(for: .readWrite) }
+        guard status == .authorized || status == .limited else { return nil }
+        return await Task.detached(priority: .userInitiated) {
+            let options = PHFetchOptions()
+            options.predicate = NSPredicate(format: "creationDate >= %@ AND creationDate <= %@",
+                                            range.lowerBound as NSDate, range.upperBound as NSDate)
+            var index = Index()
+            PHAsset.fetchAssets(with: options).enumerateObjects { asset, _, _ in
+                guard let date = asset.creationDate,
+                      let name = PHAssetResource.assetResources(for: asset).first?.originalFilename else { return }
+                index.moments[Index.key(name), default: []].append(date)
+            }
+            return index
+        }.value
+    }
+
     /// A file added as it is, its place and moment given to Photos alone (HIF, 0.29.28;
     /// videos, 0.33.0: Photos does not read Canon's location inside a video).
     public static func add(_ url: URL, at position: Position?, taken: Date?, video: Bool = false) async throws {

@@ -30,7 +30,6 @@ struct PhotosScreen: View {
     @AppStorage("photoSort") private var sortId = "taken"
     @AppStorage("photoSortAscending") private var sortAscending = false
     /// Photos saved from an earlier card hidden; those saved this time stay.
-    @AppStorage("hideSavedBefore") private var hideSavedBefore = false
     @AppStorage("photoColumns") private var savedColumns = Data()
     @State private var selection = Set<ImportRow.ID>()
     /// The photo shown big, as Finder's space bar shows it.
@@ -77,7 +76,8 @@ struct PhotosScreen: View {
 
     private var shown: [PhotoLine] {
         var rows = reviewOnly ? model.rows.filter(withoutLocation) : model.rows
-        if hideSavedBefore { rows.removeAll { $0.status == .alreadyImported && model.results[$0.id] == nil } }
+        // "Hide already saved", shared with the phone's rule (0.34.4, David).
+        if model.hideSaved { rows.removeAll { model.isSaved($0) } }
         let lines = rows.map { row in
             PhotoLine(row: row, saved: model.isSaved(row) ? 1 : 0, name: row.photo.fileName, status: statusText(row),
                       place: model.placeName(row) ?? "", gap: model.breaks[row.id] ?? 0,
@@ -126,7 +126,7 @@ struct PhotosScreen: View {
                     Button {
                         Task { await model.savePhotos() }
                     } label: {
-                        Text("Save photos").buttonLabel()
+                        Text("Save").buttonLabel()
                     }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!model.canSave)
@@ -137,10 +137,6 @@ struct PhotosScreen: View {
                         Text("Save all").buttonLabel()
                     }
                     .disabled(model.source == nil || model.rows.isEmpty || model.photosBusy || model.importPerson == nil)
-                    Toggle("Include previously saved", isOn: $model.includeSaved)
-                        .toggleStyle(.checkbox)
-                        .fixedSize()
-                        .disabled(model.source == nil || model.photosBusy)
                 }
             }
 
@@ -205,7 +201,7 @@ struct PhotosScreen: View {
                 .fixedSize()
                 .handCursor()
                 if !model.rows.isEmpty {
-                    Toggle("Hide photos saved before", isOn: $hideSavedBefore)
+                    Toggle("Hide already saved", isOn: $model.hideSaved)
                         .toggleStyle(.checkbox)
                         .fixedSize()
                     if model.source == nil {
@@ -213,7 +209,7 @@ struct PhotosScreen: View {
                             selection = []
                             model.clearPhotos()
                         } label: {
-                            Text("Clear photos").buttonLabel()
+                            Text("Clear").buttonLabel()
                         }
                         .fixedSize()
                         .disabled(model.saving)

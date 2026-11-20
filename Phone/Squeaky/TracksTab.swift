@@ -34,7 +34,7 @@ struct TracksTab: View {
                     if maps.asked > maps.made {
                         StatusRow(text: Words.t("Making maps: {0} of {1}", maps.made + 1, maps.asked), busy: true)
                     }
-                }
+                }.cardRows()
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
                 // Little space around it, so the list starts right under it (0.29.33).
@@ -50,7 +50,7 @@ struct TracksTab: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(model.trackTitle(track))
                                 Text(Self.line(track)).font(.caption).foregroundStyle(.secondary)
-                                Button(Words.t("Recheck photos")) { Task { await model.recheckPhotos(for: track) } }
+                                Button(Words.t("Recheck")) { Task { await model.recheckPhotos(for: track) } }
                                     .font(.caption)
                                     .buttonStyle(.bordered)
                                     .disabled(model.tracksBusy || model.saving || model.placingLater)
@@ -59,13 +59,13 @@ struct TracksTab: View {
                         }
                         }
                     }
-                }
+                }.cardRows()
                 // The map's licence asks for its credit to show with it: under the last track (0.29.33).
                 if !model.mapCredit.isEmpty {
                     Section {
                         Text(model.mapCredit).font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.6)
                             .frame(maxWidth: .infinity)
-                    }
+                    }.cardRows()
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                 }

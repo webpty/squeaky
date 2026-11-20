@@ -998,13 +998,23 @@ public final class AppModel: ObservableObject {
         rows.filter(\.willImport)
     }
 
-    /// The next save copies photos saved before as well; off again once it starts (0.32.1, David).
-    @Published public var includeSaved = false
+    /// "Hide already saved" (0.34.4, David), on to start and kept: what is
+    /// already saved is hidden and cannot be selected or saved. Off, it shows,
+    /// and saving it copies it again.
+    @Published public var hideSaved: Bool = UserDefaults.standard.object(forKey: "hideSaved") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(hideSaved, forKey: "hideSaved")
+            if hideSaved { setTicked(Set(rows.filter { isSaved($0) }.map(\.id)), false) }
+        }
+    }
 
-    /// Every photo on the card, whatever is selected (0.32.1, David: "Save all").
+    /// The rows that can be chosen now: all of them, or only those not saved yet.
+    public var choosable: [ImportRow] { hideSaved ? rows.filter { !isSaved($0) } : rows }
+
+    /// Every photo on the card that can be chosen, whatever is selected (0.32.1, David: "Save all").
     public func saveAll() {
         guard !saving, !photosBusy else { return }
-        setTicked(Set(rows.map(\.id)), true)
+        setTicked(Set(choosable.map(\.id)), true)
         Task { await checkTracksBeforeSave() }
     }
 
@@ -1042,8 +1052,7 @@ public final class AppModel: ObservableObject {
         // is checked against everything known to be copied, from any device, and
         // those are left out.
         // Unless "Include previously saved" is on (0.32.1, David).
-        let again = includeSaved
-        includeSaved = false
+        let again = !hideSaved
         let copiedBefore = again ? [] : alreadyCopied(personId)
         let skipped = again ? [] : todo.filter { copiedBefore.contains($0.photo.key) || isSaved($0) }
         if !skipped.isEmpty {
@@ -1085,6 +1094,28 @@ public final class AppModel: ObservableObject {
         var savedCount = 0, failedCount = 0
         // Videos whose file has no room for a location, saved without one (0.33.0).
         var videosWithoutRoom = 0
+        #if os(iOS)
+        // Already in Photos, by name and moment: not added again (0.34.4, David).
+        var alreadyInPhotos = 0
+        var photosIndex: PhoneLibrary.Index?
+        var photosIndexRead = false
+        func inPhotos(_ row: ImportRow, shift: Int) async -> Bool {
+            let zone = Moments.zoneSeconds(row.photo.zone ?? "")
+            let moment = Moments.clockReading(row.photo).map { $0.addingTimeInterval(Double(shift) - Double(zone ?? 0)) }
+            if !photosIndexRead {
+                photosIndexRead = true
+                let times = todo.compactMap { Moments.clockReading($0.photo) }
+                if let first = times.min(), let last = times.max() {
+                    photosLine = Words.t("Checking Photos for copies already there")
+                    photosIndex = await PhoneLibrary.index(around: first.addingTimeInterval(-2 * 86_400)...last.addingTimeInterval(2 * 86_400))
+                }
+            }
+            guard let photosIndex,
+                  photosIndex.contains(name: row.photo.fileName, moment: moment, zoneKnown: zone != nil) else { return false }
+            alreadyInPhotos += 1
+            return true
+        }
+        #endif
         var cardGone: String?
         #if os(iOS)
         var libraryFailed = 0
@@ -1146,7 +1177,12 @@ public final class AppModel: ObservableObject {
                     libraryAllowed = await PhoneLibrary.allowed()
                 }
                 var outcome: SaveResult = .saved(row.photo.url)
-                if libraryAllowed == true {
+                if await inPhotos(row, shift: item.shift) {
+                    var added = defaults.stringArray(forKey: "heifAdded") ?? []
+                    added.append(row.photo.key)
+                    defaults.set(added, forKey: "heifAdded")
+                    savedCount += 1
+                } else if libraryAllowed == true {
                     do {
                         try await PhoneLibrary.add(row.photo.url, at: item.position,
                                                    taken: item.position?.moment ?? Moments.clockReading(row.photo).map {
@@ -1185,7 +1221,9 @@ public final class AppModel: ObservableObject {
                 if row.photo.isVideo, named.position != nil, (try? NativeMetadata.read(url))?.lat == nil { videosWithoutRoom += 1 }
                 #if os(iOS)
                 // A video into Photos with its place and moment given to Photos; a RAW video never (0.33.0).
-                if row.photo.isVideo, !PhotoKinds.isRawVideo(url) {
+                if row.photo.isVideo, !PhotoKinds.isRawVideo(url), await inPhotos(row, shift: named.shift) {
+                    if !goesToServer(personId) { try? FileManager.default.removeItem(at: url) }
+                } else if row.photo.isVideo, !PhotoKinds.isRawVideo(url) {
                     if libraryAllowed == nil {
                         photosLine = Words.t("Waiting for permission to add to Photos")
                         libraryAllowed = await PhoneLibrary.allowed()
@@ -1208,7 +1246,9 @@ public final class AppModel: ObservableObject {
                 #endif
                 #if os(iOS)
                 // Into the Photos library, then the working copy of someone else's photo is no longer needed (0.29.15).
-                if PhoneLibrary.isJPG(url) {
+                if PhoneLibrary.isJPG(url), await inPhotos(row, shift: named.shift) {
+                    if !goesToServer(personId) { try? FileManager.default.removeItem(at: url) }
+                } else if PhoneLibrary.isJPG(url) {
                     if libraryAllowed == nil {
                         photosLine = Words.t("Waiting for permission to add to Photos")
                         libraryAllowed = await PhoneLibrary.allowed()
@@ -1299,6 +1339,9 @@ public final class AppModel: ObservableObject {
         }
         if results.values.contains(.failed(Saver.diskFull)) { line = Words.t("Stopped: {0}. {1} saved before that.", Words.t(Saver.diskFull).lowercased(), savedCount) }
         if !skippedLine.isEmpty { line += " " + skippedLine }
+        #if os(iOS)
+        if alreadyInPhotos > 0 { line += " " + Words.t("{0} already in Photos, not added again.", alreadyInPhotos) }
+        #endif
         if videosWithoutRoom > 0 {
             line += " " + (videosWithoutRoom == 1 ? Words.t("1 video saved without a location: its file has no room for one.")
                                                    : Words.t("{0} videos saved without a location: their files have no room for one.", videosWithoutRoom))

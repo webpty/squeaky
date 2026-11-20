@@ -43,52 +43,62 @@ struct PhotosTab: View {
                     }
                     // Every photo not saved, by name, with the full reason (0.29.28, David: "we need a button to show the error").
                     if model.results.values.contains(where: { if case .failed = $0 { return true }; return false }) {
-                        Button(Words.t("Show unsaved photos")) { showingFailed = true }
+                        Button(Words.t("Show unsaved")) { showingFailed = true }
+                            .buttonStyle(WideButton(.grey)).buttonRow()
                     }
                     // Why photos wait: one line for each reason, with how many.
                     ForEach(reasons, id: \.self) { line in
                         Sentences(text: line).foregroundStyle(.secondary)
                     }
-                }
+                }.cardRows()
                 // Locations added later to photos already in Photos (0.31.8, David).
                 if model.source == nil {
                     LibraryLocationsSection(model: model, library: library)
                 }
-                Section {
-                    if model.saving {
-                        Button(Words.t("Stop")) { model.stopSaving() }
-                    } else {
-                        if model.source == nil {
-                            // Everything saved and the card still in: nothing to open (0.29.40, David).
-                            if model.cardStillIn, allSaved {
-                                Text(Words.t("Copy done. Remove the card."))
-                            } else {
-                                Button(Words.t("Open card")) { choosing = true }
-                                    .disabled(model.photosBusy || model.macOwner == nil)
-                            }
-                            if !model.rows.isEmpty {
-                                Button(Words.t("Clear photos"), role: .destructive) { model.clearPhotos() }
-                                    .foregroundStyle(.red)
-                            }
+                // Real buttons, each group in its own card, no titles (0.34.4, David).
+                if model.saving {
+                    Section {
+                        Button(Words.t("Stop")) { model.stopSaving() }.buttonStyle(WideButton(.grey)).buttonRow()
+                    }.cardRows()
+                } else if model.source == nil {
+                    Section {
+                        // Everything saved and the card still in: nothing to open (0.29.40, David).
+                        if model.cardStillIn, allSaved {
+                            Text(Words.t("Copy done. Remove the card."))
                         } else {
-                            // Every photo on the card at once (0.31.3, David).
-                            let everything = !model.rows.isEmpty && model.rows.allSatisfy(\.ticked)
-                            Button(everything ? Words.t("Deselect all photos") : Words.t("Select all photos")) {
-                                model.setTicked(Set(model.rows.map(\.id)), !everything)
-                            }
-                            .tint(everything ? Color.purple : Color.heroBlue)
-                            .disabled(model.rows.isEmpty || model.photosBusy)
-                            Button(Words.t("Save selected photos")) { Task { await model.checkTracksBeforeSave() } }
-                                .disabled(!model.canSave)
-                            // Every photo on the card, the saved ones too when asked (0.32.1, David).
-                            Button(Words.t("Save all")) { model.saveAll() }
-                                .disabled(model.rows.isEmpty || model.photosBusy || model.importPerson == nil)
-                            Toggle(Words.t("Include previously saved"), isOn: $model.includeSaved)
-                                .disabled(model.photosBusy)
-                            Button(Words.t("Done with this card")) { model.letGo() }
-                                .disabled(model.photosBusy)
+                            Button(Words.t("Open card")) { choosing = true }
+                                .buttonStyle(WideButton(.blue)).buttonRow()
+                                .disabled(model.photosBusy || model.macOwner == nil)
                         }
-                    }
+                        if !model.rows.isEmpty {
+                            Button(Words.t("Clear"), role: .destructive) { model.clearPhotos() }
+                                .buttonStyle(WideButton(.red)).buttonRow()
+                        }
+                    }.cardRows()
+                } else {
+                    // Every photo on the card at once (0.31.3, David): blue to select, purple to deselect.
+                    // Only what can be chosen: with "Hide already saved" on, nothing saved (0.34.4).
+                    let choosable = model.choosable
+                    let everything = !choosable.isEmpty && choosable.allSatisfy(\.ticked)
+                    Section {
+                        Button(everything ? Words.t("Deselect all") : Words.t("Select all")) {
+                            model.setTicked(Set(choosable.map(\.id)), !everything)
+                        }
+                        .buttonStyle(WideButton(everything ? .purple : .blue)).buttonRow()
+                        .disabled(choosable.isEmpty || model.photosBusy)
+                    }.cardRows()
+                    Section {
+                        // Side by side, one above the other where the words are too long (0.34.4, David).
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 10) { saveButtons }
+                            VStack(spacing: 10) { saveButtons }
+                        }
+                        .buttonRow()
+                        Toggle(Words.t("Hide already saved"), isOn: $model.hideSaved)
+                            .disabled(model.photosBusy || model.saving)
+                    }.cardRows()
+                    // No "Done with this card": the iPhone has no eject; the card is let go of
+                    // once every photo is saved, or when it is taken out (0.34.4, David).
                 }
                 // The photos by day, to choose what is saved (0.31.0, David, 18 November 2026).
                 let days = PhotoDays.days(shown: shown, all: model.rows, model: model)
@@ -124,7 +134,7 @@ struct PhotosTab: View {
                             .listRowSeparator(.hidden)
                             .onAppear { pictures.make(day.frames.map(\.picture)) }
                         }
-                    }
+                    }.cardRows()
                 }
             }
             .onPreferenceChange(FrameSpots.self) { spotBox.all = $0 }
@@ -178,6 +188,17 @@ struct PhotosTab: View {
         }
     }
 
+    /// Save selected in blue, Save all in teal.
+    @ViewBuilder var saveButtons: some View {
+        Button(Words.t("Save selected")) { Task { await model.checkTracksBeforeSave() } }
+            .buttonStyle(WideButton(.blue))
+            .disabled(!model.canSave)
+        // Every photo on the card that can be chosen (0.32.1, David).
+        Button(Words.t("Save all")) { model.saveAll() }
+            .buttonStyle(WideButton(.teal))
+            .disabled(model.choosable.isEmpty || model.photosBusy || model.importPerson == nil)
+    }
+
     /// The photos shown, one square per frame: the JPG of a RAW+JPG pair.
     var shown: [ImportRow] {
         // While the card is in, every photo on it, to choose from (0.31.0); once out, the
@@ -188,7 +209,8 @@ struct PhotosTab: View {
                 // Card out: only a copy still on the phone has a picture; a raw sent to the server has none (0.29.14).
                 return cardIn || FileManager.default.fileExists(atPath: copy.path)
             }
-            return cardIn
+            // "Hide already saved" while the card is in (0.34.4, David).
+            return cardIn && !(model.hideSaved && model.isSaved(row))
         }
         var seen = Set<String>()
         // A JPG stands for its raw; a video for its RAW video (0.33.0).
@@ -469,11 +491,12 @@ struct NotSaved: View {
                             dismiss()
                             Task { await model.tryUnsavedAgain() }
                         }
+                        .buttonStyle(WideButton(.blue)).buttonRow()
                         .disabled(model.saving || model.photosBusy)
                     } else {
                         Text(Words.t("Insert the card to try again"))
                     }
-                }
+                }.cardRows()
                 Section {
                     ForEach(failed, id: \.0) { item in
                         VStack(alignment: .leading, spacing: 4) {
@@ -481,7 +504,7 @@ struct NotSaved: View {
                             Sentences(text: item.1).font(.callout).foregroundStyle(.secondary)
                         }
                     }
-                }
+                }.cardRows()
             }
             .navigationTitle(Words.t("Unsaved photos"))
             .navigationBarTitleDisplayMode(.inline)
@@ -567,7 +590,8 @@ struct Viewer: View {
             }
             .frame(height: Viewer.buttonRoom)
         }
-        .background(Color.black)
+        // Lighter than the page, so the panel stands apart from it (0.34.4, David).
+        .background(Palette.panel)
         .presentationDetents([.height(Viewer.height(tall: false)), .height(Viewer.height(tall: true))], selection: $detent)
         .presentationCornerRadius(14)
         .alert(Words.t("Are you sure?"), isPresented: $asking) {
@@ -630,7 +654,7 @@ struct ViewerPage: View {
 
     var body: some View {
         ZStack {
-            Color.black
+            Palette.panel
             if PhotoKinds.isRawVideo(frame.picture) {
                 RawVideoMark(size: 64)
             } else {

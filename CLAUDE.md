@@ -1715,3 +1715,25 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   clear of the corners (radius 14) and holds "Photo deleted" / "Video deleted"
   for two seconds. Delete sits in 64 points below. The height follows what is
   shown: a portrait photo (2:3) or a portrait video (9:16) across the width.
+
+## Buttons, grey, hiding what is saved, Photos checked (0.34.4, David, 20 November 2026)
+
+- Every action on the phone is a real button (`WideButton`: full width, 46
+  high, radius 12): Select all blue / Deselect all purple; Save selected blue
+  and Save all teal side by side (`ViewThatFits`: stacked where the words are
+  too long, French and Spanish); Clear red; others grey. Each group its own
+  card, no titles. "photos" is gone from the button words.
+- No "Done with this card" on the phone: no eject there; the card is let go
+  of once every photo is saved, or when taken out.
+- Dark mode is dark grey, not black (`Palette`: page 0.12, cards 0.20, panel
+  0.25); every list row takes `Palette.card` (`cardRows`). Light is unchanged.
+- "Hide already saved" (`hideSaved`, on to start, kept) replaces "Include
+  previously saved" on both: on, saved photos are hidden and cannot be
+  selected or saved (`choosable`); off, they show, and saving them copies
+  them again. The Mac's "Hide photos saved before" became the same switch.
+- The phone looks in the Photos library before adding a photo or video
+  (`PhoneLibrary.index`: assets taken within two days of the card's span, by
+  original file name, jpeg as jpg, and moment within 2 s, or 14 h without a
+  zone); one already there is not added again, AirDrops included, and the line
+  says "3 already in Photos, not added again." It still goes to the server.
+  Needs full access to Photos, asked once.
