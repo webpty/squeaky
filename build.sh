@@ -1,7 +1,7 @@
 #!/bin/zsh
-# Builds Geotag into build/ and, with "install", copies it to /Applications.
+# Builds Squeaky into build/ and, with "install", copies it to /Applications.
 # With "dmg", also puts it in a disk image for the family's Macs:
-# build/Geotag <version>.dmg. Built for both Apple chips and Intel (David,
+# build/Squeaky <version>.dmg. Built for both Apple chips and Intel (David,
 # 6 November 2026, bringing Intel back); the app's Download page makes a
 # disk image for one kind of Mac only.
 # Needs only the command line developer tools, no Xcode.
@@ -10,8 +10,8 @@
 set -e
 cd "$(dirname "$0")"
 
-name="Geotag"; display="Geotag"; bundle="com.webpty.geotag"
-version=$(grep 'let appVersion' Sources/GeotagCore/Version.swift | sed 's/.*"\(.*\)".*/\1/')
+name="Squeaky"; display="Squeaky"; bundle="com.webpty.squeaky"
+version=$(grep 'let appVersion' Sources/SqueakyCore/Version.swift | sed 's/.*"\(.*\)".*/\1/')
 mkdir -p build
 
 echo "Building $display $version"
@@ -40,7 +40,7 @@ cp -R Resources/CameraClock "$app/Contents/Resources/CameraClock"
 echo "Drawing the icon"
 mkdir -p build
 swiftc -O Tools/makeicon.swift -o build/makeicon
-./build/makeicon Resources/AppIcon.svg build/AppIcon.iconset
+./build/makeicon Resources/AppIcon.png build/AppIcon.iconset
 iconutil -c icns build/AppIcon.iconset -o "$app/Contents/Resources/AppIcon.icns"
 
 cat > "$app/Contents/Info.plist" <<PLIST

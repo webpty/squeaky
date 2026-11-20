@@ -1,0 +1,367 @@
+import Foundation
+import SwiftUI
+import SqueakyCore
+
+/// Whether the NAS answers, and at which address: asked as Squeaky opens,
+/// whenever the Queue page is shown, and with every photo sent.
+public enum NASReach: Equatable {
+    /// The first answer is not in yet.
+    case checking
+    case through(String)
+    case unreachable
+    /// No NAS address in Settings, or nobody with a NAS folder.
+    case notSetUp
+}
+
+/// The photos going up to the NAS now and how far each has got, kept apart
+/// from the model so that their progress redraws only what shows it.
+@MainActor
+public final class SendMeter: ObservableObject {
+    public struct Going: Equatable {
+        public var name: String
+        public var step: SendStep
+        public var weights = StepWeights.guess
+
+        /// How far the whole photo has got.
+        public var fraction: Double { step.whole(weights) }
+        public var percent: String { "\(Int((fraction * 100).rounded(.down)))%" }
+        /// "Sending 42%", the share of the whole photo.
+        public var text: String { "\(step.word) \(percent)" }
+    }
+
+    @Published public private(set) var going: [UUID: Going] = [:]
+    /// Oldest first, as they began.
+    public private(set) var order: [UUID] = []
+
+    public var count: Int { going.count }
+
+    /// How far the photos going up have got between them, as photos: two
+    /// halfway is 1.
+    public var done: Double { going.values.map(\.fraction).reduce(0, +) }
+
+    /// The one photo going up, when only one is.
+    public var only: Going? { going.count == 1 ? going.values.first : nil }
+
+    func begin(_ id: UUID, name: String, weights: StepWeights = .guess) {
+        going[id] = Going(name: name, step: .looking, weights: weights)
+        order.append(id)
+    }
+
+    func show(_ step: SendStep, for id: UUID) {
+        if let now = going[id], now.step != step { going[id]?.step = step }
+    }
+
+    func end(_ id: UUID) {
+        going[id] = nil
+        order.removeAll { $0 == id }
+    }
+}
+
+#if os(macOS)
+
+struct QueueRow: Identifiable {
+    let entry: QueueEntry
+    let person: String
+    var id: UUID { entry.id }
+    var name: String { (entry.relativePath as NSString).lastPathComponent }
+    var folder: String { (entry.relativePath as NSString).deletingLastPathComponent }
+    var saved: Date { entry.added }
+    /// Going up, waiting, not sent, on the NAS.
+    var status: Int {
+        switch entry.state {
+        case .sending: return 0
+        case .waiting: return 1
+        case .failed: return 2
+        case .sent: return 3
+        }
+    }
+}
+
+struct QueueScreen: View {
+    @EnvironmentObject var model: AppModel
+    /// Empty until a heading is clicked: the usual order. Not kept between launches.
+    @State private var order: [KeyPathComparator<QueueRow>] = []
+
+    static let sorts = SortColumns<QueueRow>(all: [
+        ("name", KeyPathComparator(\QueueRow.name)), ("person", KeyPathComparator(\QueueRow.person)),
+        ("folder", KeyPathComparator(\QueueRow.folder)), ("saved", KeyPathComparator(\QueueRow.saved)),
+        ("status", KeyPathComparator(\QueueRow.status)),
+    ])
+
+    /// What is going up, then what goes next, then what was not sent, then
+    /// what is on the NAS, newest first.
+    private var rows: [QueueRow] {
+        func rank(_ state: QueueState) -> Int {
+            switch state {
+            case .sending: return 0
+            case .waiting: return 1
+            case .failed: return 2
+            case .sent: return 3
+            }
+        }
+        let names = Dictionary(model.book.people.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
+        return model.queueEntries.sorted { a, b in
+            if rank(a.state) != rank(b.state) { return rank(a.state) < rank(b.state) }
+            if a.state == .sent { return (a.sent ?? a.added) > (b.sent ?? b.added) }
+            return a.added < b.added
+        }
+        .map { QueueRow(entry: $0, person: names[$0.personId] ?? "") }
+    }
+
+    var body: some View {
+        let entries = model.queueEntries
+        let waiting = entries.filter { $0.state == .waiting || $0.state == .sending }.count
+        let sent = entries.filter { $0.state == .sent }.count
+        let failed = entries.filter { $0.state == .failed }.count
+        VStack(alignment: .leading, spacing: Style.gap) {
+            HStack(spacing: Style.gap) {
+                ScreenTitle(text: "Queue")
+                Button {
+                    model.setSendPaused(!model.sendPaused)
+                } label: {
+                    Text(model.sendPaused ? "Resume" : "Pause").buttonLabel()
+                }
+                Button {
+                    model.retryFailed()
+                } label: {
+                    Text("Retry failed").buttonLabel()
+                }
+                .disabled(failed == 0)
+            }
+
+            // Which way photos go now (0.30.0, David).
+            if let route = model.sendRoute {
+                Text(route == .nas ? "Connected to server" : "Connected to buffer server").lineLimit(1)
+            }
+            HStack(spacing: Style.gap) {
+                Tile(label: "NAS", value: QueueText.reach(model.nasReach))
+                Tile(label: "Waiting", value: waiting.formatted())
+                Tile(label: "On the NAS", value: sent.formatted())
+                if model.bufferKeySaved, let held = model.bufferWaiting {
+                    Tile(label: "Waiting on the buffer server", value: held.formatted())
+                }
+                Tile(label: "Not sent", value: failed.formatted())
+                Tile(label: "Freed on this Mac", value: ByteCountFormatter.string(fromByteCount: model.freedOnMac, countStyle: .file))
+            }
+
+            if model.nasAway {
+                HStack(alignment: .firstTextBaseline, spacing: Style.gap) {
+                    StatusLine(text: AppModel.nasAwayText, lines: 2)
+                    if Tailscale.app != nil {
+                        Button {
+                            Tailscale.open()
+                        } label: {
+                            Text("Open Tailscale").buttonLabel()
+                        }
+                        .fixedSize()
+                    }
+                    Spacer()
+                }
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                SendBar(meter: model.meter).levelWithText()
+                SendingText(meter: model.meter)
+                StatusLine(text: model.queueLine, lines: 2)
+                Spacer()
+            }
+            .frame(minHeight: 40)
+
+            let by = Self.sorts.id(of: order)
+            Table(order.isEmpty ? rows : rows.sorted(using: order), sortOrder: $order) {
+                TableColumn(Text("Name").sortHeading(by == "name"), value: \QueueRow.name) { row in
+                    Text(row.name).lineLimit(1).sortTint(by == "name")
+                }
+                .width(min: 100, ideal: 140)
+                TableColumn(Text("Person").sortHeading(by == "person"), value: \QueueRow.person) { row in
+                    Text(row.person).lineLimit(1).sortTint(by == "person")
+                }
+                .width(min: 60, ideal: 80)
+                TableColumn(Text("Folder").sortHeading(by == "folder"), value: \QueueRow.folder) { row in
+                    Text(row.folder).monospacedDigit().lineLimit(1).sortTint(by == "folder")
+                }
+                .width(min: 80, ideal: 90)
+                TableColumn(Text("Saved").sortHeading(by == "saved"), value: \QueueRow.saved) { row in
+                    Text(When.current.dayAndTime(row.saved)).lineLimit(1).sortTint(by == "saved")
+                }
+                .width(min: 150, ideal: 180)
+                TableColumn(Text("Status").sortHeading(by == "status"), value: \QueueRow.status) { row in
+                    Group {
+                        if row.entry.state == .sending {
+                            SendingCell(meter: model.meter, id: row.entry.id)
+                        } else {
+                            Text(QueueText.status(row.entry))
+                                .foregroundStyle(row.entry.state == .sent ? .primary : .secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .sortTint(by == "status")
+                }
+                .width(min: 150, ideal: 220)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: Style.radius))
+        }
+        .padding(Style.pad * 1.5)
+        // The NAS box says whether the NAS answers now, not when last needed.
+        .task { await model.checkNAS() }
+    }
+}
+
+/// The bar for the photos going up now, all of them together; nothing when none is.
+struct SendBar: View {
+    @ObservedObject var meter: SendMeter
+
+    var body: some View {
+        if meter.count > 0 {
+            ProgressView(value: meter.done / Double(meter.count))
+                .frame(width: 200)
+        }
+    }
+}
+
+/// One photo's step, or with no photo named, the step of the only one going up.
+struct SendingText: View {
+    @ObservedObject var meter: SendMeter
+    var id: UUID?
+
+    var body: some View {
+        if let going = id == nil ? meter.only : meter.going[id!] {
+            Text(going.text).monospacedDigit().lineLimit(1)
+        }
+    }
+}
+
+/// One photo's step in a list cell: the step on the left, how far the whole
+/// photo has got at the far right, and a bar of that filling the cell behind
+/// them (David, 2 November 2026).
+struct SendingCell: View {
+    @ObservedObject var meter: SendMeter
+    let id: UUID
+
+    var body: some View {
+        if let going = meter.going[id] {
+            HStack(spacing: 8) {
+                Text(going.step.word).lineLimit(1)
+                Spacer(minLength: 0)
+                Text(going.percent).monospacedDigit().lineLimit(1)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .frame(maxWidth: .infinity)
+            .background(alignment: .leading) {
+                GeometryReader { geo in
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.accentColor.opacity(0.25))
+                        .frame(width: geo.size.width * going.fraction)
+                }
+            }
+            .background(RoundedRectangle(cornerRadius: 4).fill(Color.secondary.opacity(0.08)))
+        }
+    }
+}
+
+struct NASCard: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        Card(title: "NAS") {
+            Grid(alignment: .leading, horizontalSpacing: Style.gap, verticalSpacing: Style.gap) {
+                GridRow {
+                    Text("Address").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
+                    TextField("", text: $model.nasAddress)
+                        .textFieldStyle(.roundedBorder)
+                }
+                GridRow {
+                    Text("Backup address").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
+                    TextField("", text: $model.nasBackupAddress)
+                        .textFieldStyle(.roundedBorder)
+                }
+                GridRow {
+                    Text("User name").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
+                    TextField("", text: $model.nasUser)
+                        .textFieldStyle(.roundedBorder)
+                }
+                GridRow {
+                    Text("Password").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
+                    SecureField("", text: $model.nasPassword)
+                        .textFieldStyle(.roundedBorder)
+                }
+                GridRow {
+                    Text("Photos at once").lineLimit(1).frame(width: Style.labelWidth, alignment: .leading)
+                    Stepper(value: Binding(get: { model.sendAtOnce }, set: { model.setSendAtOnce($0) }), in: 1...6) {
+                        Text(model.sendAtOnce.formatted()).monospacedDigit().lineLimit(1)
+                    }
+                    .fixedSize()
+                }
+                GridRow {
+                    Text("Keep photos on this Mac").lineLimit(1).fixedSize()
+                    Picker("", selection: Binding(get: { model.keepOnMac }, set: { model.setKeepOnMac($0) })) {
+                        ForEach(KeepOnMac.allCases, id: \.self) { Text($0.label).tag($0) }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                }
+            }
+            HStack(alignment: .firstTextBaseline, spacing: Style.gap) {
+                Button {
+                    Task { await model.saveNAS() }
+                } label: {
+                    Text("Save").buttonLabel()
+                }
+                // Greyed out until a field changes.
+                .disabled(!model.nasUnsaved)
+                Button {
+                    Task { await model.testNAS() }
+                } label: {
+                    Text("Test connection").buttonLabel()
+                }
+                .disabled(!model.canTestNAS)
+                StatusLine(text: model.nasLine, lines: 2, busy: model.nasBusy)
+            }
+            .disabled(model.nasBusy)
+        }
+    }
+}
+
+/// The Queue page and the NAS card on their own, for pictures made off-screen.
+public struct QueueScreenProbe: View {
+    public init() {}
+    public var body: some View { QueueScreen() }
+}
+
+/// Status cells for photos at each step, for a picture made off-screen.
+public struct SendingCellsProbe: View {
+    @StateObject private var meter: SendMeter = {
+        let meter = SendMeter()
+        for (i, step) in [SendStep.looking, .sending(0.42), .checking(0.8), .naming].enumerated() {
+            let id = UUID(uuid: (UInt8(i), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+            meter.begin(id, name: "IMG_\(i).JPG")
+            meter.show(step, for: id)
+        }
+        return meter
+    }()
+
+    public init() {}
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(meter.order, id: \.self) { id in
+                SendingCell(meter: meter, id: id).frame(width: 220)
+            }
+        }
+        .padding(Style.pad)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+public struct NASCardProbe: View {
+    public init() {}
+    public var body: some View {
+        NASCard()
+            .padding(Style.pad * 1.5)
+            .frame(width: 720)
+            .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+#endif

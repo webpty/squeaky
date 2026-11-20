@@ -2,18 +2,18 @@
 import PackageDescription
 
 let package = Package(
-    name: "Geotag",
+    name: "Squeaky",
     platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
-        .library(name: "GeotagCore", targets: ["GeotagCore"]),
-        .library(name: "GeotagUI", targets: ["GeotagUI"]),
-        .executable(name: "Geotag", targets: ["GeotagApp"]),
+        .library(name: "SqueakyCore", targets: ["SqueakyCore"]),
+        .library(name: "SqueakyUI", targets: ["SqueakyUI"]),
+        .executable(name: "Squeaky", targets: ["SqueakyApp"]),
         .executable(name: "SelfTest", targets: ["SelfTest"]),
     ],
     targets: [
-        .target(name: "GeotagCore"),
-        .target(name: "GeotagUI", dependencies: ["GeotagCore"]),
-        .executableTarget(name: "GeotagApp", dependencies: ["GeotagCore", "GeotagUI"]),
-        .executableTarget(name: "SelfTest", dependencies: ["GeotagCore", "GeotagUI"]),
+        .target(name: "SqueakyCore"),
+        .target(name: "SqueakyUI", dependencies: ["SqueakyCore"]),
+        .executableTarget(name: "SqueakyApp", dependencies: ["SqueakyCore", "SqueakyUI"]),
+        .executableTarget(name: "SelfTest", dependencies: ["SqueakyCore", "SqueakyUI"]),
     ]
 )

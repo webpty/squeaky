@@ -1,0 +1,6 @@
+"CFBundleDisplayName" = "Squeaky";
+"NSPhotoLibraryAddUsageDescription" = "Squeaky adds the photos it saves from your cards.";
+"NSPhotoLibraryUsageDescription" = "Squeaky adds locations to photos in Photos that have none.";
+"NSBluetoothAlwaysUsageDescription" = "Squeaky receives tracks from the Squeaky app on your Garmin watch.";
+"NSBluetoothPeripheralUsageDescription" = "Squeaky receives tracks from the Squeaky app on your Garmin watch.";
+"NSLocalNetworkUsageDescription" = "Squeaky passes tracks from the watch to family phones nearby.";

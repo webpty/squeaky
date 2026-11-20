@@ -1,4 +1,4 @@
-// Turns Resources/AppIcon.svg into an iconset: the artwork placed in the
+// Turns Resources/AppIcon.png into an iconset: the artwork placed in the
 // Mac's rounded-square shape, on Apple's 1024 grid (an 824 square with
 // rounded corners and a soft shadow), at every size the icon needs.
 //

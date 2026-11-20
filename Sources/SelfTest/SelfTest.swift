@@ -1,17 +1,17 @@
 import AppKit
 import AVFoundation
 import Foundation
-import GeotagCore
-import GeotagUI
+import SqueakyCore
+import SqueakyUI
 import SwiftUI
 import DiskArbitration
 
 // Checks the rules without the interface. Everything happens in a temporary
 // folder; the real library in Application Support is never touched.
 //
-//   GEOTAG_SCRATCH=<folder> swift run -c release SelfTest [fit folder] [service address]
+//   SQUEAKY_SCRATCH=<folder> swift run -c release SelfTest [fit folder] [service address]
 //
-// Its files go in a new folder inside GEOTAG_SCRATCH; set it to a scratch
+// Its files go in a new folder inside SQUEAKY_SCRATCH; set it to a scratch
 // folder, since nothing on David's Mac is ever deleted.
 // With a fit folder, Garmin's sample files in it are read. With a service
 // address (a local copy of the track service holding the test keys
@@ -36,32 +36,32 @@ struct SelfTest {
 
     static func main() async {
         let args = CommandLine.arguments
-        let root = ProcessInfo.processInfo.environment["GEOTAG_SCRATCH"].map { URL(fileURLWithPath: $0) }
+        let root = ProcessInfo.processInfo.environment["SQUEAKY_SCRATCH"].map { URL(fileURLWithPath: $0) }
             ?? FileManager.default.temporaryDirectory
-        let scratch = root.appendingPathComponent("geotag-selftest-\(UUID().uuidString)")
+        let scratch = root.appendingPathComponent("squeaky-selftest-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
-        if ProcessInfo.processInfo.environment["GEOTAG_QUIT_CHILD"] != nil {
+        if ProcessInfo.processInfo.environment["SQUEAKY_QUIT_CHILD"] != nil {
             await quitChild()
         }
         let realBefore = realData()
-        if ProcessInfo.processInfo.environment["GEOTAG_TABLE_STRESS"] != nil {
-            await tableStress(scratch, count: Int(ProcessInfo.processInfo.environment["GEOTAG_TABLE_STRESS"] ?? "") ?? 3600)
-            check("tests left David's own Geotag files alone", realData() == realBefore)
+        if ProcessInfo.processInfo.environment["SQUEAKY_TABLE_STRESS"] != nil {
+            await tableStress(scratch, count: Int(ProcessInfo.processInfo.environment["SQUEAKY_TABLE_STRESS"] ?? "") ?? 3600)
+            check("tests left David's own Squeaky files alone", realData() == realBefore)
             print(failures == 0 ? "all passed" : "\(failures) failed")
             exit(failures == 0 ? 0 : 1)
         }
 
-        if let originals = ProcessInfo.processInfo.environment["GEOTAG_ORIGINALS"] {
+        if let originals = ProcessInfo.processInfo.environment["SQUEAKY_ORIGINALS"] {
             nativeWriting(scratch, originals: URL(fileURLWithPath: originals))
-            if ProcessInfo.processInfo.environment["GEOTAG_NATIVE_ONLY"] != nil {
+            if ProcessInfo.processInfo.environment["SQUEAKY_NATIVE_ONLY"] != nil {
                 print(failures == 0 ? "all passed" : "\(failures) failed")
                 exit(failures == 0 ? 0 : 1)
             }
         }
         people(scratch)
-        if let samples = ProcessInfo.processInfo.environment["GEOTAG_SAMPLES"] {
+        if let samples = ProcessInfo.processInfo.environment["SQUEAKY_SAMPLES"] {
             saving(scratch, samples: URL(fileURLWithPath: samples),
-                   raws: ProcessInfo.processInfo.environment["GEOTAG_RAWS"].map { URL(fileURLWithPath: $0) })
+                   raws: ProcessInfo.processInfo.environment["SQUEAKY_RAWS"].map { URL(fileURLWithPath: $0) })
             altitude(scratch, samples: URL(fileURLWithPath: samples))
             await savingEdges(scratch, samples: URL(fileURLWithPath: samples))
             await placingLater(scratch, samples: URL(fileURLWithPath: samples), sendFirst: false)
@@ -72,11 +72,11 @@ struct SelfTest {
             await menuBar(scratch, samples: URL(fileURLWithPath: samples))
             heif(scratch, samples: URL(fileURLWithPath: samples))
             await firmware(scratch, samples: URL(fileURLWithPath: samples),
-                           raws: ProcessInfo.processInfo.environment["GEOTAG_RAWS"].map { URL(fileURLWithPath: $0) })
+                           raws: ProcessInfo.processInfo.environment["SQUEAKY_RAWS"].map { URL(fileURLWithPath: $0) })
             await lenses(scratch, samples: URL(fileURLWithPath: samples),
-                         raws: ProcessInfo.processInfo.environment["GEOTAG_RAWS"].map { URL(fileURLWithPath: $0) })
+                         raws: ProcessInfo.processInfo.environment["SQUEAKY_RAWS"].map { URL(fileURLWithPath: $0) })
             await clocks(scratch, samples: URL(fileURLWithPath: samples),
-                         raws: ProcessInfo.processInfo.environment["GEOTAG_RAWS"].map { URL(fileURLWithPath: $0) })
+                         raws: ProcessInfo.processInfo.environment["SQUEAKY_RAWS"].map { URL(fileURLWithPath: $0) })
         }
         await serverList(scratch)
         trackNames()
@@ -106,41 +106,41 @@ struct SelfTest {
         matching(scratch)
         await videos(scratch)
         names()
-        if ProcessInfo.processInfo.environment["GEOTAG_MOUNT_TEST"] != nil { await cardArrives(scratch) }
-        if ProcessInfo.processInfo.environment["GEOTAG_GUARD_TEST"] != nil { await guardTest(scratch) }
-        if ProcessInfo.processInfo.environment["GEOTAG_VIEWER"] != nil { await photosPicture(scratch) }
-        if let key = ProcessInfo.processInfo.environment["GEOTAG_MAP_KEY"], ProcessInfo.processInfo.environment["GEOTAG_ALIGN"] != nil {
+        if ProcessInfo.processInfo.environment["SQUEAKY_MOUNT_TEST"] != nil { await cardArrives(scratch) }
+        if ProcessInfo.processInfo.environment["SQUEAKY_GUARD_TEST"] != nil { await guardTest(scratch) }
+        if ProcessInfo.processInfo.environment["SQUEAKY_VIEWER"] != nil { await photosPicture(scratch) }
+        if let key = ProcessInfo.processInfo.environment["SQUEAKY_MAP_KEY"], ProcessInfo.processInfo.environment["SQUEAKY_ALIGN"] != nil {
             await alignmentPicture(scratch, key: key)
         }
         gpx(scratch)
         if args.count > 1, !args[1].isEmpty { fit(URL(fileURLWithPath: args[1])) }
         if args.count > 2 { await library(scratch, address: args[2]) }
         await thumbnail(scratch)
-        if let key = ProcessInfo.processInfo.environment["GEOTAG_MAP_KEY"] {
+        if let key = ProcessInfo.processInfo.environment["SQUEAKY_MAP_KEY"] {
             await mapStress(scratch, key: key)
         }
-        if let key = ProcessInfo.processInfo.environment["GEOTAG_MAP_KEY"], ProcessInfo.processInfo.environment["GEOTAG_VIEWER"] != nil {
+        if let key = ProcessInfo.processInfo.environment["SQUEAKY_MAP_KEY"], ProcessInfo.processInfo.environment["SQUEAKY_VIEWER"] != nil {
             await viewerPicture(scratch, key: key)
         }
-        if ProcessInfo.processInfo.environment["GEOTAG_GALLERY"] != nil {
-            await gallery(scratch, samples: ProcessInfo.processInfo.environment["GEOTAG_SAMPLES"].map { URL(fileURLWithPath: $0) },
-                          key: ProcessInfo.processInfo.environment["GEOTAG_MAP_KEY"])
+        if ProcessInfo.processInfo.environment["SQUEAKY_GALLERY"] != nil {
+            await gallery(scratch, samples: ProcessInfo.processInfo.environment["SQUEAKY_SAMPLES"].map { URL(fileURLWithPath: $0) },
+                          key: ProcessInfo.processInfo.environment["SQUEAKY_MAP_KEY"])
         }
 
         let realAfter = realData()
         let touched = Set(realBefore.keys).union(realAfter.keys).filter { realBefore[$0] != realAfter[$0] }.sorted()
-        check("tests left David's own Geotag files alone", touched.isEmpty, "\(touched)")
+        check("tests left David's own Squeaky files alone", touched.isEmpty, "\(touched)")
 
         print(failures == 0 ? "all passed" : "\(failures) failed")
         print("scratch: \(scratch.path)")
         exit(failures == 0 ? 0 : 1)
     }
 
-    /// Size and last change of Geotag's own records on this Mac. The tests
+    /// Size and last change of Squeaky's own records on this Mac. The tests
     /// must work only in their scratch folder, never in these.
     static func realData() -> [String: String] {
         let fm = FileManager.default
-        let folder = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Geotag")
+        let folder = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Squeaky")
         var out: [String: String] = [:]
         var paths = ["people.json", "queue.json", "unplaced.json", "temperatures.json", "photos.json"]
         paths += ((try? fm.contentsOfDirectory(atPath: folder.appendingPathComponent("History").path)) ?? []).map { "History/\($0)" }
@@ -211,7 +211,7 @@ struct SelfTest {
         let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
         check("exiftool: camera read with its zone", CameraReader.read(withZone, exifTool: tool) == CameraReading(model: "Canon EOS R5m2", zone: "-05:00"))
         check("exiftool: camera read, no zone", CameraReader.read(without, exifTool: tool) == CameraReading(model: "Canon EOS REBEL T3i", zone: nil))
-        if let folder = ProcessInfo.processInfo.environment["GEOTAG_SAMPLES"] {
+        if let folder = ProcessInfo.processInfo.environment["SQUEAKY_SAMPLES"] {
             let files = (try? FileManager.default.contentsOfDirectory(atPath: folder))?.sorted() ?? []
             for name in files where !name.hasPrefix(".") {
                 let r = CameraReader.read(URL(fileURLWithPath: folder).appendingPathComponent(name), exifTool: tool)
@@ -370,9 +370,9 @@ struct SelfTest {
         let z = MapThumbnails.zoom(bounds, size: MapThumbnails.size)
         check("map: a walk gets a close zoom", (11...12).contains(z), "zoom \(z)")
 
-        // Drawing needs a real key: GEOTAG_MAP_KEY, with the tile addresses the service hands out.
-        guard let key = ProcessInfo.processInfo.environment["GEOTAG_MAP_KEY"], !key.isEmpty else {
-            print("skip  map pictures: no GEOTAG_MAP_KEY")
+        // Drawing needs a real key: SQUEAKY_MAP_KEY, with the tile addresses the service hands out.
+        guard let key = ProcessInfo.processInfo.environment["SQUEAKY_MAP_KEY"], !key.isEmpty else {
+            print("skip  map pictures: no SQUEAKY_MAP_KEY")
             return
         }
         let templates = [
@@ -535,7 +535,7 @@ extension SelfTest {
         let after = files.map { (try? fm.attributesOfItem(atPath: $0.path)[.modificationDate] as? Date) ?? nil }
         check("card: nothing on it changed", before == after)
 
-        if let folder = ProcessInfo.processInfo.environment["GEOTAG_SAMPLES"] {
+        if let folder = ProcessInfo.processInfo.environment["SQUEAKY_SAMPLES"] {
             let real = (try? PhotoScanner(exifTool: tool).scan(PhotoScanner.files(in: URL(fileURLWithPath: folder))) { _ in }) ?? []
             for p in real { print("card   \(p.fileName): \(p.taken ?? "-").\(p.subSeconds ?? "") \(p.zone ?? "-") \(p.model ?? "-")") }
         }
@@ -751,7 +751,7 @@ extension SelfTest {
 
 extension SelfTest {
     /// The card guard on a test disk only (volume GTTEST, marker folder
-    /// GEOTAG_TEST, so nothing else on the Mac takes it for a camera card).
+    /// SQUEAKY_TEST, so nothing else on the Mac takes it for a camera card).
     /// It must open it hidden and read-only, then force it off and eject it.
     @MainActor
     static func guardTest(_ scratch: URL) async {
@@ -777,16 +777,16 @@ extension SelfTest {
             return (p.terminationStatus, String(data: data, encoding: .utf8) ?? "")
         }
         let src = scratch.appendingPathComponent("guard-src")
-        try? FileManager.default.createDirectory(at: src.appendingPathComponent("GEOTAG_TEST"), withIntermediateDirectories: true)
-        try? "x".write(to: src.appendingPathComponent("GEOTAG_TEST/a.txt"), atomically: true, encoding: .utf8)
-        // The Mac's own format, so a Geotag running on this Mac, which only
+        try? FileManager.default.createDirectory(at: src.appendingPathComponent("SQUEAKY_TEST"), withIntermediateDirectories: true)
+        try? "x".write(to: src.appendingPathComponent("SQUEAKY_TEST/a.txt"), atomically: true, encoding: .utf8)
+        // The Mac's own format, so a Squeaky running on this Mac, which only
         // looks at FAT and exFAT cards, leaves the test disk alone.
         let image = scratch.appendingPathComponent("guard-\(refuse).dmg")
         guard run("/usr/bin/hdiutil", ["create", "-quiet", "-srcfolder", src.path, "-volname", "GTTEST", "-fs", "HFS+", image.path]).0 == 0 else {
             check("\(label): test disk made", false)
             return
         }
-        let guardian = CardGuard(marker: "GEOTAG_TEST", refuseAtApproval: refuse) { d in d[kDADiskDescriptionVolumeNameKey as String] as? String == "GTTEST" }
+        let guardian = CardGuard(marker: "SQUEAKY_TEST", refuseAtApproval: refuse) { d in d[kDADiskDescriptionVolumeNameKey as String] as? String == "GTTEST" }
         var heldCard: PhotoSource?
         var gone: [String] = []
         var problems: [String] = []
@@ -803,10 +803,10 @@ extension SelfTest {
         check("\(label): hidden from Finder", line.contains("nobrowse"), line)
         let wrote = FileManager.default.createFile(atPath: card.url.appendingPathComponent("written.txt").path, contents: Data("x".utf8))
         check("\(label): nothing can be written to it", !wrote)
-        check("\(label): still readable", (try? String(contentsOf: card.url.appendingPathComponent("GEOTAG_TEST/a.txt"), encoding: .utf8)) == "x")
+        check("\(label): still readable", (try? String(contentsOf: card.url.appendingPathComponent("SQUEAKY_TEST/a.txt"), encoding: .utf8)) == "x")
 
         // Something holding a file open does not stop the eject.
-        let handle = FileHandle(forReadingAtPath: card.url.appendingPathComponent("GEOTAG_TEST/a.txt").path)
+        let handle = FileHandle(forReadingAtPath: card.url.appendingPathComponent("SQUEAKY_TEST/a.txt").path)
         var answer: String?? = .none
         let started = Date()
         guardian.eject(bsd) { answer = .some($0) }
@@ -954,7 +954,7 @@ extension SelfTest {
         }
         check("save: JPEG ends .jpg", fm.fileExists(atPath: out.appendingPathComponent("2025.03.23/RENAME_ME.jpg").path)
               || saved.contains { $0.1.url?.lastPathComponent == "RENAME_ME.jpg" })
-        let leftovers = (fm.enumerator(atPath: out.path)?.allObjects as? [String] ?? []).filter { $0.contains(".geotag-") || $0.contains("exiftool_tmp") }
+        let leftovers = (fm.enumerator(atPath: out.path)?.allObjects as? [String] ?? []).filter { $0.contains(".squeaky-") || $0.contains("exiftool_tmp") }
         check("save: no working copies left behind", leftovers.isEmpty, "\(leftovers)")
         check("save: the card untouched", fingerprints() == before)
 
@@ -997,19 +997,19 @@ extension SelfTest {
         check("save: an ordinary time and day", plain.contains("-GPS:GPSTimeStamp=15:04:05.00") && plain.contains("-GPS:GPSDateStamp=2027:01:12"))
         check("save: below sea level", plain.contains("-GPS:GPSAltitude=3.00") && plain.contains("-GPS:GPSAltitudeRef#=1"))
 
-        // Leftovers: only Geotag's own working copies go.
+        // Leftovers: only Squeaky's own working copies go.
         let out = scratch.appendingPathComponent("EDGES")
         let day = out.appendingPathComponent("2026.01.01")
         try? fm.createDirectory(at: day, withIntermediateDirectories: true)
-        try? "x".write(to: day.appendingPathComponent(".IMG_1.geotag-ABCDEF12.JPG"), atomically: true, encoding: .utf8)
-        try? "x".write(to: day.appendingPathComponent(".IMG_2.geotag-0123ABCD"), atomically: true, encoding: .utf8)
+        try? "x".write(to: day.appendingPathComponent(".IMG_1.squeaky-ABCDEF12.JPG"), atomically: true, encoding: .utf8)
+        try? "x".write(to: day.appendingPathComponent(".IMG_2.squeaky-0123ABCD"), atomically: true, encoding: .utf8)
         try? "x".write(to: day.appendingPathComponent(".hidden-of-his"), atomically: true, encoding: .utf8)
-        try? "x".write(to: day.appendingPathComponent("IMG_3.geotag-ABCDEF12.JPG"), atomically: true, encoding: .utf8)
+        try? "x".write(to: day.appendingPathComponent("IMG_3.squeaky-ABCDEF12.JPG"), atomically: true, encoding: .utf8)
         let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
         let saver = Saver(exifTool: tool, folder: out)
         saver.clearLeftovers()
         let left = Set((try? fm.contentsOfDirectory(atPath: day.path)) ?? [])
-        check("save: only Geotag's own leftovers cleared", left == [".hidden-of-his", "IMG_3.geotag-ABCDEF12.JPG"], "\(left.sorted())")
+        check("save: only Squeaky's own leftovers cleared", left == [".hidden-of-his", "IMG_3.squeaky-ABCDEF12.JPG"], "\(left.sorted())")
 
         // Saved before with another location: the earlier copy is kept and it says so.
         guard let jpg = ((try? fm.contentsOfDirectory(at: samples, includingPropertiesForKeys: nil)) ?? [])
@@ -1024,7 +1024,7 @@ extension SelfTest {
         if case .saved = first { check("save: first save", true) } else { check("save: first save", false, "\(first)") }
         check("save: saved before with another location says so", { if case .failed(let w) = second { return w == "Previously saved in another location" } else { return false } }(), "\(second)")
         check("save: the same location again is already there", { if case .alreadyThere = third { return true } else { return false } }(), "\(third)")
-        // The note that Geotag added the location: in the copy, and read by the Mac's own photo reading too.
+        // The note that Squeaky added the location: in the copy, and read by the Mac's own photo reading too.
         if case .saved(let url) = first {
             let note = (try? tool.read(["GPSProcessingMethod"], from: url))?["GPSProcessingMethod"]
             var mac = "-"
@@ -1033,8 +1033,8 @@ extension SelfTest {
                let gps = props[kCGImagePropertyGPSDictionary] as? [CFString: Any] {
                 mac = "\(gps[kCGImagePropertyGPSProcessingMethod] ?? "-")"
             }
-            check("save: the copy says Geotag added its location", note == "GPS coordinates added by Geotag.app"
-                  && mac == "GPS coordinates added by Geotag.app", "ExifTool: \(note ?? "-"); the Mac: \(mac)")
+            check("save: the copy says Squeaky added its location", note == "GPS coordinates added by Squeaky.app"
+                  && mac == "GPS coordinates added by Squeaky.app", "ExifTool: \(note ?? "-"); the Mac: \(mac)")
             let card = (try? tool.read(["GPSProcessingMethod"], from: jpg))?["GPSProcessingMethod"]
             check("save: the card's photo has no such note", card != Saver.processingMethod, card ?? "")
         }
@@ -1183,7 +1183,7 @@ extension SelfTest {
             check("\(tag): off the list, once on the queue", ((try? unplacedFile.load()) ?? []).isEmpty
                   && queued.count == 1 && !queued[0].update)
         }
-        let leftovers = (fm.enumerator(atPath: saveTo.path)?.allObjects as? [String] ?? []).filter { $0.contains(".geotag-") }
+        let leftovers = (fm.enumerator(atPath: saveTo.path)?.allObjects as? [String] ?? []).filter { $0.contains(".squeaky-") }
         check("\(tag): no working copies left", leftovers.isEmpty, "\(leftovers)")
         check("\(tag): said on the Photos page", model.photosLine.contains("now has its location"), model.photosLine)
     }
@@ -1401,7 +1401,7 @@ extension SelfTest {
         func model(_ tag: String) -> AppModel {
             let people = familyFile(scratch.appendingPathComponent("sl-\(tag)-people.json"))
             if var book = try? people.load() {
-                for i in book.people.indices { book.people[i].nasFolder = "homes/\(book.people[i].name.lowercased())/Geotag" }
+                for i in book.people.indices { book.people[i].nasFolder = "homes/\(book.people[i].name.lowercased())/Squeaky" }
                 try? people.save(book)
             }
             return AppModel(library: TrackLibrary(store: TrackStoreFolder(folder: scratch.appendingPathComponent("sl-\(tag)-tracks"))),
@@ -1422,7 +1422,7 @@ extension SelfTest {
         let saved = photos.map { HistoryEntry(fileName: $0.fileName, size: $0.size, taken: $0.taken, subSeconds: $0.subSeconds, imported: Date()) }
         try? HistoryStoreFolder(folder: scratch.appendingPathComponent("sl-a-history")).save(davidA, saved)
         await first.publishHistory(davidA)
-        let listed = fm.fileExists(atPath: scratch.appendingPathComponent("SL-NAS/homes/david/Geotag/~Geotag").path)
+        let listed = fm.fileExists(atPath: scratch.appendingPathComponent("SL-NAS/homes/david/Squeaky/~Squeaky").path)
         let onServer = await second.serverHistory(davidB)
         check("server list: one Mac's photos saved are listed on the server for the other", listed && onServer.count == 4,
               "\(onServer.count) listed")
@@ -1443,7 +1443,7 @@ extension SelfTest {
             await second.pullCameras(davidB)
             let got = second.book.camera(personId: davidB, model: "Canon EOS R5m2")?.offsetSeconds
             check("server list: a camera offset set on one Mac reaches the other", got == 7, "\(String(describing: got))")
-        let shared = ServerList.readShared(from: scratch.appendingPathComponent("SL-NAS/homes/david/Geotag"))
+        let shared = ServerList.readShared(from: scratch.appendingPathComponent("SL-NAS/homes/david/Squeaky"))
         check("server list: one shared list and one camera list, no per-device files",
               shared.saved?.entries.count == 4 && shared.cameras != nil && shared.oldFiles.isEmpty, "\(shared.oldFiles)")
             if var theirs = second.book.camera(personId: davidB, model: "Canon EOS R5m2") {
@@ -1560,8 +1560,8 @@ final class FakeNAS: NASPort, @unchecked Sendable {
 
 extension SelfTest {
     /// Sending one photo: checked on arrival, never overwriting, `_2` for
-    /// another photo, Geotag's own earlier copy replaced only as an update,
-    /// and only Geotag's own old leftovers cleared.
+    /// another photo, Squeaky's own earlier copy replaced only as an update,
+    /// and only Squeaky's own old leftovers cleared.
     static func nasSending(_ scratch: URL, samples: URL) {
         let fm = FileManager.default
         let tool = ExifTool(script: URL(fileURLWithPath: "Vendor/ExifTool/exiftool"))
@@ -1610,10 +1610,10 @@ extension SelfTest {
         check("nas: not an update, the NAS copy is kept and it says so", refused == .failure(.failed("Already on the NAS with another location"))
               && Saver.sha256(there) == firstHash, "\(refused)")
         let replaced = send(placed, update: true)
-        check("nas: as an update, Geotag's earlier copy is replaced", replaced == .success(.replaced(there))
+        check("nas: as an update, Squeaky's earlier copy is replaced", replaced == .success(.replaced(there))
               && Saver.sha256(there) == Saver.sha256(placed) && hidden().isEmpty, "\(replaced) \(hidden())")
 
-        // The same photo at the same place, written by a Geotag without the note: it is there already.
+        // The same photo at the same place, written by a Squeaky without the note: it is there already.
         let older = mac.appendingPathComponent("older.jpg")
         try? fm.copyItem(at: placed, to: older)
         _ = try? tool.run(["-q", "-q", "-overwrite_original", "-P", "-GPS:GPSProcessingMethod=", older.path])
@@ -1623,18 +1623,18 @@ extension SelfTest {
         check("nas: the same photo and place, written a little differently, is already there", noteGone
               && same == .success(.alreadyThere(there)) && Saver.sha256(there) == current, "\(same)")
 
-        // Leftovers: only Geotag's own unfinished uploads, an hour old.
+        // Leftovers: only Squeaky's own unfinished uploads, an hour old.
         let old = Date().addingTimeInterval(-7200)
-        for (name, date) in [(".A.geotag-up-ABCDEF12.jpg", old), (".B.geotag-up-12345678.jpg", Date()),
-                             (".his-hidden", old), ("C.geotag-up-ABCDEF12.jpg", old), (".D.geotag-old-ABCDEF12.jpg", old)] {
+        for (name, date) in [(".A.squeaky-up-ABCDEF12.jpg", old), (".B.squeaky-up-12345678.jpg", Date()),
+                             (".his-hidden", old), ("C.squeaky-up-ABCDEF12.jpg", old), (".D.squeaky-old-ABCDEF12.jpg", old)] {
             let url = day.appendingPathComponent(name)
             try? "x".write(to: url, atomically: true, encoding: .utf8)
             try? fm.setAttributes([.modificationDate: date], ofItemAtPath: url.path)
         }
         NASSender.clearLeftovers(in: day)
         let left = Set((try? fm.contentsOfDirectory(atPath: day.path)) ?? [])
-        check("nas: only Geotag's own old unfinished uploads cleared", !left.contains(".A.geotag-up-ABCDEF12.jpg")
-              && left.isSuperset(of: [".B.geotag-up-12345678.jpg", ".his-hidden", "C.geotag-up-ABCDEF12.jpg", ".D.geotag-old-ABCDEF12.jpg",
+        check("nas: only Squeaky's own old unfinished uploads cleared", !left.contains(".A.squeaky-up-ABCDEF12.jpg")
+              && left.isSuperset(of: [".B.squeaky-up-12345678.jpg", ".his-hidden", "C.squeaky-up-ABCDEF12.jpg", ".D.squeaky-old-ABCDEF12.jpg",
                                       "DAVL3660.jpg", "DAVL3660_2.jpg"]), "\(left.sorted())")
 
         let gone = send(mac.appendingPathComponent("not-there.jpg"))
@@ -1752,7 +1752,7 @@ extension SelfTest {
         check("queue: after a restart, the same list", again2.queueEntries.map(\.state) == model.queueEntries.map(\.state))
 
         // Pictures of the Queue page and the NAS card, off-screen.
-        guard ProcessInfo.processInfo.environment["GEOTAG_VIEWER"] != nil else { return }
+        guard ProcessInfo.processInfo.environment["SQUEAKY_VIEWER"] != nil else { return }
         model.nasAddress = "smb://10.0.10.10"
         model.nasBackupAddress = "smb://100.99.144.35"
         model.nasUser = "david"
@@ -1916,7 +1916,7 @@ extension SelfTest {
 
 extension SelfTest {
     /// Every screen, window and sheet drawn off-screen in light and in dark,
-    /// with test tracks, a test card and a stand-in NAS (GEOTAG_GALLERY=1).
+    /// with test tracks, a test card and a stand-in NAS (SQUEAKY_GALLERY=1).
     /// The pictures land in the run's scratch folder, under "gallery".
     @MainActor
     static func gallery(_ scratch: URL, samples: URL?, key: String?) async {
@@ -2086,7 +2086,7 @@ extension SelfTest {
     static func download(_ scratch: URL) {
         let fm = FileManager.default
         let bundle = scratch.appendingPathComponent("Stand-in.app")
-        let program = bundle.appendingPathComponent("Contents/MacOS/Geotag")
+        let program = bundle.appendingPathComponent("Contents/MacOS/Squeaky")
         try? fm.createDirectory(at: program.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? "first".write(to: program, atomically: true, encoding: .utf8)
         let folder = scratch.appendingPathComponent("DOWNLOADS")
@@ -2110,7 +2110,7 @@ extension SelfTest {
             defer { _ = hdiutil(["detach", "-quiet", mount.path]) }
             return (Set((try? fm.contentsOfDirectory(atPath: mount.path)) ?? []),
                     try? fm.destinationOfSymbolicLink(atPath: mount.appendingPathComponent("Applications").path),
-                    try? String(contentsOf: mount.appendingPathComponent("Geotag.app/Contents/MacOS/Geotag"), encoding: .utf8))
+                    try? String(contentsOf: mount.appendingPathComponent("Squeaky.app/Contents/MacOS/Squeaky"), encoding: .utf8))
         }
 
         let first: URL?
@@ -2118,18 +2118,18 @@ extension SelfTest {
             check("download: made", false, error.localizedDescription)
             return
         }
-        check("download: made, named by version and kind of Mac", first?.lastPathComponent == "Geotag 9.9.9 Apple silicon.dmg", "\(String(describing: first))")
+        check("download: made, named by version and kind of Mac", first?.lastPathComponent == "Squeaky 9.9.9 Apple silicon.dmg", "\(String(describing: first))")
         let a = first.flatMap(look)
-        check("download: Geotag beside a shortcut to Applications", a?.inside == ["Geotag.app", "Applications"]
+        check("download: Squeaky beside a shortcut to Applications", a?.inside == ["Squeaky.app", "Applications"]
               && a?.link == "/Applications" && a?.program == "first", "\(String(describing: a))")
 
         try? "second".write(to: program, atomically: true, encoding: .utf8)
         let second = try? Installer.save(app: bundle, version: "9.9.9", into: folder)
         let names = ((try? fm.contentsOfDirectory(atPath: folder.path)) ?? []).sorted()
         let b = second.flatMap(look)
-        check("download: made again over the one already there", second == first && names == ["Geotag 9.9.9 Apple silicon.dmg"]
+        check("download: made again over the one already there", second == first && names == ["Squeaky 9.9.9 Apple silicon.dmg"]
               && b?.program == "second", "\(names) \(String(describing: b?.program))")
-        let left = ((try? fm.contentsOfDirectory(atPath: fm.temporaryDirectory.path)) ?? []).filter { $0.hasPrefix("geotag-download-") }
+        let left = ((try? fm.contentsOfDirectory(atPath: fm.temporaryDirectory.path)) ?? []).filter { $0.hasPrefix("squeaky-download-") }
         check("download: no working folder left behind", left.isEmpty, "\(left)")
 
         // A program built for both kinds of Mac keeps only the one asked for,
@@ -2163,26 +2163,26 @@ extension SelfTest {
         try? Installer.only(.appleSilicon, in: armOnly)
         var refused = ""
         do { try Installer.only(.intel, in: armOnly) } catch { refused = error.localizedDescription }
-        check("download: no Intel part, no Intel disk image", refused == "This Geotag has no Intel version.", refused)
+        check("download: no Intel part, no Intel disk image", refused == "This Squeaky has no Intel version.", refused)
 
-        // The real thing: the installed Geotag packed exactly as the menu packs
+        // The real thing: the installed Squeaky packed exactly as the menu packs
         // it, into the scratch folder, and the copy inside checked.
-        guard let real = ProcessInfo.processInfo.environment["GEOTAG_REAL_APP"] else { return }
+        guard let real = ProcessInfo.processInfo.environment["SQUEAKY_REAL_APP"] else { return }
         let realFolder = scratch.appendingPathComponent("REAL-DOWNLOAD")
         try? fm.createDirectory(at: realFolder, withIntermediateDirectories: true)
         for chip in Installer.Chip.allCases {
         guard let image = try? Installer.save(app: URL(fileURLWithPath: real), version: appVersion, chip: chip, into: realFolder) else {
-            check("download: the installed Geotag packed for \(chip.title)", false)
+            check("download: the installed Squeaky packed for \(chip.title)", false)
             continue
         }
         let mount = scratch.appendingPathComponent("real-look-\(chip.rawValue)")
         try? fm.createDirectory(at: mount, withIntermediateDirectories: true)
         guard hdiutil(["attach", "-readonly", "-nobrowse", "-mountpoint", mount.path, image.path]) == 0 else {
-            check("download: the installed Geotag's disk image opens", false)
+            check("download: the installed Squeaky's disk image opens", false)
             return
         }
         defer { _ = hdiutil(["detach", "-quiet", mount.path]) }
-        let copy = mount.appendingPathComponent("Geotag.app")
+        let copy = mount.appendingPathComponent("Squeaky.app")
         let version = NSDictionary(contentsOf: copy.appendingPathComponent("Contents/Info.plist"))?["CFBundleShortVersionString"] as? String
         let sign = Process()
         sign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
@@ -2192,8 +2192,8 @@ extension SelfTest {
         sign.waitUntilExit()
         let exiftool = fm.fileExists(atPath: copy.appendingPathComponent("Contents/Resources/ExifTool/exiftool").path)
         let size = ((try? fm.attributesOfItem(atPath: image.path))?[.size] as? NSNumber)?.intValue ?? 0
-        let kind = cpu(copy.appendingPathComponent("Contents/MacOS/Geotag"))
-        check("download: the installed Geotag packed whole for \(chip.title), and for it alone",
+        let kind = cpu(copy.appendingPathComponent("Contents/MacOS/Squeaky"))
+        check("download: the installed Squeaky packed whole for \(chip.title), and for it alone",
               version == appVersion && sign.terminationStatus == 0 && exiftool && kind?.magic == 0xFEED_FACF
               && kind?.cpu == (chip == .intel ? 0x0100_0007 : 0x0100_000C),
               "\(image.lastPathComponent), \(size / 1_000_000) MB, version \(version ?? "-"), signature \(sign.terminationStatus == 0 ? "valid" : "broken"), ExifTool \(exiftool)")
@@ -2243,7 +2243,7 @@ extension SelfTest {
                 seen = "\(gps[kCGImagePropertyGPSLatitude] ?? "-")\(gps[kCGImagePropertyGPSLatitudeRef] ?? "") \(gps[kCGImagePropertyGPSLongitude] ?? "-")\(gps[kCGImagePropertyGPSLongitudeRef] ?? "") \(gps[kCGImagePropertyGPSProcessingMethod] ?? "-")"
             }
             let ok: Bool
-            if case .saved = result { ok = seen.hasPrefix("54.8091") && seen.contains("S") && seen.contains("W") && seen.contains("Geotag.app") } else { ok = false }
+            if case .saved = result { ok = seen.hasPrefix("54.8091") && seen.contains("S") && seen.contains("W") && seen.contains("Squeaky.app") } else { ok = false }
             check("heif: \(photo.fileName) saved with its location, checked", ok, "\(result) | the Mac reads \(seen)")
         }
     }
@@ -2328,7 +2328,7 @@ extension SelfTest {
 
 extension SelfTest {
     /// Altitude above, at and below sea level, and none (10 November 2026).
-    /// Geotag's own writer for the phone, on camera originals (CR3 and JPG
+    /// Squeaky's own writer for the phone, on camera originals (CR3 and JPG
     /// straight from the card), with ExifTool and the Mac's own check as the
     /// judge: it reads what ExifTool reads, it finds room in every photo, and
     /// every copy it writes passes the Mac's check. The originals only read.
@@ -2386,7 +2386,7 @@ extension SelfTest {
             // ExifTool finds nothing wrong in it.
             let warn = (try? tool.run(["-q", "-q", "-validate", "-warning", "-a", "-s3", url.path])).map { String(decoding: $0, as: UTF8.self) } ?? "?"
             let warnBefore = (try? tool.run(["-q", "-q", "-validate", "-warning", "-a", "-s3", photo.url.path])).map { String(decoding: $0, as: UTF8.self) } ?? "?"
-            // Geotag's note is not one of the four words the standard lists;
+            // Squeaky's note is not one of the four words the standard lists;
             // the Mac's own copies carry the same warning.
             func lines(_ text: String) -> Set<String> {
                 Set(text.split(separator: "\n").map(String.init).filter {
@@ -2807,7 +2807,7 @@ extension SelfTest {
 extension SelfTest {
     /// A card of thousands of photos on the Photos page, read while the page
     /// shows, then drawn and scrolled end to end while the model changes under
-    /// it (GEOTAG_TABLE_STRESS=1, on its own). Geotag crashed on a CFexpress
+    /// it (SQUEAKY_TABLE_STRESS=1, on its own). Squeaky crashed on a CFexpress
     /// card of 3,630 photos (18 October 2026): a table cell reached for the
     /// window's objects where they were not reachable.
     @MainActor
@@ -3148,7 +3148,7 @@ extension SelfTest {
               && short.line == "Saving 340 of 3,630, about 25 min left. " + (short.warning ?? ""), short.line)
     }
 
-    /// Command-Q asks while photos are uploading; Geotag opening with the NAS
+    /// Command-Q asks while photos are uploading; Squeaky opening with the NAS
     /// away says to turn on Tailscale, and the warning goes once it answers.
     @MainActor
     static func quitAndAway(_ scratch: URL) async {
@@ -3169,7 +3169,7 @@ extension SelfTest {
                              secrets: NoSecrets(), thumbnails: MapThumbnails(folder: scratch.appendingPathComponent("qa-maps")),
                              nas: fake, notifier: notes)
         check("quit: asks while photos are uploading",
-              model.quitCutOff() == "3 photos are uploading to the NAS. Reopening Geotag will resume the upload.", model.quitCutOff() ?? "nil")
+              model.quitCutOff() == "3 photos are uploading to the NAS. Reopening Squeaky will resume the upload.", model.quitCutOff() ?? "nil")
 
         await model.checkNAS()
         model.announceNASAway()
@@ -3311,7 +3311,7 @@ extension SelfTest {
         check("offset code: every camera set, saved straight away without the map, the code's photo left out",
               !model.aligning && model.results.count == 3 && model.results.values.allSatisfy { $0.url != nil }
                 && model.rows.count == 3, model.photosLine)
-        check("offset code: a notice inside Geotag until closed", model.offsetNotices == ["Offset updated for Canon EOS R7"], "\(model.offsetNotices)")
+        check("offset code: a notice inside Squeaky until closed", model.offsetNotices == ["Offset updated for Canon EOS R7"], "\(model.offsetNotices)")
 
         // The weekly reminder, a week after the reading and each week after.
         let reading = after?.readings.last?.at ?? shown
@@ -3634,7 +3634,7 @@ extension SelfTest {
 
     @MainActor
     /// The photo behind the sidebar: one per card, the newest upright JPEG,
-    /// else the newest JPEG, kept as Geotag's own copy beside the people list.
+    /// else the newest JPEG, kept as Squeaky's own copy beside the people list.
     static func sidebarPhoto(_ scratch: URL) async {
         let fm = FileManager.default
         let dir = scratch.appendingPathComponent("sidebar")
@@ -3694,7 +3694,7 @@ extension SelfTest {
         let fm = FileManager.default
         var book = PeopleBook.family()
         book.people[0].nasFolder = "homes/david/Photos"
-        book.people[0].saveFolder = "/Users/test/Pictures/Geotag"
+        book.people[0].saveFolder = "/Users/test/Pictures/Squeaky"
         let peopleFile = PeopleStoreFile(url: scratch.appendingPathComponent("cloud/people.json"))
         try? fm.createDirectory(at: peopleFile.url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? peopleFile.save(book)
@@ -3736,7 +3736,7 @@ extension SelfTest {
         let up = try? PeopleStoreFile(url: folder.appendingPathComponent("people.json")).load()
         check("cloud: people go up without this Mac's save folders",
               up?.people.map(\.name) == book.people.map(\.name) && up?.people.allSatisfy { $0.saveFolder == nil } == true
-              && up?.people[0].nasFolder == "homes/david/Photos" && (try? peopleFile.load())?.people[0].saveFolder == "/Users/test/Pictures/Geotag")
+              && up?.people[0].nasFolder == "homes/david/Photos" && (try? peopleFile.load())?.people[0].saveFolder == "/Users/test/Pictures/Squeaky")
         check("cloud: the list of photos read goes up",
               (try? HistoryStoreFolder(folder: folder.appendingPathComponent("History")).load(book.people[0].id))?.count == 1)
         let first = CloudCopy.macs(in: folder)
@@ -3763,13 +3763,13 @@ extension SelfTest {
         renamed.name = "Amanda R"
         other.save(renamed)
         var otherDavid = other.book.people[0]
-        otherDavid.saveFolder = "/Volumes/Other/Geotag"
+        otherDavid.saveFolder = "/Volumes/Other/Squeaky"
         other.save(otherDavid)
         await other.syncWithCloud()
         await model.syncWithCloud()
         check("cloud: a photo read on another Mac counts here", (try? history.load(book.people[0].id))?.count == 2)
         check("cloud: a name changed on another Mac changes here, this Mac's save folder kept",
-              model.book.people[1].name == "Amanda R" && model.book.people[0].saveFolder == "/Users/test/Pictures/Geotag")
+              model.book.people[1].name == "Amanda R" && model.book.people[0].saveFolder == "/Users/test/Pictures/Squeaky")
 
         // A setting changed on another Mac is taken here, and shown.
         var changed = cloudSettings()
@@ -3897,7 +3897,7 @@ extension SelfTest {
     static func quitting() {
         let child = Process()
         child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
-        child.environment = ProcessInfo.processInfo.environment.merging(["GEOTAG_QUIT_CHILD": "1"]) { $1 }
+        child.environment = ProcessInfo.processInfo.environment.merging(["SQUEAKY_QUIT_CHILD": "1"]) { $1 }
         let out = Pipe()
         child.standardOutput = out
         child.standardError = FileHandle.nullDevice
@@ -3907,7 +3907,7 @@ extension SelfTest {
         let stuck = child.isRunning
         if stuck { child.terminate() }
         let said = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        check("quit: with a sheet open, Geotag quits at once and the Mac's own way",
+        check("quit: with a sheet open, Squeaky quits at once and the Mac's own way",
               !stuck && said.contains("sheet open") && said.contains("quitting properly") && !said.contains("still running"),
               said.split(separator: "\n").joined(separator: " / "))
     }
@@ -3940,7 +3940,7 @@ extension SelfTest {
 }
 
 extension SelfTest {
-    /// The icon in the menu bar while Geotag works (David, 18 October 2026):
+    /// The icon in the menu bar while Squeaky works (David, 18 October 2026):
     /// a pin in a ring that fills, its menu, and the lines it shows through a
     /// card read, saved and sent; nothing while photos only wait for the NAS.
     @MainActor
@@ -3966,8 +3966,8 @@ extension SelfTest {
               && icon.size == WorkIcon.size && filled > 0.8 && empty > 0.1 && empty < 0.5 && pin > 0.5,
               String(format: "filled %.2f, empty %.2f, pin %.2f", filled, empty, pin))
         let menu = MenuBarIcon.menu(lines: ["Saving 340 of 3,630", "Sending to the NAS: 12 of 200"], target: nil)
-        check("menu bar: its menu, what is going on and Open Geotag", menu.items.map(\.title)
-              == ["Saving 340 of 3,630", "Sending to the NAS: 12 of 200", "", "Open Geotag"]
+        check("menu bar: its menu, what is going on and Open Squeaky", menu.items.map(\.title)
+              == ["Saving 340 of 3,630", "Sending to the NAS: 12 of 200", "", "Open Squeaky"]
               && menu.items.prefix(2).allSatisfy { !$0.isEnabled } && menu.items[2].isSeparatorItem && menu.items[3].isEnabled)
 
         // A card read, saved and sent, the lines watched all the way.

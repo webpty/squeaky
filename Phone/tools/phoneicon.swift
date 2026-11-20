@@ -1,4 +1,4 @@
-// Geotag's icon for the iPhone: Resources/AppIcon.svg drawn edge to edge on
+// Squeaky's icon for the iPhone: Resources/AppIcon.png drawn edge to edge on
 // black, 1024 pixels, with no transparency (the phone rounds the corners).
 //
 //   phoneicon <svg> <png>

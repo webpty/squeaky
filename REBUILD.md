@@ -3,7 +3,7 @@
 Not for David. He never needs a command.
 
 ```
-./build.sh            # writes build/Geotag.app
+./build.sh            # writes build/Squeaky.app
 ./build.sh install    # and copies it to /Applications
 ```
 
@@ -31,9 +31,9 @@ files in another, and a local copy of the track service holding the test
 keys (see `../tracks/CLAUDE.md`):
 
 ```
-GEOTAG_SCRATCH=<scratch> swift run -c release SelfTest <fit folder> http://127.0.0.1:8790
+SQUEAKY_SCRATCH=<scratch> swift run -c release SelfTest <fit folder> http://127.0.0.1:8790
 ```
 
-Raise `appVersion` in `Sources/GeotagCore/Version.swift` with every push. The
+Raise `appVersion` in `Sources/SqueakyCore/Version.swift` with every push. The
 build script reads that line for the bundle version, and the number shows in
 the corner of the sidebar.

@@ -1,0 +1,24 @@
+<strings>
+    <string id="AppName">Squeaky</string>
+    <string id="Searching">...</string>
+    <string id="Poor">Poor</string>
+    <string id="Usable">OK</string>
+    <string id="Good">Good</string>
+    <string id="Lost">Lost</string>
+    <string id="Loading">Acquiring satellites</string>
+    <string id="Ready">Ready</string>
+    <string id="Resume">Resume</string>
+    <string id="SaveGeotrac">Save Geotrac</string>
+    <string id="SaveBoth">Save Geotrac &amp; Garmin</string>
+    <string id="Discard">Discard</string>
+    <string id="DiscardAsk">Discard this track?</string>
+    <string id="Sending">Sending $1$ of $2$</string>
+    <string id="Waiting">Waiting for the phone</string>
+    <string id="Received">Received by the phone</string>
+    <string id="Tracks">Tracks</string>
+    <string id="NoTracks">No tracks</string>
+    <string id="Sent">Sent</string>
+    <string id="NotSent">Not sent</string>
+    <string id="SendAgain">Send again</string>
+    <string id="NoPoints">No positions recorded</string>
+</strings>

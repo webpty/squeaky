@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Builds Geotag for the iPhone, signed with the personal Apple ID team (no
+# Builds Squeaky for the iPhone, signed with the personal Apple ID team (no
 # iCloud entitlement; runs for 7 days), and installs it on the iPhone
 # connected by cable. Usage: Phone/install_phone.sh
 set -e
@@ -11,10 +11,10 @@ TEAM=$(defaults read com.apple.dt.Xcode IDEProvisioningTeamByIdentifier 2>/dev/n
 # PHONE=<id> picks the phone on the cable when another is about over Wi-Fi.
 PHONE=${PHONE:-$(xcrun devicectl list devices 2>/dev/null | awk '/iPhone/ && (/ connected / || /available \(paired\)/) && /physical/ {for(i=1;i<=NF;i++) if ($i ~ /^[0-9A-F-]{25,}$/) {print $i; exit}}')}
 [ -z "$PHONE" ] && { echo "NO_PHONE"; exit 3; }
-BUNDLE=${BUNDLE:-com.webpty.geotag}
-VERSION=$(sed -n 's/.*appVersion = "\(.*\)".*/\1/p' ../Sources/GeotagCore/Version.swift)
-xcodebuild -project Geotag.xcodeproj -scheme GeotagPhone -configuration Release \
+BUNDLE=${BUNDLE:-com.webpty.squeaky}
+VERSION=$(sed -n 's/.*appVersion = "\(.*\)".*/\1/p' ../Sources/SqueakyCore/Version.swift)
+xcodebuild -project Squeaky.xcodeproj -scheme SqueakyPhone -configuration Release \
   -destination "id=$PHONE" -derivedDataPath ../build/phone -allowProvisioningUpdates \
   DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE" \
   MARKETING_VERSION="$VERSION" build 2>&1 | grep -E "error:|BUILD"
-xcrun devicectl device install app --device "$PHONE" ../build/phone/Build/Products/Release-iphoneos/Geotag.app
+xcrun devicectl device install app --device "$PHONE" ../build/phone/Build/Products/Release-iphoneos/Squeaky.app

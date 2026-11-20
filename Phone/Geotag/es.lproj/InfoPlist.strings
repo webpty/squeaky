@@ -1,6 +1,0 @@
-"CFBundleDisplayName" = "Geotag";
-"NSPhotoLibraryAddUsageDescription" = "Geotag añade las fotos que guarda de tus tarjetas.";
-"NSPhotoLibraryUsageDescription" = "Geotag añade la ubicación a las fotos de Fotos que no la tienen.";
-"NSBluetoothAlwaysUsageDescription" = "Geotag recibe recorridos de la app Geotag de tu reloj Garmin.";
-"NSBluetoothPeripheralUsageDescription" = "Geotag recibe recorridos de la app Geotag de tu reloj Garmin.";
-"NSLocalNetworkUsageDescription" = "Geotag pasa los recorridos del reloj a los teléfonos de la familia que estén cerca.";

@@ -1,6 +1,0 @@
-"CFBundleDisplayName" = "相途";
-"NSPhotoLibraryAddUsageDescription" = "相途會加入從記憶卡儲存的照片。";
-"NSPhotoLibraryUsageDescription" = "相途會為「照片」中沒有位置的照片加入位置。";
-"NSBluetoothAlwaysUsageDescription" = "相途會接收 Garmin 手錶上相途 app 的軌跡。";
-"NSBluetoothPeripheralUsageDescription" = "相途會接收 Garmin 手錶上相途 app 的軌跡。";
-"NSLocalNetworkUsageDescription" = "相途會把手錶的軌跡傳給附近家人的手機。";

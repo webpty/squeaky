@@ -1,10 +1,10 @@
-# Geotag
+# Squeaky
 
 A Mac app for David and his family. It matches photos from an SD card to
 David's watch track, writes the location into copies of the photos, saves them
 on the Mac per person and uploads them to his NAS through a queue that survives
 lost connections. Built for an Antarctica trip with patchy internet. Shared with
-family members, never sold. The full brief is `geotag-app-brief.md`, given on
+family members, never sold. The full brief is `squeaky-app-brief.md`, given on
 16 October 2026; it is built in nine stages.
 
 - David's instructions override the brief wherever they clash (16 October
@@ -21,7 +21,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   first launch under Privacy & Security.
 - The only third-party code is ExifTool, bundled in the app (from stage 2).
 - Minimum macOS 14.
-- Repo: github.com/webpty/geotag, private. Commits as webpty with the GitHub
+- Repo: github.com/webpty/squeaky, private. Commits as webpty with the GitHub
   no-reply address.
 
 ## Tracks come from the track service, never from Strava directly
@@ -57,8 +57,8 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Write with `-P`, then copy `FileCreateDate` and `FileModifyDate` back from
   the original: ExifTool's rewrite gives the copy a new creation date.
 - GPS date and time are UTC: the capture time less `OffsetTimeOriginal`.
-- Every location Geotag writes carries `GPSProcessingMethod` = "GPS
-  coordinates added by Geotag.app" (David, 17 October 2026), in the GPS block
+- Every location Squeaky writes carries `GPSProcessingMethod` = "GPS
+  coordinates added by Squeaky.app" (David, 17 October 2026), in the GPS block
   so nothing else in the photo changes; the copy check requires it. Photos
   with their own location, and copies saved without one, get no note. The
   app's arguments are `Saver.gpsArguments`; `Tools/gps-test.sh` is the
@@ -72,11 +72,11 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 
 - The track service is `../tracks` (its own CLAUDE.md). Settings holds its
   address (UserDefaults) and key (login keychain, account
-  `track-service-key`, service `com.webpty.geotag`).
+  `track-service-key`, service `com.webpty.squeaky`).
 - The key's role decides: an owner key connects Strava, syncs and uploads;
   a reading key reads, and its Mac's imports stay on that Mac.
 - `TrackLibrary` keeps every track and its points in
-  `~/Library/Application Support/Geotag/Tracks` (`index.json`,
+  `~/Library/Application Support/Squeaky/Tracks` (`index.json`,
   `points/<id>.json`). Files are replaced whole, never removed. An uploaded
   import stays in the index as `uploaded` and is hidden; the service's copy
   is the one shown.
@@ -84,7 +84,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Map pictures are OpenStreetMap tiles with no words from CARTO, whose
   addresses, credit and key come from the service (`GET /v1/maps`), with
   the line drawn in orange; drawn once per appearance and kept in
-  `Geotag/Maps` as `<id>-osm-<light|dark>.png`. Offline or without a key,
+  `Squeaky/Maps` as `<id>-osm-<light|dark>.png`. Offline or without a key,
   the row shows the bare line. The credit line under the list is required.
 - Never Apple Maps or MapKit: David ruled them out on 16 October 2026 (their
   words cannot be removed). He wants maps with no text.
@@ -98,7 +98,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   window's colour, 90% opaque so the photo shows faintly through it
   (0.25.3, David, 6 November 2026), sits behind the menu and the title area and fades out
   over 160 points below it; a short one behind the version line. The words
-  follow light and dark. The icon is his `Resources/AppIcon.svg`,
+  follow light and dark. The icon is his `Resources/AppIcon.png`,
   drawn into the Mac's rounded square by `Tools/makeicon.swift`.
 - FIT reading is our own (`FITReader`), checked against Garmin's own
   decoder on its sample files. A real fenix 9 file has not been tried yet.
@@ -119,7 +119,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 
 ## People and cameras (stage 4, 16 October 2026)
 
-- `PeopleBook` in `~/Library/Application Support/Geotag/people.json`, per Mac,
+- `PeopleBook` in `~/Library/Application Support/Squeaky/people.json`, per Mac,
   seeded on first launch with David, Amanda, Patrick and Gilbert and the five
   cameras David listed: his R5 Mark II and R7, Amanda's R5 Mark II (zone
   from the photo), Gilbert's COOLPIX P950 and Patrick's EOS REBEL T3i (zone
@@ -140,7 +140,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 ## Importing a card (stage 5, 16 October 2026)
 
 - A card is any mounted disk with a DCIM folder (`CardWatcher`). With "Open
-  Geotag when a card is inserted" on (the default, `openOnCard`), Geotag is
+  Squeaky when a card is inserted" on (the default, `openOnCard`), Squeaky is
   in Login Items (`SMAppService.mainApp`), starts with no window at login,
   and comes forward on a card: `Windows.bringForward` reopens the window by
   opening the running app again.
@@ -149,14 +149,14 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - `PhotoScanner` lists photo files (hidden folders left out) and reads time,
   sub-seconds, zone and model through ExifTool, 100 files at a time. It only
   reads; the self-test checks the card's files are unchanged.
-- A card Geotag has seen is read straight away for last time's person
+- A card Squeaky has seen is read straight away for last time's person
   (`cardPeople` in UserDefaults, keyed by the card's volume id); only a new
   card asks whose it is. The Person tile's pencil changes it (David,
   16 October 2026).
 - A photo counts as imported before when name, size and time taken (with
   sub-seconds) match the person's history (`History/<person id>.json`).
 - The self-test can attach a disk image with `-nobrowse` to prove a card
-  arriving and leaving (`GEOTAG_MOUNT_TEST=1`); nothing shows in Finder.
+  arriving and leaving (`SQUEAKY_MOUNT_TEST=1`); nothing shows in Finder.
 
 ## Matching and alignment (stage 6, 16 October 2026)
 
@@ -174,15 +174,15 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   imported only when "Without location" is ticked for it.
 - The map of photos (`AlignmentView`, a sheet) shows the list's photos
   (`mappable`) on a map you drag and zoom (`SlippyMap`, CARTO tiles, six
-  fetched at a time, kept while Geotag runs): each at its own location, or
+  fetched at a time, kept while Squeaky runs): each at its own location, or
   where its time falls along the tracks by its camera's offset. Only to
   look at from 0.26.0 (David, 6 November 2026: "only the QR offsets it
   now"): the slider, the Track choice and "Use this offset" are gone. It
   works with the card out while the list shows (pictures from the Mac
   copies) and never opens by itself. A camera's offset comes from the
   offset code, or typed by hand in Settings, Cameras, as a fallback.
-- Off-screen pictures of the screens: `GEOTAG_VIEWER=1` and `GEOTAG_ALIGN=1`
-  with `GEOTAG_MAP_KEY` (the CARTO key from `../tracks/.keys/carto.key`).
+- Off-screen pictures of the screens: `SQUEAKY_VIEWER=1` and `SQUEAKY_ALIGN=1`
+  with `SQUEAKY_MAP_KEY` (the CARTO key from `../tracks/.keys/carto.key`).
   A probe view needs a background of its own or it draws black.
 
 ## Cards held, dates, tiles (0.9.0, 16 October 2026)
@@ -190,10 +190,10 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - `CardGuard` (DiskArbitration) refuses the Mac's own opening of every
   external, removable or ejectable FAT/exFAT disk, opens it itself with
   `rdonly,nobrowse`, and keeps it only if it has a DCIM folder; any other
-  disk is closed and opened again as usual. Cards open before Geotag starts
+  disk is closed and opened again as usual. Cards open before Squeaky starts
   are taken over the same way unless another app holds them. There is no
-  Release button (David's decision): to see a card in Finder, quit Geotag.
-- The Mac may answer "busy" to Geotag's own opening and open the card all
+  Release button (David's decision): to see a card in Finder, quit Squeaky.
+- The Mac may answer "busy" to Squeaky's own opening and open the card all
   the same; check whether it is open before calling it a failure.
 - A card in an SD slot built into a Mac (MacBook Pro, Mac Studio) is taken
   too (0.14.4, David, 18 October 2026). Such a slot calls itself internal,
@@ -206,8 +206,8 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   kDADiskUnmountOptionWhole`, on the whole disk, never a partition) and
   ejects it; under a second, open files or not. While it ejects, the Photos line spins and
   Eject is dimmed (0.27.2, David, 13 November 2026).
-- Test the guard only on a disk image named GTTEST with a GEOTAG_TEST
-  folder (`GEOTAG_GUARD_TEST=1`), never with a DCIM folder: Geotag on
+- Test the guard only on a disk image named GTTEST with a SQUEAKY_TEST
+  folder (`SQUEAKY_GUARD_TEST=1`), never with a DCIM folder: Squeaky on
   David's Mac would take a DCIM test disk for a real card.
 - Photos come only from cards: Choose folder is gone (David, 16 October).
 - Dates and times follow Settings (`When`): date order and 24-hour clock,
@@ -216,20 +216,20 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Copies of JPEG photos are saved ending ".jpg" (`CopyName`), raw and HEIF
   names untouched (David, 16 October 2026).
 - The map window is titled by place: OpenStreetMap's Nominatim lookup, one
-  question a second, identified as Geotag; else the track's name; else the
+  question a second, identified as Squeaky; else the track's name; else the
   day.
 
 ## One window (0.25.0, David, 6 November 2026)
 
-- Geotag has one window. "Avoid other windows as much as possible. and if
+- Squeaky has one window. "Avoid other windows as much as possible. and if
   you need them, have them inside the main window. i despise apps that have
   many windows." Anything new is a page, a sheet or a panel laid over the
   main window, never a `Window` or `WindowGroup` of its own, and never an
   alert window (say it on the page instead).
 - Tracks is a page (the tracks as a grid of map cards, Refresh and Import
-  GPX or FIT at the top), the track viewer laid over it. Geotag opens on
+  GPX or FIT at the top), the track viewer laid over it. Squeaky opens on
   Photos. David's instructions: "when tracks are working I don't need to
-  see them", "they should be a grid", never Geotag's own toolbar. It was a
+  see them", "they should be a grid", never Squeaky's own toolbar. It was a
   menu in the Mac's menu bar until 0.24.0, then its own window.
 
 ## The sidebar's second group (0.24.0, pages from 0.25.0)
@@ -237,7 +237,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - The menus at the top of the screen moved to the sidebar ("the top is
   getting really crowded"): under the pages, after a thin line, Tracks,
   Clock drift, Camera clocks and Download (`Screen.tools`), pages of the
-  window like the others. Settings and Set Up This Mac stay in the Geotag
+  window like the others. Settings and Set Up This Mac stay in the Squeaky
   menu.
 - Command and a number for every sidebar item in order, Settings keeping
   Command-comma: Photos 1, Queue 2, History 3, Tracks 4, Clock drift 5,
@@ -264,14 +264,14 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   map say the card is out. The list is kept through a restart too (0.26.1,
   David, 6 November 2026: an update had emptied it): `photos.json` beside
   `queue.json` (`PhotoListFile`), written a second after any change and
-  as Geotag quits, holds the rows, their outcomes and whose they are; it
+  as Squeaky quits, holds the rows, their outcomes and whose they are; it
   opens with the card out. Clear photos or the next card removes it.
 
 ## Saving (stage 7, 16 October 2026)
 
 - `Saver` copies a card photo to a hidden working file in the person's day
   folder (`2027.01.12`, the camera clock's day; "Undated" without one), named
-  `.<stem>.geotag-<8 hex>.<ext>`: the real extension must stay last, or the
+  `.<stem>.squeaky-<8 hex>.<ext>`: the real extension must stay last, or the
   Mac reads a Nikon NRW as plain TIFF and the check fails.
 - It writes the GPS block (named group tags only, old location cleared,
   hundredths of a second cut, never rounded to a 60th second), gives the copy
@@ -283,7 +283,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Only then is it moved to its final name; a move never replaces. Same name
   and same photo: "already there"; same photo saved before with another
   location: reported, the earlier copy kept; another photo: `_2`, `_3`.
-- A failed copy is removed (Geotag's own); leftovers from a crash are cleared
+- A failed copy is removed (Squeaky's own); leftovers from a crash are cleared
   at the next save, matched by that exact pattern only.
 - History and `queue.json` are written after every photo. A missing save
   folder or a full disk stops the save with one line.
@@ -344,7 +344,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   `Resources/CameraClock/<camera>` (Canon's manual pictures for the R5
   Mark II and R7, Nikon's drawings for the P950 drawn to PNG and trimmed,
   crops of page 34 of the T3i manual). The T3i has no time zone setting:
-  its page says to give it a fixed zone in Geotag.
+  its page says to give it a fixed zone in Squeaky.
 
 ## Firmware (0.14.0, 18 October 2026)
 
@@ -353,7 +353,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   photos never takes it back. Settings, Cameras shows "Firmware 1.7.1,
   2025.09.08" and a "Latest firmware" button to the maker's page for the
   model (`Firmware.page`). No maker publishes the latest version in a form
-  Geotag can read; the page shows it.
+  Squeaky can read; the page shows it.
 - Canon writes the version in its maker notes, which the fast read
   (`-fast2`) skips, and reading them for every photo doubled the time a card
   takes. So only the newest photo of each model is asked
@@ -387,7 +387,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 
 ## Dump, tag and save (17 October 2026)
 
-- Geotag is not a sorting app (David: "it's dump, tag and save; triage can
+- Squeaky is not a sorting app (David: "it's dump, tag and save; triage can
   happen later"). No tick boxes or choices per photo: every new photo on a
   card is saved, with its location when it can be placed and without one
   otherwise (the reason shows in Status, the count in the Without location
@@ -404,7 +404,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   no password window, hidden from Finder, soft (a lost connection fails
   instead of hanging), 30 s to answer. Its own openings are closed again
   when nothing is waiting. The main address first, then the backup.
-- `NASSender` copies one photo: a hidden `.<stem>.geotag-up-<id>.<ext>` on the
+- `NASSender` copies one photo: a hidden `.<stem>.squeaky-up-<id>.<ext>` on the
   NAS, read back from the NAS itself (no cache) and compared by SHA-256 with
   the Mac's copy, the Mac copy's dates, then its name. Never overwrites: the
   same file is "already there", another photo gets `_2`, the same photo with
@@ -419,10 +419,10 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   (copy gone, refused) is "Not sent" with the reason until Retry failed.
   Sent entries leave the list after a week; History keeps every photo.
 - A copy given its location later goes again as an update and replaces
-  Geotag's earlier copy on the NAS; still waiting, it simply goes as it is now.
+  Squeaky's earlier copy on the NAS; still waiting, it simply goes as it is now.
 - Sending runs on GCD threads, never Swift's own pool: a hung connection
   must not stall the app. A shared folder that hangs is asked once at a time.
-- The Mac asks once whether Geotag may use files on a network volume.
+- The Mac asks once whether Squeaky may use files on a network volume.
 - First real send, 17 October 2026: his 19 photos into homes/david through
   the share Finder already had open, in 20 seconds. The Tailscale address is
   still untried. Tests use `FakeNAS` (a scratch folder); never write test
@@ -434,7 +434,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   screen; sending uses the saved settings. Messages name the NAS by its
   number, without "smb://".
 - The Queue page's NAS box says whether the NAS answers now (`checkNAS`):
-  asked as Geotag opens and whenever the Queue page is shown, and with every
+  asked as Squeaky opens and whenever the Queue page is shown, and with every
   photo sent. "Checking", the address that answered, "Not reachable", or
   "Not set up" (no address, or nobody with a NAS folder). It used to wait for
   something to send, and read "Not tried yet" while everything was on the
@@ -492,7 +492,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   2026: saving locally does not scale). `sent.jsonl` beside `queue.json`
   (`SentLogFile`) records every photo that passed the check on arrival, for
   good: where it landed, when, and the Mac copy's size and date as sent.
-  `MacTidy.plan` decides by that record alone. Geotag never looks at the NAS
+  `MacTidy.plan` decides by that record alone. Squeaky never looks at the NAS
   again: its job ends with the send and its first check, and the photos
   there will be sorted, renamed or deleted later. Settings, NAS, "Keep
   photos on this Mac": 30 days after reaching the NAS (default, as the
@@ -526,9 +526,9 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   people they expect. David's other Mac gets a fresh install from iCloud;
   its old data is dropped: never raise it.
 - Notifications come in kinds, one of each showing at a time (identifier
-  `geotag-<kind>`): `nas`, `card`, `power`, `nas-away`.
+  `squeaky-<kind>`): `nas`, `card`, `power`, `nas-away`.
 - A Mac notification per finished batch (`MacNotifier`, one at a time under
-  the identifier `geotag-nas`): "19 photos are on the NAS." or "17 photos are
+  the identifier `squeaky-nas`): "19 photos are on the NAS." or "17 photos are
   on the NAS. 2 were not sent." Never per photo: not while a card is being
   saved or photos placed, not while waiting for the NAS or paused. Clicking
   it opens the Queue page. It posts only from the app itself; the self-test
@@ -562,7 +562,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 
 ## Visual polish and the disk image (stage 9, 17 October 2026)
 
-- `GEOTAG_GALLERY=1` (with `GEOTAG_MAP_KEY` for maps) draws every screen,
+- `SQUEAKY_GALLERY=1` (with `SQUEAKY_MAP_KEY` for maps) draws every screen,
   window and sheet off-screen in light and dark into the run's scratch
   folder under `gallery/`. Off-screen, the window's sidebar draws blank, so
   the sidebar is drawn on its own (`SheetProbe(.sidebar)`); switches draw
@@ -582,9 +582,9 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   time".
 - The disk image for another Mac comes from the Download page (a menu in
   the Mac's menu bar until 0.24.0): "Download for Apple silicon" or
-  "Download for Intel" makes it there and then from the running Geotag
+  "Download for Intel" makes it there and then from the running Squeaky
   (`Installer`, `hdiutil`), with only that kind of Mac's part of the
-  program (`Installer.only`, which keeps the part as signed), puts "Geotag
+  program (`Installer.only`, which keeps the part as signed), puts "Squeaky
   <version> <kind>.dmg" in Downloads over one of the same name, and shows it in
   Finder (David, 17 October 2026: in the app, made on demand so it works on
   every Mac, replacing the copy already there). `./build.sh dmg` still makes
@@ -601,7 +601,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 
 - His CFexpress card (3,630 photos, an R5 card in a USB reader that calls
   itself a fixed disk) was taken, held hidden and read-only, and read; then
-  Geotag crashed drawing the Photos list. On cards of a few hundred photos
+  Squeaky crashed drawing the Photos list. On cards of a few hundred photos
   or more the Mac's own table warns "Application performed a reentrant
   operation in its NSTableView delegate" (a bare SwiftUI Table of numbers
   does it too, on macOS 26.6.2), and during that pass a cell view's
@@ -609,7 +609,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   Table cell never use `@EnvironmentObject`; hand them the model
   (`PhotoStatus(model:row:)`). Closures in `TableColumn` may read the
   screen's own `model`.
-- `GEOTAG_TABLE_STRESS=<count>` runs only the big-card test: a scratch card
+- `SQUEAKY_TABLE_STRESS=<count>` runs only the big-card test: a scratch card
   of that many photos, read while the Photos page shows, scrolled end to
   end. It reproduced the crash with the old cell and passes with the new.
 - The list of a card is changed in one step (`rematch`, after saving), not
@@ -617,7 +617,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 
 ## The menu bar icon (0.14.8, 18 October 2026)
 
-- While Geotag reads a card, saves photos or sends them to the NAS, a pin in
+- While Squeaky reads a card, saves photos or sends them to the NAS, a pin in
   a ring shows on the right of the menu bar (`MenuBarIcon`, an
   `NSStatusItem`, started from the window's task in the app only, never in
   the self-test, which must not put icons on David's menu bar). The ring
@@ -625,12 +625,12 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   so it takes the menu bar's own colour.
 - Its menu: one line per job, the Photos page's own line while reading or
   saving ("Saving 340 of 3,630"), "Sending to the NAS: 12 of 200" while
-  photos go up, then Open Geotag. Nothing going on, no icon; photos only
+  photos go up, then Open Squeaky. Nothing going on, no icon; photos only
   waiting for the NAS show nothing (David's plan).
 - `AppModel.refreshWork()` builds it from the reading, saving and sending
   state into `WorkStatus`; saving ends before its closing line is said, so
   the menu never shows "5 saved."
-- Closing the window leaves Geotag working, as before.
+- Closing the window leaves Squeaky working, as before.
 
 ## Quitting (0.14.7, 18 October 2026; asks first from 0.16.0)
 
@@ -649,12 +649,12 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   binding still says shown. So the sheets are closed and `NSApp.terminate`
   is called in the same moment; quitting on the next turn, as before 0.14.7,
   was refused every time. A running file chooser is stopped first. If
-  anything still refuses, Geotag exits a second later: every record is
+  anything still refuses, Squeaky exits a second later: every record is
   written as it changes.
 - The self-test runs a copy of itself with a sheet open and checks it quits
-  the Mac's own way (`GEOTAG_QUIT_CHILD`).
+  the Mac's own way (`SQUEAKY_QUIT_CHILD`).
 - The run's last check, that his records are as they were, also fails when
-  his own Geotag saves or sends while the test runs: look at what changed
+  his own Squeaky saves or sends while the test runs: look at what changed
   before blaming a test (1 November 2026).
 
 ## Setting up a Mac (0.15.0, 1 November 2026)
@@ -663,7 +663,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   each person's save folder, the track service, the NAS with each person's
   NAS folder, and opening when a card is inserted (the switch, with one line
   on why it means starting at login). "Later" closes it; Done marks it done
-  (`setupDone`). "Set Up This Mac…" in the Geotag menu opens it again.
+  (`setupDone`). "Set Up This Mac…" in the Squeaky menu opens it again.
 - It shows by itself only when `needsSetup`: not done, no track service
   address and nobody with a save folder. A Mac set up before 0.15.0 is
   marked done at launch and never sees it unasked.
@@ -674,7 +674,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Save folders: several people on one Mac, any left empty.
 - Track service: the address is filled in with https://geotrac.cc when
   empty and stays editable. Each Mac has its own key, made by hand in the
-  track service (`../tracks`); Geotag cannot make one.
+  track service (`../tracks`); Squeaky cannot make one.
 - One NAS per Mac.
 
 ## Buttons that can't be used are dimmed (0.26.0, David, 6 November 2026)
@@ -688,7 +688,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   needs somebody; Save in the person and camera editors a name or a model;
   Connect Strava the track service (`hasService`); Test connection a NAS
   folder and address (`canTestNAS`). Eject shows only with a card.
-- Lines Geotag says on its own keep their fix (`PhotosFix`) as a button
+- Lines Squeaky says on its own keep their fix (`PhotosFix`) as a button
   beside them: choose whose card, Choose folder… (keeps the folder for that
   person, then saves), Open Settings, Edit camera (`cameraToEdit`). A save
   folder missing or not found is said as soon as a card is read, since Save
@@ -706,7 +706,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 
 - Sending to the NAS goes from the Mac's copies, so the card is needed only
   while photos are copied off it. When a save ends with every photo saved
-  (not stopped, none failed), Geotag ejects the card itself and says
+  (not stopped, none failed), Squeaky ejects the card itself and says
   "EOS_DIGITAL can come out. 340 photos are on this Mac; the NAS copies go
   from there.", with a `card` notification. Stopped, or with photos not
   saved, the card stays and the line says why, as before. Not tried on a
@@ -723,7 +723,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 
 ## NAS away on opening (0.16.0, 1 November 2026)
 
-- As Geotag opens, with photos waiting and no answer from the NAS at either
+- As Squeaky opens, with photos waiting and no answer from the NAS at either
   address (`announceNASAway`), it says "The NAS isn't answering. If you're
   away from home, turn on Tailscale; otherwise check the connection." on
   the Photos page (with Open Tailscale), on the Queue page and as a
@@ -739,7 +739,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   it was on Close or Escape (`OffsetCodeView`, `showingOffsetCode`; its own
   window until 0.25.0): the true time to the
   hundredth, UTC, and a QR code holding it in milliseconds
-  (`OffsetCode.payload`, "geotag-clock:<ms>"), redrawn every frame. The
+  (`OffsetCode.payload`, "squeaky-clock:<ms>"), redrawn every frame. The
   Mac's clock is checked with `sntp` against the server in /etc/ntp.conf
   (else time.apple.com) and the shown time corrected; offline it says the
   Mac's clock is shown as it is. The code is drawn 16 pixels to a square:
@@ -818,21 +818,21 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   dates, when corrected, are rewritten in place too (EXIF and the CR3's
   container dates).
 - Proved on the Mac against ExifTool and `Saver.check` with
-  `GEOTAG_ORIGINALS=<folder of camera originals>` (the Savoie R5 Mark II
+  `SQUEAKY_ORIGINALS=<folder of camera originals>` (the Savoie R5 Mark II
   CR3 and JPG): it reads what ExifTool reads on every file, finds room in
   every one, and every copy passes the Mac's own check. In the simulator,
   `--write-test` and `--flow-test` (debug builds only) run the phone's own
   writer and the whole flow: card, track, save, NAS.
-- `GeotagCore` and `GeotagUI` build for both. Mac-only files are wrapped in
+- `SqueakyCore` and `SqueakyUI` build for both. Mac-only files are wrapped in
   `#if os(macOS)`; the app model is shared, so the track check, held
   photos and the queue behave as on the Mac. The phone's
-  screens are its own (`Phone/Geotag`), four tabs: Photos, Tracks, Queue,
+  screens are its own (`Phone/Squeaky`), four tabs: Photos, Tracks, Queue,
   Settings. No map pictures on the phone.
 - The card: opened once in the Files list (a USB-C card reader), with
   Open card; the phone allows no app into a card before that. Each card
   opened is remembered (`CardWatch`, David, 16 November 2026): plugged in
-  while Geotag is open, or when it opens, it is read by itself, looked for
-  every 3 s while Geotag is in front. No eject: the card is let go of once
+  while Squeaky is open, or when it opens, it is read by itself, looked for
+  every 3 s while Squeaky is in front. No eject: the card is let go of once
   every photo on it is saved (0.32.1, David: copying some photos must leave
   the card open to choose more), or with Done with this card, and not read
   again until it has been taken out. "Copy done. Remove the card." only when
@@ -840,8 +840,8 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Save all (0.32.1) selects every photo on the card and saves; photos copied
   before are left out unless the "Include previously saved" switch is on
   (`includeSaved`, off again as each save starts). With it on, a copy still
-  in its folder counts as saved and goes on the queue again if missing. Copies go in Geotag's folder on the phone
-  (On My iPhone, Geotag, one folder per person). Paths kept in the queue and
+  in its folder counts as saved and goes on the queue again if missing. Copies go in Squeaky's folder on the phone
+  (On My iPhone, Squeaky, one folder per person). Paths kept in the queue and
   records, and the Photos list's copies (0.29.14), are moved to the new
   install's folder after each reinstall; matched on
   "/Containers/Data/Application/<id>", the phone's and the simulator's alike.
@@ -850,16 +850,16 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - The NAS: its shared folder, connected in the Files app and chosen once in
   Settings (`NASThroughFiles`), matched by the name the Files app shows (a
   shared folder's own name is internal, "Nm3Lvwhomes" for homes). Sending
-  runs only while Geotag is open; the screen stays on while saving or
+  runs only while Squeaky is open; the screen stays on while saving or
   sending.
 - Each person manages their own photos (David, 15 November 2026), in the
-  Photos library since 0.29.15; Geotag's own working copies leave the phone
+  Photos library since 0.29.15; Squeaky's own working copies leave the phone
   once on the server.
 - One person per phone (David, 15 November 2026), kept as `macOwner`.
   Choose card is dimmed until the person is saved.
 - Not every card is the phone's person's (David, 15 November 2026: his
   partner copies his photos from his card). The first time a card is
-  chosen, Geotag asks "Whose card is this?", Mine or Someone else's,
+  chosen, Squeaky asks "Whose card is this?", Mine or Someone else's,
   remembered per card; the Card row on the Photos tab changes it. Someone
   else's photos are tagged as usual and saved under the person "Others"
   (`PhoneFolders.othersId`, folder Others), never put on the queue, never
@@ -870,7 +870,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   Dragging the page also closes the keyboard.
 - Tracks on the phone show a map as the Mac does (0.29.4): CARTO's wordless
   tiles through the service's map source, the route on top in blue (David:
-  nothing in Geotag is orange; blue on the phone), kept in Geotag/Maps as
+  nothing in Squeaky is orange; blue on the phone), kept in Squeaky/Maps as
   `<id>-phone-<light|dark>.png`; the bare line until a map can be made. Map
   on the left, words on the right; the map credit under the list.
 - The Photos tab's squares are exact, one size, edge to edge (0.29.4).
@@ -886,7 +886,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Five languages on the phone (David, 15 November 2026), as Countries:
   English, Spanish, French, Simplified and Traditional Chinese, following
   the phone's language. Every text goes through `Words.t("template {0}",
-  ...)`; the phone loads `Phone/Geotag/Words/words-<language>.json` at
+  ...)`; the phone loads `Phone/Squeaky/Words/words-<language>.json` at
   launch. The Mac loads nothing and shows the templates, so it stays in
   English and keeps "NAS". The phone's English list turns NAS into server
   and this Mac into this iPhone. Every new text needs all five lists.
@@ -900,32 +900,32 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 ## The list of photos saved, on the server (0.29.0, David, 16 November 2026)
 
 - Each person's server folder (their NAS folder on the Mac, the chosen
-  folder on the phone) holds a `~Geotag` folder (`.geotag` before 0.29.23) with one list per
+  folder on the phone) holds a `~Squeaky` folder (`.squeaky` before 0.29.23) with one list per
   device, `saved-<device>.json` (the Mac's id, or a phone's own), of the
   photos it saved from cards: name, size, time taken (`ServerList`). Each
   device writes its own whole list as it opens and after each save; a card
   being read is checked against all of them, once per card, so a card one
   Mac or phone handled reads as saved before on every other.
-- Written as Geotag opens, whenever the server answers and they were not
+- Written as Squeaky opens, whenever the server answers and they were not
   written since it opened, and after each batch sent (0.29.2). The Photos
   page says so, in David's words (0.29.3): "Sync file saved on NAS. Last
   save: Mac app @ 20:03" ("on server" on the phone), whichever device wrote
   last; "Sync file not saved yet."; or "Sync file not saved:" and why. On
   the Mac it sits on the title row, after the buttons; on the phone, first
-  in the top section. Geotag's own openings of
+  in the top section. Squeaky's own openings of
   the NAS are not closed while the lists are written.
 - A server known not to answer is not waited for; then only the device's
   own list counts. Someone else's card on a phone is never checked.
-- This is Geotag's own record on the server, read only to know what was
+- This is Squeaky's own record on the server, read only to know what was
   saved; it never decides anything about the photos there.
 
 ## Offsets shared, the offset code and squares on the phone (0.29.1, David, 16 November 2026)
 
-- Camera offsets go through the same `.geotag` folder: each device writes
+- Camera offsets go through the same `.squeaky` folder: each device writes
   `cameras-<device>.json` with the person's cameras that have an offset;
   for each model the offset set most recently on any device wins
   (`Camera.offsetSet`; before 0.29.1, the last offset code reading's date).
-  Read as Geotag opens and before a card is read; written whenever an
+  Read as Squeaky opens and before a card is read; written whenever an
   offset changes. Others' cameras on a phone are never shared.
 - The phone shows the offset code full screen (Settings, Cameras, Show
   offset code), at full brightness, its clock checked against
@@ -948,7 +948,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   photos have a track" when it applies, and Save photos, Check tracks
   again, Don't save. The Mac keeps its panel for missing tracks only.
 - Since 0.29.20 the track service names its tracks (tracks 0.4.1, field
-  `place`), so every site shows the same; Geotag shows that name and names
+  `place`), so every site shows the same; Squeaky shows that name and names
   only tracks the service does not hold itself.
 - Tracks are named by where they are (`TrackPlaces`, Mac and phone): start,
   middle and end looked up on OpenStreetMap in English at zoom 10; one town
@@ -998,7 +998,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Offset codes are looked for in one file per frame, the JPG of a RAW+JPG
   pair; a raw alone in its own large preview, not decoded.
 - The sync line's last save is remembered between launches and noted
-  whenever Geotag reads the server folder, not only when it writes.
+  whenever Squeaky reads the server folder, not only when it writes.
 
 ## No silent failures (0.29.11, David, 16 November 2026: "dont fail silently")
 
@@ -1018,7 +1018,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   never waits on the server (David: one card and one reader, moved between
   devices; "whats the point of having it locally if it's going to check the
   server everytime"). The copy is refreshed, both files in one visit, with
-  each sharing: as Geotag opens, when the server answers again after being
+  each sharing: as Squeaky opens, when the server answers again after being
   away, after each save and each batch sent.
 - On the phone, photos saved from the card keep their square with a green
   check in the bottom right corner, from the copy on the phone once the card
@@ -1031,7 +1031,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   the save at the first photo it can't give: "The card stopped answering
   after N photos: <why>. N saved; the rest are still to save..." The rest
   are not marked failed; the phone lets go of the card, so it is read again
-  and carries on when back. Noted when Geotag was in the background
+  and carries on when back. Noted when Squeaky was in the background
   meanwhile.
 - The phone has no Status column: its line gives each reason with how many.
   A failed square has a red mark; the count of saved photos updates after
@@ -1042,10 +1042,10 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Photos saved on the phone go into its Photos library, not Files (David:
   "they should show in the library"): every JPG saved from a card is added
   with its location and date (`PhoneLibrary`, add-only permission). Raws
-  never go into the library. Geotag's working copies live hidden in
-  Application Support/Geotag/Copies, out of the phone's backup, and each
+  never go into the library. Squeaky's working copies live hidden in
+  Application Support/Squeaky/Copies, out of the phone's backup, and each
   leaves once it is on the server. Someone else's JPGs go into the library
-  and their copy is removed at once. Geotag no longer shows in Files.
+  and their copy is removed at once. Squeaky no longer shows in Files.
 - On the first launch of 0.29.15, what was in Files (Documents) is moved to
   the hidden copies with every path kept, and every JPG added to Photos;
   done again each launch until all are in; nothing deleted on the way.
@@ -1097,15 +1097,15 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   up a card; tried again each minute while it fails. The line then says
   "Not synced with the NAS yet: <why> Trying again each minute; your photos
   are not affected, you can carry on." ("server" on the phone).
-- The one-off reset of SD cards marked someone else's runs as Geotag starts,
+- The one-off reset of SD cards marked someone else's runs as Squeaky starts,
   before any card is read.
 
 ## The sync folder made visible (0.29.23, David, 17 November 2026)
 
 - The phone reaches the NAS through the Files app, which hides folders
-  whose name starts with a dot: ".geotag" looked absent, so the phone never
+  whose name starts with a dot: ".squeaky" looked absent, so the phone never
   saw the Mac's list and said "not saved yet". The sync files now live in
-  "~Geotag" in each person's server folder (0.29.24; the tilde keeps it at
+  "~Squeaky" in each person's server folder (0.29.24; the tilde keeps it at
   the top of the list, David's choice); each device moves the old
   hidden folder's files there the first time (`ServerList.moveFromHidden`).
   Finding no sync file at all is said ("No sync files found on the server."),
@@ -1114,7 +1114,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 ## No name on the phone (0.29.25, David, 17 November 2026)
 
 - The phone's person is set up by itself, tied to the ID the phone gives
-  Geotag (identifierForVendor; apps cannot read the IMEI), with no name: a
+  Squeaky (identifierForVendor; apps cannot read the IMEI), with no name: a
   name typed and never saved left the phone with no person, and the sync
   files were skipped without a word. The SD card question reads "Is this
   your card?"; the Photos tab says the card belongs to "you" or "someone
@@ -1125,14 +1125,14 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 ## The wheel (0.29.26, David, 17 November 2026)
 
 - Any wait longer than half a second shows the spinning wheel beside its
-  line, in Geotag (his rule for this project only): reaching the NAS on the
+  line, in Squeaky (his rule for this project only): reaching the NAS on the
   sync line ("Reaching the NAS"), moving photos out of Files, naming tracks
   by place, working out the server folder's path in Settings, and every
   step that already had one.
 
 ## One synced list per person (0.29.27, David, 17 November 2026: "i want a synced list. everyone their own is not a sync")
 
-- Each person's "~Geotag" holds one `saved.json` (every photo saved by any
+- Each person's "~Squeaky" holds one `saved.json` (every photo saved by any
   device for that person) and one `cameras.json` (each camera's newest
   offset), each with when and by which kind of device it was last updated.
   A device reads them, adds what it saved, and writes them back only when
@@ -1166,15 +1166,15 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - The phone stopped sending once locked (9 of 231 sent, none failed).
   The background work's progress now moves with each part of a photo, not
   once per photo; sending that starts without a save asks for background
-  time too (while Geotag is in front); when the phone ends it anyway, or the
+  time too (while Squeaky is in front); when the phone ends it anyway, or the
   server stops answering for a minute, the Photos and Queue tabs say
   "Sending stopped while the phone was locked, after 9 of 231. Carrying on
-  now." when Geotag is back, until nothing is waiting. The cause is not
+  now." when Squeaky is back, until nothing is waiting. The cause is not
   proven; this is the best reading.
 - Phone messages that do not fit on one line start each sentence on a new
   line (`Sentences`, `LineBreaks`); a soft break (`LineBreaks.soft`) is ", "
   on one line and a new line otherwise. A time never splits.
-- The phone's Queue line: "DAVL4150.CR3 to Geotag, ≈ 9 h 15 min left
+- The phone's Queue line: "DAVL4150.CR3 to Squeaky, ≈ 9 h 15 min left
   (speed: average)", no full stops, broken at the comma when long. The Mac
   keeps its own line.
 - Page titles sit in the top row on the left, smaller, level with the round
@@ -1187,7 +1187,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   once set ("Not set" otherwise). No figure and no typing: the offset code
   is the only way to set it on the phone (David: the figure tells nothing,
   and it drifts).
-- SD cards: Rename (a name kept by Geotag, `cardNicknames`; the card's own
+- SD cards: Rename (a name kept by Squeaky, `cardNicknames`; the card's own
   name stays in `cardNames`; the card is never changed) and Change.
 - "GPS tracks service" (the phone's English messages say so too), with an
   i in its heading opening `ServiceFormat`: what a service must answer, for
@@ -1209,11 +1209,11 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 
 ## One notification, paused not failed (0.29.32, David, 17 November 2026)
 
-- He saw "Sending 3 of 205" and "Task failed" side by side. Geotag now
+- He saw "Sending 3 of 205" and "Task failed" side by side. Squeaky now
   hands the phone one background request at a time (`asked`), and ends
   its work as finished with its last words: "Sending paused: 3 of 205
-  sent. It carries on when Geotag is open." or "Saving stopped: 40 of 300
-  saved.", never as failed. An install that closes Geotag mid-send still
+  sent. It carries on when Squeaky is open." or "Saving stopped: 40 of 300
+  saved.", never as failed. An install that closes Squeaky mid-send still
   leaves the phone's own "failed" notice: say so before each install.
 
 ## Tracks, Queue and Settings tidied (0.29.33, David, 17 November 2026)
@@ -1261,7 +1261,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   unsaved photos say "Insert the card to try again" (David: "the sd card
   menu is still active while there is no card connected").
 - `CFBundleLocalizations` in `Phone/Info.plist` lists en, es, fr, zh-Hant.
-  The iPhone offers a Language row under Settings, Apps, Geotag, only when
+  The iPhone offers a Language row under Settings, Apps, Squeaky, only when
   the phone itself has more than one language in General, Language & Region.
   `Locale.preferredLanguages` then starts with the language chosen there.
 - Simplified Chinese is removed (David: "only need traditional chinese. not
@@ -1270,14 +1270,14 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 
 ## The iPhone's own settings, linked (0.29.38, David, 17 November 2026)
 
-- Settings the iPhone keeps for Geotag stay there (Apple's convention): the
+- Settings the iPhone keeps for Squeaky stay there (Apple's convention): the
   Settings page's last row before the version opens them
   (`UIApplication.openSettingsURLString`), "Language, access to Photos,
   notifications and mobile data" under it.
 - "Allow backup over mobile data" is removed (David: "it's clearly a settings
   setting"); told that upload apps usually keep their own Wi-Fi-only switch,
   he still chose the iPhone's. `NetworkWatch` now only notices the iPhone
-  keeping Geotag off mobile data with no Wi-Fi (`unsatisfiedReason ==
+  keeping Squeaky off mobile data with no Wi-Fi (`unsatisfiedReason ==
   .cellularDenied`): sending waits and says "Waiting for Wi-Fi to back up to
   the server" instead of failing.
 - Once on each phone (`mobileDataReminded`), an alert at launch: "Mobile
@@ -1311,12 +1311,12 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   no ≈ any more), "Average time per photo" (that time over the photos left,
   `Remaining.each`), "Speed": `SendSpeeds.Rating`, now with Very slow for
   the slowest tenth of every photo timed.
-- `RunLog` writes `Library/Application Support/Geotag/background-runs.log`
-  (newest 3000 lines): Geotag opening, background, lock and unlock, closing;
+- `RunLog` writes `Library/Application Support/Squeaky/background-runs.log`
+  (newest 3000 lines): Squeaky opening, background, lock and unlock, closing;
   each background request, start, a line every 30 s with counts and how the
-  phone stands, and how it ended (by the iPhone, or closed by Geotag). Read
+  phone stands, and how it ended (by the iPhone, or closed by Squeaky). Read
   it over the cable with `xcrun devicectl device copy from ... --source
-  "Library/Application Support/Geotag/background-runs.log"` to find the
+  "Library/Application Support/Squeaky/background-runs.log"` to find the
   cause of "Task failed".
 
 ## Each photo's share on the right (0.29.42, David, 17 November 2026)
@@ -1336,8 +1336,8 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 ## Card names: removed (0.29.44, David, 17 November 2026)
 
 - "Rename" for SD cards is removed, with its window and the names kept in
-  Geotag (`cardNicknames`, cleared at launch): the iPhone gives no app a way
-  to rename a card, so a name only Geotag showed was a pretend rename ("the
+  Squeaky (`cardNicknames`, cleared at launch): the iPhone gives no app a way
+  to rename a card, so a name only Squeaky showed was a pretend rename ("the
   name was not applied to the card ... remove all that mambo jumbo"). Each
   card shows its own name, as in Files.
 
@@ -1359,15 +1359,15 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   (`useBuffer`); the buffer server not answering means the NAS route.
 - `sendThroughBuffer` hands up to 30 photos at a time to `BufferUploads`: on
   the iPhone a background URLSession (`.buffer` identifier), which carries on
-  while Geotag is closed or the phone locked, with no notification; on the
+  while Squeaky is closed or the phone locked, with no notification; on the
   Mac an ordinary session. Each upload carries its fingerprint, which R2
-  checks: no reading back. When all are done the phone wakes Geotag
+  checks: no reading back. When all are done the phone wakes Squeaky
   (`PhoneAppDelegate`, `PhoneModel.shared`) to hand over the next 30.
   BackgroundWork asks for no continued-processing task on this route.
-- The path sent: the Mac's `nasFolder` ("homes/david/Geotag") plus the
+- The path sent: the Mac's `nasFolder` ("homes/david/Squeaky") plus the
   photo's relative path; on the phone the Files folder's path
-  (`nasBookmarkPath`, "home/Geotag"), which bufr.cc turns into
-  "homes/<user>/Geotag" from the key.
+  (`nasBookmarkPath`, "home/Squeaky"), which bufr.cc turns into
+  "homes/<user>/Squeaky" from the key.
 - The keychain item on the iPhone is readable after first unlock, so a
   relaunch with the phone locked still has the key.
 - A NAS batch already going asks `useBuffer` before each next photo, so a
@@ -1380,7 +1380,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   left". `BufferUploads.pace()` counts the bytes of all of them over three
   minutes; `sendingSeconds` and the speeds recorded use it (0.30.3).
 - A phone with no server folder chosen yet sends through the buffer server,
-  as "home/Geotag/...", wherever it is: Amanda's phone until her folder is
+  as "home/Squeaky/...", wherever it is: Amanda's phone until her folder is
   chosen at home in Panama, over the home network with no Tailscale (0.30.4).
   Once a folder is chosen, home goes straight to the NAS again.
 - A photo counts as sent once at bufr.cc. "Waiting on the buffer server"
@@ -1457,7 +1457,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   connection all handed-over uploads go at once, and starved ones timed out
   and started again ("57% then back to 11%"). A stalled upload now waits
   600 s before the phone starts it again. Watch the record for slower
-  sending while locked: each batch of 6 needs the phone to wake Geotag.
+  sending while locked: each batch of 6 needs the phone to wake Squeaky.
 
 ## Where the Mac build lands (0.31.6, 18 November 2026)
 
@@ -1491,11 +1491,11 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   copied, not copied again." Photos copied before without a location
   included: Locations in Photos (below) is the way to place them.
 - Sync lists at bufr.cc too (bufr.cc 0.2.1, `GET`/`PUT /v1/lists`, header
-  `X-Path` = the person's base + "/~Geotag/saved.json" or "cameras.json",
+  `X-Path` = the person's base + "/~Squeaky/saved.json" or "cameras.json",
   the same path the NAS has; `bufferBase`). `syncThroughBuffer` reads both,
   adds them to the copy kept here (`keepServerCopy`: never replaced, only
   added to, the NAS read included), and writes back when something is new.
-  Run first in `shareWithServer` (as Geotag opens, after each save and
+  Run first in `shareWithServer` (as Squeaky opens, after each save and
   batch) and before each card is read, at most 10 s ("Reading the sync list
   from the buffer server"). Reached, it clears the sync line's problem; the
   NAS write passes on what it added. Card reading itself stays local.
@@ -1509,7 +1509,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
   unstable/not connected", "in red", "stays visible when scrolling").
 - Locations in Photos (phone, `LibraryLocations`, David: "much cleaner"):
   photos in the Photos app with no location, taken from two days before the
-  first track on, whose original is a JPG from a camera Geotag knows with
+  first track on, whose original is a JPG from a camera Squeaky knows with
   its offset set (the phone's person's, else Others'), get the location
   their time falls on, set on the photo already there
   (`PHAssetChangeRequest.location`, 100 a batch; the iPhone asks to allow
@@ -1530,7 +1530,7 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Photos of the offset code are left out of the list (`offsetCodeFrames`, by
   frame), on the phone and the Mac: never shown, copied or sent. A reading
   that changed the record adds "Offset updated for <model>" to
-  `offsetNotices`, shown under the red line inside Geotag (`NoticeLines`),
+  `offsetNotices`, shown under the red line inside Squeaky (`NoticeLines`),
   never a system notification, until closed.
 - A day with photos copied and not is two cards: "<day>" with every photo
   not copied yet, then "<day>-copied" with a green tick in its title, folded
@@ -1539,12 +1539,12 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - `Phone/install_phone.sh` takes `PHONE=<id>` for the phone on the cable
   when another one is about over Wi-Fi.
 
-## 相途 in Chinese (0.31.10, David, 18 November 2026)
+## Squeaky in Chinese (0.31.10, David, 18 November 2026)
 
-- On an iPhone set to Chinese the app is named 相途 ("photos along the
+- On an iPhone set to Chinese the app is named Squeaky ("photos along the
   way", David's pick of three), under its icon, in Settings and in the
   Photos permission texts (`zh-Hant.lproj/InfoPlist.strings`). Everywhere
-  else, and in the words inside the app, it stays Geotag.
+  else, and in the words inside the app, it stays Squeaky.
 
 ## Which photos got a location (0.31.11, David, 18 November 2026: "i've no idea which ones they were")
 
@@ -1556,8 +1556,8 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 
 ## Architecture
 
-- `GeotagCore` is the domain and knows nothing about the interface.
-- `GeotagUI` holds the model and the screens. `GeotagApp` is the entry point
+- `SqueakyCore` is the domain and knows nothing about the interface.
+- `SqueakyUI` holds the model and the screens. `SqueakyApp` is the entry point
   and nothing else.
 
 ## Working on it
@@ -1566,9 +1566,9 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 - Never open the app, or anything else, on his screen without asking first.
 - Never delete anything on his computer, not even copies or scratch files
   made here (his rule, 16 October 2026). Ask in the chat first. The one
-  exception he gave: each new build replaces the previous Geotag in
+  exception he gave: each new build replaces the previous Squeaky in
   Applications and in `build/`.
-- Raise `appVersion` in `Sources/GeotagCore/Version.swift` with every change
+- Raise `appVersion` in `Sources/SqueakyCore/Version.swift` with every change
   that is committed or installed, the phone's included, and start the
   commit subject with that number (David, 16 November 2026: six phone
   changes went out as 0.28.0 and he could not tell he had the latest).
@@ -1579,44 +1579,44 @@ family members, never sold. The full brief is `geotag-app-brief.md`, given on
 
 ## Notes
 
-### Geotag scope: send and check once
+### Squeaky scope: send and check once
 
-Geotag's job on the NAS ends with the send and its first check (read back and compared on arrival). David, 5 Nov 2026: "we're not building a continued integrity tool". No later look at the NAS to decide anything, e.g. before removing Mac copies.
+Squeaky's job on the NAS ends with the send and its first check (read back and compared on arrival). David, 5 Nov 2026: "we're not building a continued integrity tool". No later look at the NAS to decide anything, e.g. before removing Mac copies.
 
 **Why:** the NAS has RAID plus a nightly remote Hyper Backup, and David plans to sort the photos later, deleting or renaming files and folders, so later checks would misfire.
 
-**How to apply:** decisions about photos already sent rest on Geotag's own record of the send, never on what the NAS holds now. Mac copies are removed 30 days after reaching the NAS (matches the Mac Trash's 30 days; time to use the photos while fresh). Related: [[geotag-state]].
+**How to apply:** decisions about photos already sent rest on Squeaky's own record of the send, never on what the NAS holds now. Mac copies are removed 30 days after reaching the NAS (matches the Mac Trash's 30 days; time to use the photos while fresh). Related: [[squeaky-state]].
 
-### Geotag other Mac: fresh install
+### Squeaky other Mac: fresh install
 
-Geotag on David's other Mac will be a fresh install that takes everything from iCloud; its old settings and its list of photos read are dropped on purpose (David, 5 Nov 2026). Only this MacBook Air copies its settings to iCloud.
+Squeaky on David's other Mac will be a fresh install that takes everything from iCloud; its old settings and its list of photos read are dropped on purpose (David, 5 Nov 2026). Only this MacBook Air copies its settings to iCloud.
 
 **Why:** he said "do not mention the other mac again ... we lose all the old stuff. capiche?"
 
-**How to apply:** never raise the other Mac's old data, merging, or what is lost with it. Plan the iCloud work from this Mac's data only. Related: [[geotag-scope-send-and-check-once]].
+**How to apply:** never raise the other Mac's old data, merging, or what is lost with it. Plan the iCloud work from this Mac's data only. Related: [[squeaky-scope-send-and-check-once]].
 
-### Geotag: push without asking
+### Squeaky: push without asking
 
-On Geotag, push without asking (David, 6 Nov 2026: "since push does nothing
+On Squeaky, push without asking (David, 6 Nov 2026: "since push does nothing
 more than save versions on this project, dont ask me for push on this
 project only").
 
-**Why:** Geotag is a Mac app; GitHub holds its versions and nothing goes
+**Why:** Squeaky is a Mac app; GitHub holds its versions and nothing goes
 live from a push, unlike his Cloudflare sites where a push to main is a
 release.
 
-**How to apply:** after a Geotag commit is built and tested, push it
+**How to apply:** after a Squeaky commit is built and tested, push it
 without a question. Still ask before installing a new build on his Mac
-(it quits his running Geotag). Every other project keeps the push
+(it quits his running Squeaky). Every other project keeps the push
 question. Claude Code's own safety check treats a push as a release, so
 `.claude/settings.json` here allows `git push`, and the Sites folder's
-local settings allow `git -C /Users/david/Sites/geotag push` (12 November
+local settings allow `git -C /Users/david/Sites/squeaky push` (12 November
 2026, his yes). Exception to [[david-plan-then-ask-to-push]] and
 [[keep-wine-no-push-without-word]].
 
 ### Notes only in cross-project changes
 
-Said 26 Oct 2026: in changes made across all projects, only Geotag's notes are aligned, nothing else, unless David names it.
+Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are aligned, nothing else, unless David names it.
 
 ## Watch app, Phase 0: Bluetooth scan test (Watch 0.1.0, David, 19 November 2026)
 
@@ -1629,10 +1629,10 @@ Said 26 Oct 2026: in changes made across all projects, only Geotag's notes are a
 - Copying to the watch: macOS has no MTP. libmtp 1.1.22 and libusb 1.0.27 are built from source into `~/.local/mtp` (libusb configured with `ac_cv_func_pipe2=no`, or it crashes on this macOS). Run with `DYLD_LIBRARY_PATH=~/.local/mtp/lib`; `mtp-sendfile <file> /GARMIN/Apps` copies (the destination is the folder, the name comes from the file). The watch installs it when the cable is let go.
 - The watch must be set to USB Mode MTP, and the Mac's "Allow accessory to connect?" answered Allow, or it shows up as Garmin mode (091e:0003) and no file can be copied. In MTP it is 091e:535c.
 
-## Watch app and receiving tracks (Watch 0.2.0, Geotag 0.32.0, David, 19 November 2026)
+## Watch app and receiving tracks (Watch 0.2.0, Squeaky 0.32.0, David, 19 November 2026)
 
-- `Watch/Geotag`: the watch app, named Geotag (相途 in Chinese), app id `14bdff03-a39e-49e5-b118-cbaac67b0534` (the phone uses it in `WatchLink.appId`; never change it). Build as `build/GEOTAG.prg` (8 characters at most); copy with `mtp-sendfile build/GEOTAG.prg /GARMIN/Apps`. Words in eng, fre, spa, zht; French says "trace", like the phone.
-- Icon: `Watch/Geotag/tools/icon.svg` (Geotag's pin, one plain colour, no gradient, pin larger in the square), drawn at 65 px by `tools/watchicon.swift`.
+- `Watch/Squeaky`: the watch app, named Squeaky (Squeaky in Chinese), app id `14bdff03-a39e-49e5-b118-cbaac67b0534` (the phone uses it in `WatchLink.appId`; never change it). Build as `build/SQUEAKY.prg` (8 characters at most); copy with `mtp-sendfile build/SQUEAKY.prg /GARMIN/Apps`. Words in eng, fre, spa, zht; French says "trace", like the phone.
+- Icon: `Watch/Squeaky/tools/icon.svg` (Squeaky's pin, one plain colour, no gradient, pin larger in the square), drawn at 65 px by `tools/watchicon.swift`.
 - Opening screen: "Acquiring satellites" (0.2.5; "Loading" before) and a bar for the GPS fix, by Garmin's quality only (apps get no satellite count; David asked for one, 19 November 2026): Searching 0, Poor 33, Usable 66, Good 100, no figure shown. The bar keeps the best quality reached and never goes back (Watch 0.2.2: moving dropped it from full). Start works at any point (0.2.7, David: start right away, the GPS acquiring behind); at Good a beep and a buzz once, on whichever screen, and on the opening screen "Ready" in green and a green arc on the edge beside the Start button (18 to 42 degrees).
 - In a `BehaviorDelegate`, the behaviour methods run before `onKey`: an `onSelect` returning true swallows the Start key (Watch 0.2.0 ignored Start).
 - Always a hike (David: no sport choice). One point every second whatever the movement, GPS on all systems with L1 and L5 (`CONFIGURATION_GPS_GLONASS_GALILEO_BEIDOU_L1_L5`, else SatIQ max accuracy). Positions of quality Poor or better only.
@@ -1640,9 +1640,9 @@ Said 26 Oct 2026: in changes made across all projects, only Geotag's notes are a
 - One page while recording, laid out like David's fenix watch face (Watch 0.2.3, from his photo of 19 November 2026; reworked in 0.2.4 to 0.2.6): white on black, a purple ring with dividers and two wide, deep frames top and bottom. Inside the top frame a battery as one bar with its tip (white to the level, dark grey beyond; the tip white only at 100%, 0.2.8) and "94%"; inside the bottom frame the time of day, large, no label; both fill their frames, as do distance and pace. Along the edge: top right, footprints and steps since Start; bottom right, a mountain and altitude ("7 m"); bottom left, "GPS ...", "GPS POOR", "GPS OK", "GPS GOOD" (words of four letters at most: David, a longer one does not fit), or "GPS LOST" after 5 s with no position (indoors the watch stops sending positions, and the last quality would otherwise stay); top left, a red heart and heart rate. Icons are drawn at the height of their text; the sides follow the edge (`drawRadialText`, condensed bold vector font). Middle: distance above, elapsed large, below it speed above 10 km/h and pace again below 9 km/h (`Fields.fast`). Change `Layout.AROUND` and `Layout.MIDDLE` in `RecordView.mc`. When the screen dims (`System.getDisplayMode()` low power) a grey page shows the time and elapsed, moved a little each minute.
 - Points: 14 bytes each (time int32, latitude and longitude x 10^7 int32, altitude m int16, -32768 unknown, big-endian), 290 to a part, in Storage as `p<id>_<k>`, the part being filled written every minute. Index `tracks`. A track cut off by a crash is kept and sent next time the app opens. The newest 20 sent tracks are kept; unsent ones never dropped.
 - Sending: one part at a time, base64, `{k: part, id, n, of, pts, end, d}`; the phone answers `{k: ack, id, n}`; no answer in 30 s, or a failed send, sends the same part again. Unsent tracks go out whenever the app is open. Hold Up on the opening screen: Tracks, each Sent or Not sent, with Send again.
-- Phone: Garmin's kit, Swift package `connectiq-companion-app-sdk-ios` pinned at 1.8.0, `-ObjC` linker flag, URL scheme `geotag-ciq`, `gcm-ciq` in queried schemes, Bluetooth background mode. It works with the free signing (no entitlement needed). Settings, Watch, Choose watch opens Garmin Connect once; the picked watch is kept in UserDefaults `watchDevices`.
-- Parts are kept in `Application Support/Geotag/Watch/<id>/<n>.bin` (`WatchInbox`) and acknowledged one by one; the track is added when whole, as `watch-<start seconds>`, named "From David's fēnix watch" (the phone's person and the watch model's first word). It is used for matching at once. On the owner's phone it waits to upload and goes up with the next refresh, tried every five minutes while any wait.
-- Family phones: `TrackShare`, MultipeerConnectivity service `geotag-trk`, only between phones whose track service address is the same (a hash of it in the discovery info and the invitation). Each sends the watch tracks the other lacks; the receiving phone shows "Track received from David: date, length" with OK.
+- Phone: Garmin's kit, Swift package `connectiq-companion-app-sdk-ios` pinned at 1.8.0, `-ObjC` linker flag, URL scheme `squeaky-ciq`, `gcm-ciq` in queried schemes, Bluetooth background mode. It works with the free signing (no entitlement needed). Settings, Watch, Choose watch opens Garmin Connect once; the picked watch is kept in UserDefaults `watchDevices`.
+- Parts are kept in `Application Support/Squeaky/Watch/<id>/<n>.bin` (`WatchInbox`) and acknowledged one by one; the track is added when whole, as `watch-<start seconds>`, named "From David's fēnix watch" (the phone's person and the watch model's first word). It is used for matching at once. On the owner's phone it waits to upload and goes up with the next refresh, tried every five minutes while any wait.
+- Family phones: `TrackShare`, MultipeerConnectivity service `squeaky-trk`, only between phones whose track service address is the same (a hash of it in the discovery info and the invitation). Each sends the watch tracks the other lacks; the receiving phone shows "Track received from David: date, length" with OK.
 - Duplicates: `sameStartSeconds` is 20 (was 60). Of listed tracks starting within 20 s, the longest stays listed, the others are set aside (`Track.setAside`). geotrac.cc still uses 60 s and keeps the first: changing it belongs to the tracks project.
 - Camera auto-start waits for the Phase 0 scan result.
 
@@ -1671,3 +1671,27 @@ Said 26 Oct 2026: in changes made across all projects, only Geotag's notes are a
   No context menu on the squares: in a List the menu lifted the whole day.
 - A CRM and an MP4 of the same name and moment are one square, the MP4's.
 - Someone else's card on the phone: its MP4 and MOV too, not its CRM.
+
+## Geotag became Squeaky (0.34.0, David, 20 November 2026)
+
+- Every name is Squeaky: the apps, bundle ids (`com.webpty.squeaky`), modules
+  (`SqueakyCore`, `SqueakyUI`, `SqueakyApp`), the phone project and scheme
+  (`Phone/Squeaky.xcodeproj`, `SqueakyPhone`), `Watch/Squeaky` and
+  `SQUEAKY.prg`, the folders, the keychain service, the phones' link service
+  (`squeaky-trk`) and Garmin Connect scheme (`squeaky-ciq`), the test settings
+  (`SQUEAKY_*`), and the location note ("GPS coordinates added by
+  Squeaky.app"). Only the commit history says Geotag. The repo is
+  github.com/webpty/squeaky. The watch app id is unchanged (it carries no name).
+- The icon is David's cat (`Resources/AppIcon.png`, 1024, no transparency); the
+  watch's is his `Watch/Squeaky/tools/icon.svg`. Chinese uses "Squeaky" too.
+- The name Geotag survives in code only to carry data over: `FromGeotag` on a
+  Mac's first launch moves Application Support/Geotag, ~/Pictures/Geotag (and
+  the paths in the records), iCloud Drive/Geotag, the settings, the track
+  service key (the Mac asks for its password once) and opening on a card;
+  `ServerList.oldFolderNames` moves "~Geotag" lists to "~Squeaky"; leftover
+  ".geotag-" working copies are still cleared. The phones start empty: a new
+  app; Geotag is deleted by hand once its queue is empty.
+- bufr.cc only keeps lists under "~Geotag" until its own session accepts
+  "~Squeaky": until then the phone cannot read the lists through it.
+- The server photo folders (homes/david/Geotag, homes/amanda/Geotag) are
+  David's to rename on the NAS; each device's Server setting then follows.

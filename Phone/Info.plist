@@ -16,7 +16,7 @@
 			<string>$(PRODUCT_BUNDLE_IDENTIFIER).watch</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>geotag-ciq</string>
+				<string>squeaky-ciq</string>
 			</array>
 		</dict>
 	</array>
@@ -26,8 +26,8 @@
 	</array>
 	<key>NSBonjourServices</key>
 	<array>
-		<string>_geotag-trk._tcp</string>
-		<string>_geotag-trk._udp</string>
+		<string>_squeaky-trk._tcp</string>
+		<string>_squeaky-trk._udp</string>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>
