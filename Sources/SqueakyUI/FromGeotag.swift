@@ -22,12 +22,19 @@ public enum FromGeotag {
         // The photo folder in Pictures, and every record that names it.
         let oldPictures = home.appendingPathComponent("Pictures/\(oldName)", isDirectory: true)
         let newPictures = home.appendingPathComponent("Pictures/\(appName)", isDirectory: true)
-        if move(oldPictures, to: newPictures) {
+        move(oldPictures, to: newPictures)
+        // Also when the folder was renamed by hand first (0.34.1): any record still
+        // naming it is made to name the new one; nothing to do once all are.
+        if !fm.fileExists(atPath: oldPictures.path), fm.fileExists(atPath: newPictures.path) {
             rewrite(in: newSupport, from: oldPictures.path, to: newPictures.path)
         }
 
         if let mine = CloudCopy.standardFolder {
             move(mine.deletingLastPathComponent().appendingPathComponent(oldName, isDirectory: true), to: mine)
+        }
+        // The NAS folders were renamed from Geotag to Squeaky by hand (David, 20 November 2026).
+        for folder in [newSupport, CloudCopy.standardFolder].compactMap({ $0 }) {
+            renameNASFolders(in: folder.appendingPathComponent("people.json"))
         }
 
         let defaults = UserDefaults.standard
@@ -54,6 +61,14 @@ public enum FromGeotag {
         let fm = FileManager.default
         guard fm.fileExists(atPath: old.path), !fm.fileExists(atPath: new.path) else { return false }
         return (try? fm.moveItem(at: old, to: new)) != nil
+    }
+
+    /// "homes/david/Geotag" made "homes/david/Squeaky" in each person's NAS folder.
+    static func renameNASFolders(in url: URL) {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+        let changed = text.replacingOccurrences(of: #"("nasFolder"\s*:\s*"[^"]*)(/|\\/)Geotag""#,
+                                                with: "$1$2\(appName)\"", options: .regularExpression)
+        if changed != text { try? changed.write(to: url, atomically: true, encoding: .utf8) }
     }
 
     /// Every record file that names the old folder made to name the new one.
