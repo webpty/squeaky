@@ -299,12 +299,19 @@ module Icons {
         dc.fillPolygon(place(cx, cy, r, deg, size, pts, ccw));
     }
 
-    // A battery as one bar: white up to the level, dark grey for the rest.
+    // A battery as one bar with its tip: white up to the level, dark grey for the rest (0.2.8).
     function battery(dc as Dc, x as Number, y as Number, w as Number, h as Number, level as Float) as Void {
         var lv = level < 0 ? 0.0 : (level > 100 ? 100.0 : level);
-        var fill = (w * lv / 100.0).toNumber();
+        var tip = (h * 0.22).toNumber();
+        if (tip < 3) { tip = 3; }
+        var gap = 2;
+        var body = w - tip - gap;
+        var tipH = h / 2;
+        var fill = (body * lv / 100.0).toNumber();
         dc.setColor(0x444444, Graphics.COLOR_TRANSPARENT);
-        dc.fillRectangle(x, y, w, h);
+        dc.fillRectangle(x, y, body, h);
+        dc.setColor(lv >= 100 ? Graphics.COLOR_WHITE : 0x444444, Graphics.COLOR_TRANSPARENT);
+        dc.fillRectangle(x + body + gap, y + (h - tipH) / 2, tip, tipH);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         if (fill > 0) { dc.fillRectangle(x, y, fill, h); }
     }
