@@ -1629,22 +1629,13 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
 - Copying to the watch: macOS has no MTP. libmtp 1.1.22 and libusb 1.0.27 are built from source into `~/.local/mtp` (libusb configured with `ac_cv_func_pipe2=no`, or it crashes on this macOS). Run with `DYLD_LIBRARY_PATH=~/.local/mtp/lib`; `mtp-sendfile <file> /GARMIN/Apps` copies (the destination is the folder, the name comes from the file). The watch installs it when the cable is let go.
 - The watch must be set to USB Mode MTP, and the Mac's "Allow accessory to connect?" answered Allow, or it shows up as Garmin mode (091e:0003) and no file can be copied. In MTP it is 091e:535c.
 
-## Watch app and receiving tracks (Watch 0.2.0, Squeaky 0.32.0, David, 19 November 2026)
+## Receiving tracks from the Geotrac watch app (Watch 0.2.0, Squeaky 0.32.0, David, 19 November 2026)
 
-- `Watch/Squeaky`: the watch app, named Squeaky (Squeaky in Chinese), app id `14bdff03-a39e-49e5-b118-cbaac67b0534` (the phone uses it in `WatchLink.appId`; never change it). Build as `build/SQUEAKY.prg` (8 characters at most); copy with `mtp-sendfile build/SQUEAKY.prg /GARMIN/Apps`. Words in eng, fre, spa, zht; French says "trace", like the phone.
-- Icon: `Watch/Squeaky/tools/icon.svg` (Squeaky's pin, one plain colour, no gradient, pin larger in the square), drawn at 65 px by `tools/watchicon.swift`.
-- Opening screen: "Acquiring satellites" (0.2.5; "Loading" before) and a bar for the GPS fix, by Garmin's quality only (apps get no satellite count; David asked for one, 19 November 2026): Searching 0, Poor 33, Usable 66, Good 100, no figure shown. The bar keeps the best quality reached and never goes back (Watch 0.2.2: moving dropped it from full). Start works at any point (0.2.7, David: start right away, the GPS acquiring behind); at Good a beep and a buzz once, on whichever screen, and on the opening screen "Ready" in green and a green arc on the edge beside the Start button (18 to 42 degrees).
-- In a `BehaviorDelegate`, the behaviour methods run before `onKey`: an `onSelect` returning true swallows the Start key (Watch 0.2.0 ignored Start).
-- Always a hike (David: no sport choice). One point every second whatever the movement, GPS on all systems with L1 and L5 (`CONFIGURATION_GPS_GLONASS_GALILEO_BEIDOU_L1_L5`, else SatIQ max accuracy). Positions of quality Poor or better only.
-- A Garmin hike is recorded underneath from Start; the stop menu (Start while recording) is Resume, Save Geotrac, Save Geotrac & Garmin, Discard (asks first). Back never leaves mid-hike.
-- One page while recording, laid out like David's fenix watch face (Watch 0.2.3, from his photo of 19 November 2026; reworked in 0.2.4 to 0.2.6): white on black, a purple ring with dividers and two wide, deep frames top and bottom. Inside the top frame a battery as one bar with its tip (white to the level, dark grey beyond; the tip white only at 100%, 0.2.8) and "94%"; inside the bottom frame the time of day, large, no label; both fill their frames, as do distance and pace. Along the edge: top right, footprints and steps since Start; bottom right, a mountain and altitude ("7 m"); bottom left, "GPS ...", "GPS POOR", "GPS OK", "GPS GOOD" (words of four letters at most: David, a longer one does not fit), or "GPS LOST" after 5 s with no position (indoors the watch stops sending positions, and the last quality would otherwise stay); top left, a red heart and heart rate. Icons are drawn at the height of their text; the sides follow the edge (`drawRadialText`, condensed bold vector font). Middle: distance above, elapsed large, below it speed above 10 km/h and pace again below 9 km/h (`Fields.fast`). Change `Layout.AROUND` and `Layout.MIDDLE` in `RecordView.mc`. When the screen dims (`System.getDisplayMode()` low power) a grey page shows the time and elapsed, moved a little each minute.
-- Points: 14 bytes each (time int32, latitude and longitude x 10^7 int32, altitude m int16, -32768 unknown, big-endian), 290 to a part, in Storage as `p<id>_<k>`, the part being filled written every minute. Index `tracks`. A track cut off by a crash is kept and sent next time the app opens. The newest 20 sent tracks are kept; unsent ones never dropped.
-- Sending: one part at a time, base64, `{k: part, id, n, of, pts, end, d}`; the phone answers `{k: ack, id, n}`; no answer in 30 s, or a failed send, sends the same part again. Unsent tracks go out whenever the app is open. Hold Up on the opening screen: Tracks, each Sent or Not sent, with Send again.
+- The watch app is Geotrac, in the tracks project (`../tracks/Watch/Geotrac`, moved 21 November 2026); its rules are in that project's brief. Its app id `14bdff03-a39e-49e5-b118-cbaac67b0534` is `WatchLink.appId` here: never change either.
 - Phone: Garmin's kit, Swift package `connectiq-companion-app-sdk-ios` pinned at 1.8.0, `-ObjC` linker flag, URL scheme `squeaky-ciq`, `gcm-ciq` in queried schemes, Bluetooth background mode. It works with the free signing (no entitlement needed). Settings, Watch, Choose watch opens Garmin Connect once; the picked watch is kept in UserDefaults `watchDevices`.
 - Parts are kept in `Application Support/Squeaky/Watch/<id>/<n>.bin` (`WatchInbox`) and acknowledged one by one; the track is added when whole, as `watch-<start seconds>`, named "From David's fēnix watch" (the phone's person and the watch model's first word). It is used for matching at once. On the owner's phone it waits to upload and goes up with the next refresh, tried every five minutes while any wait.
 - Family phones: `TrackShare`, MultipeerConnectivity service `squeaky-trk`, only between phones whose track service address is the same (a hash of it in the discovery info and the invitation). Each sends the watch tracks the other lacks; the receiving phone shows "Track received from David: date, length" with OK.
 - Duplicates: `sameStartSeconds` is 20 (was 60). Of listed tracks starting within 20 s, the longest stays listed, the others are set aside (`Track.setAside`). geotrac.cc still uses 60 s and keeps the first: changing it belongs to the tracks project.
-- Camera auto-start waits for the Phase 0 scan result.
 
 ## Videos (0.33.0, David, 20 November 2026)
 
@@ -1676,14 +1667,14 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
 
 - Every name is Squeaky: the apps, bundle ids (`com.webpty.squeaky`), modules
   (`SqueakyCore`, `SqueakyUI`, `SqueakyApp`), the phone project and scheme
-  (`Phone/Squeaky.xcodeproj`, `SqueakyPhone`), `Watch/Squeaky` and
-  `SQUEAKY.prg`, the folders, the keychain service, the phones' link service
+  (`Phone/Squeaky.xcodeproj`, `SqueakyPhone`), and
+  the folders, the keychain service, the phones' link service
   (`squeaky-trk`) and Garmin Connect scheme (`squeaky-ciq`), the test settings
   (`SQUEAKY_*`), and the location note ("GPS coordinates added by
   Squeaky.app"). Only the commit history says Geotag. The repo is
   github.com/webpty/squeaky. The watch app id is unchanged (it carries no name).
 - The icon is David's cat (`Resources/AppIcon.png`, 1024, no transparency); the
-  watch's is his `Watch/Squeaky/tools/icon.svg`. Chinese uses "Squeaky" too.
+  watch app is Geotrac now, in the tracks project. Chinese uses "Squeaky" too.
 - The name Geotag survives in code only to carry data over: `FromGeotag` on a
   Mac's first launch moves Application Support/Geotag, ~/Pictures/Geotag (and
   the paths in the records), iCloud Drive/Geotag, the settings, the track

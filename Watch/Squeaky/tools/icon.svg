@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
-<defs><mask id="m" maskUnits="userSpaceOnUse" x="-80" y="-80" width="160" height="160"><rect x="-80" y="-80" width="160" height="160" fill="#fff"/><path d="M0 27 L0 32 M0 32 Q-5 38 -11 35 M0 32 Q5 38 11 35" fill="none" stroke="#000" stroke-width="3.2" stroke-linecap="round"/></mask></defs>
-<circle cx="128" cy="128" r="128" fill="#FFCC00"/>
-<g transform="translate(128 142.4) scale(1.55) translate(0 0)"><circle cx="-22" cy="-5" r="15.5" fill="#a0bd2e"/><circle cx="-22" cy="-5" r="11" fill="#cfe35c"/><circle cx="22" cy="-5" r="15.5" fill="#a0bd2e"/><circle cx="22" cy="-5" r="11" fill="#cfe35c"/>
-<path mask="url(#m)" fill="#000000" fill-rule="evenodd" stroke="#000000" stroke-width="2" stroke-linejoin="round" d="M-50 -10 L-48 -58 L-18 -38 Q0 -44 18 -38 L48 -58 L50 -10 Q52 40 0 52 Q-52 40 -50 -10Z M-22 -20 a15 15 0 1 0 0.01 0Z M22 -20 a15 15 0 1 0 0.01 0Z M-22 -16 Q-13 -5 -22 6 Q-31 -5 -22 -16Z M22 -16 Q31 -5 22 6 Q13 -5 22 -16Z M-8 13 L8 13 L0 25Z"/>
-</g>
-</svg>

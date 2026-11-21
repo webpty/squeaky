@@ -1,4 +1,0 @@
-project.manifest = manifest.xml
-base.lang.fre = resources-fre
-base.lang.spa = resources-spa
-base.lang.zht = resources-zht

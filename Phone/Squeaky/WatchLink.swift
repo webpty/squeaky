@@ -3,7 +3,7 @@ import Foundation
 import SqueakyCore
 import SqueakyUI
 
-/// The Squeaky app on a Garmin watch, through Garmin's iPhone kit (0.32.0).
+/// The Geotrac app on a Garmin watch, through Garmin's iPhone kit (0.32.0).
 /// Garmin Connect is needed once, to pick the watch; after that the kit talks
 /// to the watch over Bluetooth by itself, with no internet.
 /// Each part of a track is kept as a file and confirmed to the watch, which
@@ -14,7 +14,7 @@ final class WatchLink: NSObject, ObservableObject {
 
     /// The scheme Garmin Connect answers on after the watch is picked.
     static let scheme = "squeaky-ciq"
-    /// The watch app's id, from Watch/Squeaky/manifest.xml.
+    /// The watch app's id, from the Geotrac watch app (tracks project, Watch/Geotrac/manifest.xml).
     static let appId = UUID(uuidString: "14bdff03-a39e-49e5-b118-cbaac67b0534")!
     private static let devicesKey = "watchDevices"
 

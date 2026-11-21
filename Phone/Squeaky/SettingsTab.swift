@@ -196,7 +196,7 @@ struct SettingsTab: View {
                     }
                     StatusRow(text: model.bufferLine, busy: model.bufferBusy)
                 }.cardRows()
-                // The Squeaky app on a Garmin watch, picked once in Garmin Connect (0.32.0).
+                // The Geotrac app on a Garmin watch, picked once in Garmin Connect (0.32.0).
                 Section(Words.t("Watch")) {
                     LabeledContent(Words.t("Watch")) {
                         Text(watch.watchName ?? Words.t("Not chosen")).lineLimit(1).truncationMode(.middle)
