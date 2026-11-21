@@ -15,7 +15,7 @@ final class WatchLink: NSObject, ObservableObject {
     /// The scheme Garmin Connect answers on after the watch is picked.
     static let scheme = "squeaky-ciq"
     /// The watch app's id, from the Geotrac watch app (tracks project, Watch/Geotrac/manifest.xml).
-    static let appId = UUID(uuidString: "14bdff03-a39e-49e5-b118-cbaac67b0534")!
+    static let appId = UUID(uuidString: "df38ae45-bb86-4899-9ea8-c45147dfc5ee")!
     private static let devicesKey = "watchDevices"
 
     @Published private(set) var watchName: String?
