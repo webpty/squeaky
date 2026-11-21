@@ -1746,3 +1746,15 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   track..." or "12 of 40 photos have no track...", and offers "Save only
   those with a track" (`saveOnlyTracked`: the rest stay selected).
 - 0.34.6 (David): the panel before saving says "Cancel" in red, not "Don't save"; its text is body, as the Photos page; "Save selected" is dimmed with everything selected.
+
+## Where this is heading (David, 21 November 2026)
+
+- The goal is apps installed properly through Apple's store (TestFlight or a
+  private listing, not public) once David has a paid developer account; until
+  then, the free account and cable installs.
+- With that account: a separate Geotrac phone app (receiving watch tracks,
+  sharing them between phones, uploading to geotrac.cc), sharing tracks with
+  Squeaky through a shared container, so offline matching keeps working.
+  Until then Squeaky stays the phone side of geotrac.
+- The watch app is a geotrac thing: to be named Geotrac, its code moved to
+  the tracks project (in that project's own session).
