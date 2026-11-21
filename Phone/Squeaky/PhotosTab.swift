@@ -29,9 +29,7 @@ struct PhotosTab: View {
             List {
                 Section {
                     if let note = model.backgroundNote { StatusRow(text: note, busy: false) }
-                    // A spinning wheel while the sync files are read or saved (0.29.18).
-                    StatusRow(text: model.syncActivity ?? QueueText.sync(model.lastSave, problem: model.sharedProblem),
-                              busy: model.syncActivity != nil)
+                    // The sync line lives in Settings now (0.34.9, David).
                     StatusRow(text: model.photosLine, busy: model.photosBusy || model.saving || model.movingOutOfFiles)
                     // Who the SD card belongs to: said, not changed here (0.29.19); changed in Settings.
                     if let id = model.importPerson, model.book.person(id) != nil {
@@ -69,10 +67,6 @@ struct PhotosTab: View {
                             Button(Words.t("Open card")) { choosing = true }
                                 .buttonStyle(WideButton(.blue)).buttonRow()
                                 .disabled(model.photosBusy || model.macOwner == nil)
-                        }
-                        if !model.rows.isEmpty {
-                            Button(Words.t("Clear"), role: .destructive) { model.clearPhotos() }
-                                .buttonStyle(WideButton(.red)).buttonRow()
                         }
                     }.cardRows()
                 } else {

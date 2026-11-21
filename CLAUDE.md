@@ -1749,3 +1749,4 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   Until then Squeaky stays the phone side of geotrac.
 - The watch app is a geotrac thing: to be named Geotrac, its code moved to
   the tracks project (in that project's own session).
+- 0.34.9 (David, 21 November 2026): the card out (taken out, ejected, or let go of and then taken out), the Photos page empties on the phone and the Mac (`forgetCard`): photos, counts, owner, days; all read again when it is back. No Clear button on either. This replaces the 6 November rule that the Mac kept the list. The sync line moved from Photos to Settings on both.

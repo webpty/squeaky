@@ -952,7 +952,8 @@ public final class AppModel: ObservableObject {
             if let source = self.source, source.bsd == bsd {
                 self.readingRound += 1
                 self.source = nil
-                // The list, and whose it is, stay until Clear photos or the next card (David, 6 November 2026).
+                // The card out: the page empties; it is all read again when it is back (0.34.9, David).
+                self.forgetCard()
                 if self.ejecting != bsd { self.photosLine = Words.t("{0} was taken out.", gone?.name ?? Words.t("The card")) }
             }
         }
@@ -1605,7 +1606,18 @@ public final class AppModel: ObservableObject {
         guard let gone = source, !saving, !photosBusy else { return }
         readingRound += 1
         source = nil
+        forgetCard()
         photosLine = Words.t("{0} was taken out.", gone.name)
+    }
+
+    /// The card's photos, counts and owner gone from the page once it is out:
+    /// everything is read again when it goes back in (0.34.9, David).
+    func forgetCard() {
+        guard source == nil, !saving else { return }
+        rows = []
+        results = [:]
+        importPerson = nil
+        clearPlaces()
     }
 
     /// The card gone as if taken out, for the self-test: scratch cards have no disk.
@@ -1636,7 +1648,10 @@ public final class AppModel: ObservableObject {
     #if os(iOS)
     /// The phone holds nothing to eject: the card is let go of and can come out.
     /// A card let go of is still plugged in: set here and by the phone's card watch (0.29.40).
-    @Published public var cardStillIn = false
+    @Published public var cardStillIn = false {
+        // A card let go of, now taken out: the page empties (0.34.9, David).
+        didSet { if oldValue, !cardStillIn, source == nil { forgetCard() } }
+    }
 
     public func letGo(done: String? = nil) {
         guard let card = source else { return }
@@ -1668,7 +1683,10 @@ public final class AppModel: ObservableObject {
                 self.photosLine = Words.t("{0} was not ejected. {1}", card.name, problem)
             } else {
                 self.cards.removeAll { $0.bsd == bsd }
-                if self.source?.bsd == bsd { self.source = nil }
+                if self.source?.bsd == bsd {
+                    self.source = nil
+                    self.forgetCard()
+                }
                 if let done {
                     self.photosLine = Words.t("{0} can come out. {1}", card.name, done)
                     self.notifier.post(Words.t("{0} can come out.", card.name), kind: "card")

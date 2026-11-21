@@ -100,8 +100,7 @@ struct PhotosScreen: View {
         VStack(alignment: .leading, spacing: Style.gap) {
             HStack(spacing: Style.gap) {
                 ScreenTitle(text: "Photos")
-                // The sync line beside the title, the buttons at the right (0.29.4, David, 16 November 2026).
-                StatusLine(text: model.syncActivity ?? QueueText.sync(model.lastSave, problem: model.sharedProblem), lines: 1)
+                // The sync line is in Settings now (0.34.9, David).
                 Spacer(minLength: Style.gap)
                 // A button that can't do anything now is dimmed (David, 6 November 2026).
                 Button {
@@ -204,16 +203,6 @@ struct PhotosScreen: View {
                     Toggle("Hide already saved", isOn: $model.hideSaved)
                         .toggleStyle(.checkbox)
                         .fixedSize()
-                    if model.source == nil {
-                        Button {
-                            selection = []
-                            model.clearPhotos()
-                        } label: {
-                            Text("Clear").buttonLabel()
-                        }
-                        .fixedSize()
-                        .disabled(model.saving)
-                    }
                     Picker("", selection: $reviewOnly) {
                         Text("All").tag(false)
                         Text("Without location (\(c.review))").tag(true)

@@ -136,6 +136,9 @@ struct SettingsTab: View {
                     if let folderProblem {
                         Sentences(text: folderProblem).foregroundStyle(.orange)
                     }
+                    // The sync line, moved here from Photos (0.34.9, David); the wheel while it works.
+                    StatusRow(text: model.syncActivity ?? QueueText.sync(model.lastSave, problem: model.sharedProblem),
+                              busy: model.syncActivity != nil)
                     // Change and Remove side by side, as buttons (0.29.30).
                     HStack(spacing: 12) {
                         HalfButton(PhoneFolders.isChosen(PhoneFolders.nasKey) ? Words.t("Change") : Words.t("Choose")) {

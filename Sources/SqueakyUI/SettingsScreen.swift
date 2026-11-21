@@ -9,6 +9,8 @@ struct SettingsScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Style.gap) {
                 ScreenTitle(text: "Settings")
+                // The sync line, moved here from Photos (0.34.9, David).
+                StatusLine(text: model.syncActivity ?? QueueText.sync(model.lastSave, problem: model.sharedProblem), lines: 1)
                 TrackServiceCard()
                 NASCard()
                 BufferCard()
