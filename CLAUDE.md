@@ -27,7 +27,7 @@ family members, never sold. The full brief is `squeaky-app-brief.md`, given on
 ## Tracks come from the track service, never from Strava directly
 
 - There is exactly one Strava connection, and it belongs to a separate track
-  service on Cloudflare (its own repo, `../tracks`, at https://geotrac.cc,
+  service on Cloudflare (its own repo, `~/Sites/tracks`, at https://geotrac.cc,
   decided 16 October 2026). This app and antarctique.xyz both read tracks from it.
 - The brief's Strava Client ID and Secret settings are replaced by the
   service's address and key. Connect and Disconnect stay in Settings and work
@@ -70,7 +70,7 @@ family members, never sold. The full brief is `squeaky-app-brief.md`, given on
 
 ## Tracks (stage 3, 16 October 2026)
 
-- The track service is `../tracks` (its own CLAUDE.md). Settings holds its
+- The track service is `~/Sites/tracks` (its own CLAUDE.md). Settings holds its
   address (UserDefaults) and key (login keychain, account
   `track-service-key`, service `com.webpty.squeaky`).
 - The key's role decides: an owner key connects Strava, syncs and uploads;
@@ -182,7 +182,7 @@ family members, never sold. The full brief is `squeaky-app-brief.md`, given on
   copies) and never opens by itself. A camera's offset comes from the
   offset code, or typed by hand in Settings, Cameras, as a fallback.
 - Off-screen pictures of the screens: `SQUEAKY_VIEWER=1` and `SQUEAKY_ALIGN=1`
-  with `SQUEAKY_MAP_KEY` (the CARTO key from `../tracks/.keys/carto.key`).
+  with `SQUEAKY_MAP_KEY` (the CARTO key from `~/Sites/tracks/.keys/carto.key`).
   A probe view needs a background of its own or it draws black.
 
 ## Cards held, dates, tiles (0.9.0, 16 October 2026)
@@ -674,7 +674,7 @@ family members, never sold. The full brief is `squeaky-app-brief.md`, given on
 - Save folders: several people on one Mac, any left empty.
 - Track service: the address is filled in with https://geotrac.cc when
   empty and stays editable. Each Mac has its own key, made by hand in the
-  track service (`../tracks`); Squeaky cannot make one.
+  track service (`~/Sites/tracks`); Squeaky cannot make one.
 - One NAS per Mac.
 
 ## Buttons that can't be used are dimmed (0.26.0, David, 6 November 2026)
@@ -806,7 +806,8 @@ family members, never sold. The full brief is `squeaky-app-brief.md`, given on
 - Same approach as Countries: built on this Mac with Xcode, signed with
   David's free Apple ID, installed over the cable with
   `Phone/install_phone.sh`; it runs for 7 days, then is installed again.
-  His phone only. No iCloud entitlement.
+  Always on both phones, David's and Amanda's (David, 24 November
+  2026). No iCloud entitlement.
 - CR3 and JPG only, never HEIC (David: "the app never handles heic"). CR3
   first. A .HIF on a card is left there. The Mac is unchanged.
 - ExifTool cannot run on the phone: `NativeMetadata` reads and writes CR3
@@ -1350,7 +1351,7 @@ family members, never sold. The full brief is `squeaky-app-brief.md`, given on
 
 ## The buffer server, bufr.cc (0.30.0, David, 17 November 2026)
 
-- Away from home, photos go to bufr.cc (its own project, ../bufr.cc), and a
+- Away from home, photos go to bufr.cc (its own project, ~/Sites/bufr.cc), and a
   container on the NAS fetches them home; at home they go straight to the
   NAS as before. Why: the home is behind CGNAT, so Tailscale only reaches the
   NAS through the Miami relay, about 0.5 MB/s; Cloudflare took 2 MB/s.
@@ -1609,9 +1610,8 @@ release.
 without a question. Still ask before installing a new build on his Mac
 (it quits his running Squeaky). Every other project keeps the push
 question. Claude Code's own safety check treats a push as a release, so
-`.claude/settings.json` here allows `git push`, and the Sites folder's
-local settings allow `git -C /Users/david/Sites/squeaky push` (12 November
-2026, his yes). Exception to [[david-plan-then-ask-to-push]] and
+`.claude/settings.json` here allows `git push` (12 November 2026, his
+yes). The project lives in ~/Apps/squeaky since 24 November 2026. Exception to [[david-plan-then-ask-to-push]] and
 [[keep-wine-no-push-without-word]].
 
 ### Notes only in cross-project changes
@@ -1631,7 +1631,7 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
 
 ## Receiving tracks from the Geotrac watch app (Watch 0.2.0, Squeaky 0.32.0, David, 19 November 2026)
 
-- The watch app is Geotrac, in the tracks project (`../tracks/Watch/Geotrac`, moved 21 November 2026); its rules are in that project's brief. Its app id `df38ae45-bb86-4899-9ea8-c45147dfc5ee` (the public store listing, 0.34.10; the beta and sideloaded one was `14bdff03-...`) is `WatchLink.appId` here: change both together or never.
+- The watch app is Geotrac, in the tracks project (`~/Sites/tracks/Watch/Geotrac`, moved 21 November 2026); its rules are in that project's brief. Its app id `df38ae45-bb86-4899-9ea8-c45147dfc5ee` (the public store listing, 0.34.10; the beta and sideloaded one was `14bdff03-...`) is `WatchLink.appId` here: change both together or never.
 - Phone: Garmin's kit, Swift package `connectiq-companion-app-sdk-ios` pinned at 1.8.0, `-ObjC` linker flag, URL scheme `squeaky-ciq`, `gcm-ciq` in queried schemes, Bluetooth background mode. It works with the free signing (no entitlement needed). Settings, Watch, Choose watch opens Garmin Connect once; the picked watch is kept in UserDefaults `watchDevices`.
 - Parts are kept in `Application Support/Squeaky/Watch/<id>/<n>.bin` (`WatchInbox`) and acknowledged one by one; the track is added when whole, as `watch-<start seconds>`, named "From David's fēnix watch" (the phone's person and the watch model's first word). It is used for matching at once. On the owner's phone it waits to upload and goes up with the next refresh, tried every five minutes while any wait.
 - Family phones: `TrackShare`, MultipeerConnectivity service `squeaky-trk`, only between phones whose track service address is the same (a hash of it in the discovery info and the invitation). Each sends the watch tracks the other lacks; the receiving phone shows "Track received from David: date, length" with OK.

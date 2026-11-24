@@ -28,7 +28,7 @@ Tools/gps-test.sh <samples folder> <output folder>
 
 The self-test, with its files in a scratch folder, Garmin's sample FIT
 files in another, and a local copy of the track service holding the test
-keys (see `../tracks/CLAUDE.md`):
+keys (see `~/Sites/tracks/CLAUDE.md`):
 
 ```
 SQUEAKY_SCRATCH=<scratch> swift run -c release SelfTest <fit folder> http://127.0.0.1:8790
