@@ -1,8 +1,4 @@
-#if os(macOS)
-import AppKit
-#else
 import UIKit
-#endif
 import SwiftUI
 import UniformTypeIdentifiers
 import SqueakyCore
@@ -99,9 +95,6 @@ public final class AppModel: ObservableObject {
 
     /// A page of the window. Camera clocks opens on the first camera.
     public func show(_ page: Screen) {
-        #if os(macOS)
-        if page == .cameraClocks, let first = CameraGuide.all.first { cameraGuide = first.id }
-        #endif
         screen = page
     }
 
@@ -240,12 +233,7 @@ public final class AppModel: ObservableObject {
 
     /// The Download menu's disk image being made.
     /// The kind of Mac a disk image is being made for, while it is.
-    #if os(macOS)
-    @Published public private(set) var downloading: Installer.Chip?
-    public var makingDownload: Bool { downloading != nil }
-    #else
     public var makingDownload: Bool { false }
-    #endif
     /// What became of the last disk image, on the Download page.
     @Published public private(set) var downloadLine = ""
     /// The camera the "Set time and date in camera" window shows.
@@ -300,11 +288,7 @@ public final class AppModel: ObservableObject {
             self.password = password
         }
 
-        #if os(macOS)
-        var port: NASOverSMB { NASOverSMB(addresses: [address, backup], user: user, password: password) }
-        #else
         var port: NASThroughFiles { NASThroughFiles() }
-        #endif
     }
 
     private var nasFields: NASFields {
@@ -390,32 +374,16 @@ public final class AppModel: ObservableObject {
     /// The Photos list kept through a restart; nil in a test that gives no queue file.
     private let photoList: PhotoListFile?
     private var keeping: Task<Void, Never>?
-    /// Squeaky's folder in iCloud Drive; nil when iCloud Drive is off. A test's
-    /// stays in its scratch folder.
-    public private(set) var cloudFolder: URL?
+    /// Held photos and the server list, looked at each minute.
+    private var minuteTimer: Timer?
     /// The photo behind the sidebar, from the last card inserted; nil until one has had a JPEG.
     @Published public private(set) var sidebarImage: PlatformImage?
     /// Its copy, beside the people list; nil when people are not kept in a file.
     let sidebarFile: URL?
-    /// The Macs that have copied their settings to iCloud, and why this one could not.
-    @Published public private(set) var cloudMacs: [CloudCopy.Mac] = []
-    @Published public private(set) var cloudProblem: String?
-    private var cloudTimer: Timer?
-    /// Everyone came from iCloud into an install that had nobody.
-    private var newFromCloud = false
-    /// Where this Mac and iCloud last agreed; a test's own, beside its people file.
-    private var cloudSeenKey: String {
-        guard let file = peopleStore as? PeopleStoreFile, file.url != PeopleStoreFile.standard().url else { return "cloudSeen" }
-        return "cloudSeen-" + file.url.path
-    }
     @Published public private(set) var placingLater = false
     /// What reads and writes the photos: ExifTool on the Mac, Squeaky's own
     /// writer for CR3 and JPG on the iPhone.
     private let engine: PhotoEngine?
-    #if os(macOS)
-    private let exifTool: ExifTool?
-    private let cardGuard = CardGuard()
-    #endif
     /// Bumped whenever reading should stop: a new card chosen, or an eject.
     private var readingRound = 0
     /// The card being ejected, while the Mac closes it: the Photos line spins
@@ -442,8 +410,7 @@ public final class AppModel: ObservableObject {
                 places: PlaceNaming? = nil,
                 power: PowerPort? = nil,
                 temperatures: TemperatureStorePort? = nil,
-                sentLog: SentLogPort? = nil,
-                cloudFolder: URL? = nil) {
+                sentLog: SentLogPort? = nil) {
         // Beside the people list unless told otherwise, so a test's stays in its scratch folder.
         self.temperatureStore = temperatures
             ?? (peopleStore as? PeopleStoreFile).map { TemperatureStoreFile(url: $0.url.deletingLastPathComponent().appendingPathComponent("temperatures.json")) }
@@ -456,30 +423,10 @@ public final class AppModel: ObservableObject {
         if let sidebarFile, FileManager.default.fileExists(atPath: sidebarFile.path) {
             self.sidebarImage = PlatformImage.load(sidebarFile)
         }
-        #if os(iOS)
-        // Each phone is on its own (David, 15 November 2026): nothing goes through iCloud.
-        PhoneFolders.forget(PhoneFolders.cloudKey)
-        self.cloudFolder = cloudFolder
-        #else
-        if let cloudFolder {
-            self.cloudFolder = cloudFolder
-        } else if let file = peopleStore as? PeopleStoreFile {
-            self.cloudFolder = file.url == PeopleStoreFile.standard().url
-                ? CloudCopy.standardFolder
-                : file.url.deletingLastPathComponent().appendingPathComponent("iCloud", isDirectory: true)
-        } else {
-            self.cloudFolder = nil
-        }
-        #endif
         self.notifier = notifier ?? MacNotifier.shared
         self.power = power ?? MacPower()
         self.places = places ?? PlaceNames.shared
-        #if os(macOS)
-        self.exifTool = (exifTool as? ExifTool) ?? ExifTool.bundled()
-        self.engine = self.exifTool.map { .exifTool($0) }
-        #else
         self.engine = .native
-        #endif
         self.library = library
         self.thumbnails = thumbnails ?? MapThumbnails()
         self.peopleStore = peopleStore
@@ -512,9 +459,7 @@ public final class AppModel: ObservableObject {
         }
         macOwner = defaults.string(forKey: "macOwner").flatMap(UUID.init(uuidString:)).flatMap { id in book.person(id) != nil ? id : nil }
         serviceAddress = defaults.string(forKey: "trackServiceAddress") ?? ""
-        #if os(iOS)
         if serviceAddress.isEmpty { serviceAddress = "https://geotrac.cc" }
-        #endif
         role = defaults.string(forKey: "trackServiceRole").flatMap(KeyRole.init(rawValue:))
         // Names given to cards in Squeaky removed (0.29.44, David): the iPhone cannot
         // rename a card, so each card shows its own name, as in Files.
@@ -542,7 +487,6 @@ public final class AppModel: ObservableObject {
         // A send cut off by a crash or a shutdown starts again from the beginning.
         var entries = (try? queue.load()) ?? []
         for i in entries.indices where entries[i].state == .sending { entries[i].state = .waiting }
-        #if os(iOS)
         // Reinstalled since (every week with a free Apple ID): the copies are
         // where they were, under this install's folder.
         if entries.contains(where: { PhoneFolders.current($0.localPath) != $0.localPath }) {
@@ -553,25 +497,19 @@ public final class AppModel: ObservableObject {
             for i in list.indices { list[i].localPath = PhoneFolders.current(list[i].localPath) }
             try? unplaced.save(list)
         }
-        #endif
         queueEntries = entries
         keepOnMac = defaults.string(forKey: "keepOnMac").flatMap(KeepOnMac.init(rawValue:)) ?? .thirtyDays
-        #if os(iOS)
         // Each person manages their own photos: the phone never removes a copy (David, 15 November 2026).
         keepOnMac = .always
-        #endif
         sentRecords = (try? self.sentLog.load()) ?? []
-        #if os(iOS)
         if sentRecords.contains(where: { PhoneFolders.current($0.localPath) != $0.localPath }) {
             for i in sentRecords.indices { sentRecords[i].localPath = PhoneFolders.current(sentRecords[i].localPath) }
             try? self.sentLog.save(sentRecords)
         }
-        #endif
         // The list from before a restart, its card out until it comes back.
         if let kept = photoList?.load() {
             rows = kept.rows
             results = kept.results
-            #if os(iOS)
             // Reinstalled since: the copies are under this install's folder (0.29.14).
             for (id, result) in results {
                 switch result {
@@ -580,7 +518,6 @@ public final class AppModel: ObservableObject {
                 case .failed: break
                 }
             }
-            #endif
             importPerson = kept.personId.flatMap { book.person($0) != nil ? $0 : nil }
             photosLine = Self.cardOut
         }
@@ -596,7 +533,6 @@ public final class AppModel: ObservableObject {
             sentRecords = seeded
         }
 
-        #if os(iOS)
         // The phone's person, set up by itself and tied to the ID the phone gives Squeaky
         // (0.29.25, David: "just register it to the phone's ... unique ID"); no name needed.
         if macOwner == nil {
@@ -619,12 +555,7 @@ public final class AppModel: ObservableObject {
             defaults.set(owners, forKey: "cardPeople")
             defaults.set(true, forKey: "cardOwnersReset")
         }
-        #endif
-        #if os(macOS)
-        let active = NSApplication.didBecomeActiveNotification
-        #else
         let active = UIApplication.didBecomeActiveNotification
-        #endif
         NotificationCenter.default.addObserver(forName: active, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.cameBack() }
         }
@@ -639,13 +570,6 @@ public final class AppModel: ObservableObject {
     /// Light, dark or the Mac's own, for every window. Set on the application
     /// itself: SwiftUI's colour scheme alone left the Mac's own colours behind.
     public func applyAppearance() {
-        #if os(macOS)
-        switch appearance {
-        case .system: NSApp.appearance = nil
-        case .light: NSApp.appearance = NSAppearance(named: .aqua)
-        case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
-        }
-        #endif
     }
 
     /// As Squeaky opens: photos waiting and no answer from the NAS at either
@@ -676,7 +600,7 @@ public final class AppModel: ObservableObject {
         guard !defaults.bool(forKey: "setupDone") else { return false }
         // A new install that took its settings from iCloud still wants this
         // Mac's own: the password, the key, the save folders.
-        return serviceAddress.isEmpty && !book.people.contains { !($0.saveFolder ?? "").isEmpty } || newFromCloud
+        return serviceAddress.isEmpty && !book.people.contains { !($0.saveFolder ?? "").isEmpty }
     }
 
     public func finishSetup() {
@@ -711,7 +635,6 @@ public final class AppModel: ObservableObject {
         // A window opened again runs this again; the rest is once per launch.
         guard !started else { return }
         started = true
-        #if os(iOS)
         // Anyone else left on the phone from before is removed, and a NAS
         // folder kept from before gives way to the server chosen in Settings.
         if let owner = macOwner.flatMap({ book.person($0) }),
@@ -719,13 +642,6 @@ public final class AppModel: ObservableObject {
             || owner.nasFolder != NASThroughFiles.share || book.person(PhoneFolders.othersId) == nil {
             setPhonePerson(name: owner.name)
         }
-        #endif
-        #if os(macOS)
-        Quitting.cutOff = { [weak self] in self?.quitCutOff() }
-        Quitting.beforeQuit = { [weak self] in self?.keepList() }
-        #endif
-        // iCloud first: a new install of David's takes everything from it.
-        await syncWithCloud()
         if needsSetup {
             settingUp = true
         } else {
@@ -733,10 +649,8 @@ public final class AppModel: ObservableObject {
         }
         applyAppearance()
         startCards()
-        #if os(iOS)
         // Before any sending: nothing tidied away before it is in the library.
         await moveOutOfFiles()
-        #endif
         startSending()
         Task {
             await checkNAS()
@@ -751,10 +665,9 @@ public final class AppModel: ObservableObject {
         tracks = await library.listed()
         trackPlaces = TrackPlaces.load(TrackPlaces.file(beside: (peopleStore as? PeopleStoreFile)?.url))
         await refresh()
-        cloudTimer?.invalidate()
-        cloudTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        minuteTimer?.invalidate()
+        minuteTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                await self?.syncWithCloud()
                 if self?.queueEntries.contains(where: \.held) == true { await self?.refresh() }
                 // Not on the server yet: tried again each minute, in the background (0.29.21).
                 if self?.sharedProblem != nil { await self?.shareWithServer() }
@@ -865,11 +778,7 @@ public final class AppModel: ObservableObject {
         do {
             let url = try await service.connectLink()
             awaitingStrava = true
-            #if os(macOS)
-            NSWorkspace.shared.open(url)
-            #else
             await UIApplication.shared.open(url)
-            #endif
             settingsLine = Words.t("Approve on Strava in the browser.")
         } catch {
             settingsLine = error.localizedDescription
@@ -935,57 +844,10 @@ public final class AppModel: ObservableObject {
     // MARK: Photos
 
     private func startCards() {
-        #if os(macOS)
-        cardGuard.onHeld = { [weak self] card in
-            guard let self else { return }
-            self.cards.removeAll { $0.bsd == card.bsd }
-            self.cards.append(card)
-            guard self.openOnCard else { return }
-            Windows.bringForward()
-            self.screen = .photos
-            self.choose(card)
-        }
-        cardGuard.onGone = { [weak self] bsd in
-            guard let self else { return }
-            let gone = self.cards.first { $0.bsd == bsd }
-            self.cards.removeAll { $0.bsd == bsd }
-            if let source = self.source, source.bsd == bsd {
-                self.readingRound += 1
-                self.source = nil
-                // The card out: the page empties; it is all read again when it is back (0.34.9, David).
-                self.forgetCard()
-                if self.ejecting != bsd { self.photosLine = Words.t("{0} was taken out.", gone?.name ?? Words.t("The card")) }
-            }
-        }
-        cardGuard.onProblem = { [weak self] message in
-            guard let self else { return }
-            self.photosLine = message
-            // A card went in and could not be held: show why, where it is said.
-            if self.openOnCard {
-                Windows.bringForward()
-                self.screen = .photos
-            }
-        }
-        cardGuard.start()
-        // On by default: the first time, Squeaky joins the Login Items.
-        if defaults.object(forKey: "openOnCard") == nil { setOpenOnCard(true) }
-        #endif
     }
 
     public func setOpenOnCard(_ on: Bool) {
-        #if os(iOS)
         openOnCard = false
-        #else
-        do {
-            try LoginItem.set(on)
-            openOnCard = on
-            defaults.set(on, forKey: "openOnCard")
-            cardsLine = ""
-        } catch {
-            openOnCard = LoginItem.isOn
-            cardsLine = Words.t("The Mac refused: {0}", error.localizedDescription)
-        }
-        #endif
     }
 
     /// A card picked: first, whose is it.
@@ -1096,7 +958,6 @@ public final class AppModel: ObservableObject {
         var savedCount = 0, failedCount = 0
         // Videos whose file has no room for a location, saved without one (0.33.0).
         var videosWithoutRoom = 0
-        #if os(iOS)
         // Already in Photos, by name and moment: not added again (0.34.4, David).
         var alreadyInPhotos = 0
         var photosIndex: PhoneLibrary.Index?
@@ -1117,15 +978,10 @@ public final class AppModel: ObservableObject {
             alreadyInPhotos += 1
             return true
         }
-        #endif
         var cardGone: String?
-        #if os(iOS)
         var libraryFailed = 0
         var libraryProblem: String?
-        #endif
-        #if os(iOS)
         backgroundedDuringSave = false
-        #endif
         // Every photo's place first, for its folder: the lookups still going
         // are waited for, so none is asked twice.
         photosLine = Words.t("Looking up places")
@@ -1170,7 +1026,6 @@ public final class AppModel: ObservableObject {
                 }
                 item.burst = burstName[n]
             }
-            #if os(iOS)
             // HIF (HDR) photos: added to Photos as they are, with their place given to Photos,
             // never saved as a copy, sent or listed (0.29.28, David: "copy the hif ... not saved on the server").
             if NativeMetadata.isHEIF(row.photo.url) {
@@ -1205,7 +1060,6 @@ public final class AppModel: ObservableObject {
                 saveDone += 1
                 continue
             }
-            #endif
             let named = item
             let result = await Task.detached { saver.save(named) }.value
             // The card gone mid-save (pulled, or the phone stopped letting Squeaky in): stop at
@@ -1221,7 +1075,6 @@ public final class AppModel: ObservableObject {
                 savedCount += 1
                 remember(row.photo)
                 if row.photo.isVideo, named.position != nil, (try? NativeMetadata.read(url))?.lat == nil { videosWithoutRoom += 1 }
-                #if os(iOS)
                 // A video into Photos with its place and moment given to Photos; a RAW video never (0.33.0).
                 if row.photo.isVideo, !PhotoKinds.isRawVideo(url), await inPhotos(row, shift: named.shift) {
                     if !goesToServer(personId) { try? FileManager.default.removeItem(at: url) }
@@ -1245,8 +1098,6 @@ public final class AppModel: ObservableObject {
                         libraryProblem = Words.t("Squeaky isn't allowed to add photos: allow it in the phone's Settings, Privacy, Photos, Squeaky.")
                     }
                 }
-                #endif
-                #if os(iOS)
                 // Into the Photos library, then the working copy of someone else's photo is no longer needed (0.29.15).
                 if PhoneLibrary.isJPG(url), await inPhotos(row, shift: named.shift) {
                     if !goesToServer(personId) { try? FileManager.default.removeItem(at: url) }
@@ -1269,7 +1120,6 @@ public final class AppModel: ObservableObject {
                         libraryProblem = Words.t("Squeaky isn't allowed to add photos: allow it in the phone's Settings, Privacy, Photos, Squeaky.")
                     }
                 }
-                #endif
                 // Saved without a location: kept on the list to be placed later,
                 // unless it has no time at all and never can be.
                 if case .review(let reason)? = row.placement, reason != .noTime,
@@ -1314,7 +1164,6 @@ public final class AppModel: ObservableObject {
         var line = stopped ? Words.t("Stopped after {0} of {1}.", saveDone, saveTotal) : Words.t("{0} saved.", savedCount)
         if stopped { line += Words.t(" {0} saved.", savedCount) }
         let unplaced = todo.filter { $0.needsReview && results[$0.id]?.url != nil }.count
-        #if os(iOS)
         // The phone has no Status column: the reasons themselves, with how many each (0.29.13).
         if unplaced > 0 { line += Words.t(" {0} of them without a location.", unplaced) }
         var reasons: [String: Int] = [:]
@@ -1326,24 +1175,14 @@ public final class AppModel: ObservableObject {
             reasons[said, default: 0] += 1
         }
         for said in order { line += " " + Words.t("{0} not saved: {1}", reasons[said]!, said) }
-        #else
-        if unplaced > 0 { line += Words.t(" {0} of them without a location: see the Status column.", unplaced) }
-        if failedCount > 0 { line += Words.t(" {0} not saved: see the Status column.", failedCount) }
-        #endif
-        #if os(iOS)
         if libraryFailed > 0, let libraryProblem { line += " " + Words.t("{0} not added to Photos: {1}", libraryFailed, libraryProblem) }
-        #endif
         if let cardGone {
             line = cardGone + " " + Words.t("{0} saved; the rest are still to save, and are saved when the card is opened again.", savedCount)
-            #if os(iOS)
             if backgroundedDuringSave { line += " " + Words.t("Squeaky was in the background meanwhile, which can stop the card.") }
-            #endif
         }
         if results.values.contains(.failed(Saver.diskFull)) { line = Words.t("Stopped: {0}. {1} saved before that.", Words.t(Saver.diskFull).lowercased(), savedCount) }
         if !skippedLine.isEmpty { line += " " + skippedLine }
-        #if os(iOS)
         if alreadyInPhotos > 0 { line += " " + Words.t("{0} already in Photos, not added again.", alreadyInPhotos) }
-        #endif
         if videosWithoutRoom > 0 {
             line += " " + (videosWithoutRoom == 1 ? Words.t("1 video saved without a location: its file has no room for one.")
                                                    : Words.t("{0} videos saved without a location: their files have no room for one.", videosWithoutRoom))
@@ -1351,16 +1190,13 @@ public final class AppModel: ObservableObject {
         // Done before the last line is said, so the menu bar never shows it.
         saving = false
         photosLine = line
-        #if os(iOS)
         // The card gone: let go of, so it is read again as soon as it is back.
         if cardGone != nil, let gone = self.source {
             PhoneFolders.release(gone.url)
             self.source = nil
         }
-        #endif
         // Every photo is on this Mac: the NAS copies go from there, so the
         // card is not needed any more (David, 1 November 2026).
-        #if os(iOS)
         // No eject on the phone: the card is let go of, and can come out.
         // Only once every photo on the card is saved: with some left, the card stays
         // open to choose more (0.32.1, David).
@@ -1369,17 +1205,8 @@ public final class AppModel: ObservableObject {
             let onPhone = Words.t("{0} {1} on this iPhone; the NAS copies go from there.", savedCount.formatted(), savedCount == 1 ? Words.t("photo is") : Words.t("photos are"))
             letGo(done: onPhone)
         }
-        #else
-        // Only once every photo on the card is saved (0.33.0, as the phone since 0.32.1).
-        if !stopped, failedCount == 0, savedCount > 0, source.bsd != nil, self.source?.id == source.id,
-           rows.allSatisfy({ isSaved($0) }) {
-            let onMac = Words.t("{0} {1} on this Mac; the NAS copies go from there.", savedCount.formatted(), savedCount == 1 ? Words.t("photo is") : Words.t("photos are"))
-            eject(done: onMac)
-        }
-        #endif
     }
 
-    #if os(iOS)
     /// Set by the phone's app when it goes to the background during a save (0.29.13).
     public var backgroundedDuringSave = false
     /// Whether the phone lets Squeaky add photos to the library; asked once a launch.
@@ -1457,16 +1284,13 @@ public final class AppModel: ObservableObject {
             if !jpgs.isEmpty { photosLine = Words.t("{0} photos from Files are now in Photos.", jpgs.count) }
         }
     }
-    #endif
 
     /// "Saving 341 of 3,630, about 12 min left", and the warning to connect
     /// to power when the battery would run out first.
     nonisolated public static func savingLine(done: Int, total: Int, left: TimeInterval?, battery: TimeInterval?) -> (line: String, warning: String?) {
-        #if os(iOS)
         // Two fixed lines on the phone, so nothing below moves (0.29.28).
         let first = Words.t("Saving {0} of {1}", (done + 1).formatted(), total.formatted())
         return (first + "\n" + (left.map { Words.t("{0} left", Remaining.text($0)) } ?? " "), nil)
-        #endif
         var line = Words.t("Saving {0} of {1}", (done + 1).formatted(), total.formatted())
         guard let left else { return (line, nil) }
         line += Words.t(", {0} left", Remaining.text(left))
@@ -1499,16 +1323,7 @@ public final class AppModel: ObservableObject {
         case .chooseWhose:
             if let source { askingWhose = source }
         case .chooseFolder(let id):
-            #if os(macOS)
-            guard var person = book.person(id),
-                  let url = Folders.choose(startingAt: person.saveFolder) else { return }
-            person.saveFolder = url.path
-            save(person)
-            photosLine = Words.t("{0}'s photos are saved in {1}.", person.name, Folders.shown(url.path))
-            Task { await savePhotos() }
-            #else
             _ = id
-            #endif
         case .trackService, .cameras:
             screen = .settings
         case .camera(let id):
@@ -1645,7 +1460,6 @@ public final class AppModel: ObservableObject {
     /// Stops reading, forces the card off now and says when it can come out.
     /// `done` is said after "can come out" once the card is off, in place of
     /// the usual line, and as a notification.
-    #if os(iOS)
     /// The phone holds nothing to eject: the card is let go of and can come out.
     /// A card let go of is still plugged in: set here and by the phone's card watch (0.29.40).
     @Published public var cardStillIn = false {
@@ -1665,57 +1479,17 @@ public final class AppModel: ObservableObject {
     }
 
     public func eject(done: String? = nil) { letGo(done: done) }
-    #else
-    public func eject(done: String? = nil) {
-        guard let card = source, let bsd = card.bsd else {
-            photosLine = Words.t("No card is held to eject.")
-            return
-        }
-        readingRound += 1
-        ejecting = bsd
-        askingWhose = nil
-        aligning = false
-        photosLine = Words.t("Ejecting {0}", card.name)
-        cardGuard.eject(bsd) { [weak self] problem in
-            guard let self else { return }
-            self.ejecting = nil
-            if let problem {
-                self.photosLine = Words.t("{0} was not ejected. {1}", card.name, problem)
-            } else {
-                self.cards.removeAll { $0.bsd == bsd }
-                if self.source?.bsd == bsd {
-                    self.source = nil
-                    self.forgetCard()
-                }
-                if let done {
-                    self.photosLine = Words.t("{0} can come out. {1}", card.name, done)
-                    self.notifier.post(Words.t("{0} can come out.", card.name), kind: "card")
-                } else {
-                    self.photosLine = Words.t("{0} is ejected. You can take it out.", card.name)
-                }
-            }
-        }
-    }
-    #endif
 
     /// Whether a person's copies go to the server. On the phone, the photos
     /// from someone else's card stay on the phone (David, 15 November 2026).
     func goesToServer(_ personId: UUID) -> Bool {
-        #if os(iOS)
         return personId != PhoneFolders.othersId
-        #else
-        return true
-        #endif
     }
 
     /// Where a person's copies are saved: the folder chosen in People on the
     /// Mac; on the iPhone, Squeaky's own folder for them, made when needed.
     public func saveFolder(of person: Person) -> String? {
-        #if os(iOS)
         return PhoneFolders.saveFolder(for: person).path
-        #else
-        return person.saveFolder
-        #endif
     }
 
     /// Whoever this card belonged to last time.
@@ -1797,11 +1571,9 @@ public final class AppModel: ObservableObject {
         // Every file on the card, before any are left out, so the memory of
         // what was read keeps the ones not read this time (0.34.12).
         let present = Set(files.map { CardReadMemory.place($0, root: url) })
-        #if os(iOS)
         // Someone else's card: its JPGs only, the raws left on the card (0.29.5).
         // Its videos too, not its RAW videos (0.33.0).
         if personId == PhoneFolders.othersId { files = files.filter { ["jpg", "jpeg", "mp4", "mov"].contains($0.pathExtension.lowercased()) } }
-        #endif
         // Only the photos not read before are opened (0.34.12, David: "only 20
         // are new"); the rest come from what was read from them last time.
         let memory = CardReadMemory(folder: cardReadFolder, card: source.id)
@@ -1823,9 +1595,6 @@ public final class AppModel: ObservableObject {
                     }
                 }
                 switch engine {
-                #if os(macOS)
-                case .exifTool(let tool): return try PhotoScanner(exifTool: tool).scan(files, progress: progress)
-                #endif
                 case .native: return NativeMetadata.scan(files, progress: progress)
                 }
             }.value
@@ -1838,60 +1607,30 @@ public final class AppModel: ObservableObject {
             }
             // The camera offsets set on the person's other devices, then what
             // any Mac or phone saved before, from the lists on the server.
-            #if os(iOS)
             // HIF photos already added to Photos count as saved, on this phone only.
             let heif = Set(defaults.stringArray(forKey: "heifAdded") ?? [])
-            #endif
-            // What the sync files held when last read, kept here: no wait on the server (0.29.12).
-            // Never read yet (0.29.12 left it empty after the update): read from the server
-            // first, as before, or said that it couldn't be (0.29.17).
-            // The buffer server's list first, at most ten seconds (0.31.8, David).
-            if bufferClient != nil, goesToServer(personId) {
-                photosLine = Words.t("Reading the sync list from the buffer server")
-                let pid = personId
-                await withTaskGroup(of: Void.self) { group in
-                    group.addTask { @MainActor in _ = await self.syncThroughBuffer(pid) }
-                    group.addTask { try? await Task.sleep(for: .seconds(10)) }
-                    await group.next()
-                    group.cancelAll()
-                }
-                guard readingRound == round else { return }
-            }
-            var copy = loadServerCopy(personId)
+            // What the sync files held when last read, kept here: reading a card never
+            // waits for the server (0.34.13, David: "don't block the flow by reading
+            // it"). The list is kept up to date in the background, as Squeaky opens
+            // and after each save. Only an empty copy, a phone starting afresh, is
+            // read now, behind the photos, and their ticks follow when it comes.
+            let copy = loadServerCopy(personId)
             savedListProblem = nil
-            if goesToServer(personId), NASFolder(book.person(personId)?.nasFolder) != nil, copy?.entries.isEmpty ?? true {
-                photosLine = Words.t("Reading the list of photos already saved, from the server")
-                switch await openServerFolder(personId) {
-                case .success(let folder):
-                    await Task.detached { ServerList.moveFromHidden(in: folder) }.value
-                    if let problem = await refreshServerCopy(personId, folder: folder) { savedListProblem = problem }
-                    copy = loadServerCopy(personId)
-                    // Nothing listed is said, never taken as "nothing saved yet" (0.29.23).
-                    if copy?.entries.isEmpty ?? true { savedListProblem = savedListProblem ?? Words.t("No sync files found on the server.") }
-                case .failure(let why):
-                    savedListProblem = why.localizedDescription
-                }
-                guard readingRound == round else { return }
-            }
+            let restore = goesToServer(personId) && (copy?.entries.isEmpty ?? true)
             if let cameras = copy?.cameras { applyCameras(cameras, personId: personId) }
             let past = ((try? history.load(personId)) ?? []) + (copy?.entries ?? [])
             guard readingRound == round, self.source?.id == source.id else { return }
-            #if os(iOS)
             addCameras(photos, personId: personId)
-            #endif
             var known = past
-            #if os(iOS)
             known += photos.filter { heif.contains($0.key) }.map {
                 HistoryEntry(fileName: $0.fileName, size: $0.size, taken: $0.taken, subSeconds: $0.subSeconds, imported: Date())
             }
-            #endif
             var listed = ImportList.rows(photos, history: known, book: book, personId: personId)
-            #if os(iOS)
             // On the phone nothing is selected to start with: chosen by hand (0.31.3, David).
             for i in listed.indices { listed[i].ticked = false }
-            #endif
             rows = listed
             refreshBreaks()
+            if restore { Task { await self.restoreSavedList(personId) } }
             Task { await chooseSidebarPhoto(photos) }
             noteFirmware(photos, personId: personId)
             noteLenses(photos, personId: personId)
@@ -1907,17 +1646,10 @@ public final class AppModel: ObservableObject {
             await Task.yield()
             rematch()
             photosLine = rows.isEmpty ? Words.t("No photos on {0}.", source.name) : codes
-            #if os(macOS)
-            if case .exifTool(let tool) = engine { Task { await noteTemperatures(photos, personId: personId, tool: tool) } }
-            #endif
             // Every camera set: nothing to line up, so the photos are saved straight
             // away, and the card comes out once they are on the Mac (David, 1 November 2026).
             if camerasReady, saveWhenReady, saveBlock == nil {
-                #if os(iOS)
                 let ask = true
-                #else
-                let ask = noTrackCount > 0
-                #endif
                 if ask {
                     await checkTracksBeforeSave()
                 } else {
@@ -2007,12 +1739,27 @@ public final class AppModel: ObservableObject {
             let each = order.compactMap { frames[$0] }
             candidates += each.count <= Self.codeEnds * 2 ? each : Array(each.prefix(Self.codeEnds) + each.suffix(Self.codeEnds))
         }
-        var found: [(ScannedPhoto, Date)] = []
-        for (i, photo) in candidates.enumerated() {
-            if let round, readingRound != round { return "" }
-            photosLine = Words.t("Looking for offset codes: {0} of {1} photos", i + 1, candidates.count)
-            if let moment = await Task.detached(operation: { OffsetCode.find(in: photo.url) }).value { found.append((photo, moment)) }
+        // Each photo is looked at once (0.34.13, David): what it held is kept, so
+        // a card with no new photos is not looked through again. A code found
+        // before was added to its camera then; its photo is only left out again.
+        let codeMemory = OffsetCodeMemory(folder: cardReadFolder)
+        let looked = await Task.detached { codeMemory.load() }.value
+        for photo in candidates where looked[photo.key] != nil {
+            if case .some(.some) = looked[photo.key] { offsetCodeFrames.insert(Self.frameKey(photo)) }
         }
+        let fresh = candidates.filter { looked[$0.key] == nil }
+        var found: [(ScannedPhoto, Date)] = []
+        var seen: [String: Double?] = [:]
+        for (i, photo) in fresh.enumerated() {
+            if let round, readingRound != round { break }
+            photosLine = Words.t("Looking for offset codes: {0} of {1} photos", i + 1, fresh.count)
+            let moment = await Task.detached(operation: { OffsetCode.find(in: photo.url) }).value
+            seen[photo.key] = .some(moment?.timeIntervalSince1970)
+            if let moment { found.append((photo, moment)) }
+        }
+        let toKeep = seen
+        await Task.detached { codeMemory.add(toKeep) }.value
+        if let round, readingRound != round { return "" }
         var said: [String] = []
         var updated: [String] = []
         for (photo, moment) in found {
@@ -2036,39 +1783,6 @@ public final class AppModel: ObservableObject {
 
     /// The temperature each camera recorded, a photo every quarter of an hour
     /// or so, with where it was taken when known.
-    #if os(macOS)
-    func noteTemperatures(_ photos: [ScannedPhoto], personId: UUID, tool: ExifTool) async {
-        var picked: [(photo: ScannedPhoto, camera: Camera, at: Date)] = []
-        var last: [UUID: Date] = [:]
-        let rowsByPath = Dictionary(rows.map { ($0.photo.url.path, $0) }, uniquingKeysWith: { a, _ in a })
-        for photo in photos {
-            guard let model = photo.model, let camera = book.camera(personId: personId, model: model),
-                  case .success(let at) = Moments.moment(photo, camera: camera) else { continue }
-            if let previous = last[camera.id], abs(at.timeIntervalSince(previous)) < 900 { continue }
-            last[camera.id] = at
-            picked.append((photo, camera, at))
-        }
-        guard !picked.isEmpty else { return }
-        let urls = picked.map(\.photo.url)
-        let read = await Task.detached { TemperatureReader.read(urls, exifTool: tool) }.value
-        guard !read.isEmpty else { return }
-        var next = temperatures
-        for item in picked {
-            guard let celsius = read[item.photo.url.path] else { continue }
-            var sample = TemperatureSample(at: item.at, celsius: celsius)
-            if case .matched(let p)? = rowsByPath[item.photo.url.path]?.placement {
-                sample.lat = p.lat
-                sample.lon = p.lon
-            } else if let lat = item.photo.ownLat, let lon = item.photo.ownLon {
-                sample.lat = lat
-                sample.lon = lon
-            }
-            next.add([sample], camera: item.camera.id)
-        }
-        temperatures = next
-        try? temperatureStore.save(next)
-    }
-    #endif
 
     /// A week after a camera's last offset code photo, and each week after,
     /// one notification to take another (David, 1 November 2026).
@@ -2105,10 +1819,8 @@ public final class AppModel: ObservableObject {
     func alreadyCopied(_ personId: UUID) -> Set<String> {
         var keys = Set(((try? history.load(personId)) ?? []).map(\.key))
         keys.formUnion((loadServerCopy(personId)?.entries ?? []).map(\.key))
-        #if os(iOS)
         let heif = Set(defaults.stringArray(forKey: "heifAdded") ?? [])
         keys.formUnion(rows.map(\.photo).filter { heif.contains($0.key) }.map(\.key))
-        #endif
         return keys
     }
 
@@ -2459,13 +2171,8 @@ public final class AppModel: ObservableObject {
         guard trackCheck != nil else { return }
         let missing = noTrackCount
         if missing == 0 {
-            #if os(iOS)
             // The phone shows the latest track before every save (0.29.5, David, 16 November 2026).
             trackCheck = .ready
-            #else
-            trackCheck = nil
-            await savePhotos()
-            #endif
         } else {
             trackCheck = answered ? .noTrack(missing) : .offline(missing)
         }
@@ -2572,14 +2279,10 @@ public final class AppModel: ObservableObject {
 
     /// This Mac or phone, for its own list on the server.
     var deviceId: String {
-        #if os(iOS)
         if let id = defaults.string(forKey: "deviceId") { return id }
         let id = "iphone-" + UUID().uuidString
         defaults.set(id, forKey: "deviceId")
         return id
-        #else
-        return CloudCopy.macId
-        #endif
     }
 
     /// The person's folder on the server, open; nil when it has none or cannot be had.
@@ -2674,12 +2377,47 @@ public final class AppModel: ObservableObject {
 
     /// Every person's lists, read and written: as Squeaky opens, whenever the
     /// server answers and they were not written since, and after each batch sent.
+    /// A phone with no copy of the list of saved photos (deleted and installed
+    /// again, or new) reads it from the buffer server, else the NAS, behind the
+    /// card's photos (0.34.13): the list is the backup of what was saved.
+    func restoreSavedList(_ personId: UUID) async {
+        if bufferClient != nil { _ = await syncThroughBuffer(personId) }
+        if loadServerCopy(personId)?.entries.isEmpty ?? true, NASFolder(book.person(personId)?.nasFolder) != nil {
+            switch await openServerFolder(personId) {
+            case .success(let folder):
+                await Task.detached { ServerList.moveFromHidden(in: folder) }.value
+                if let problem = await refreshServerCopy(personId, folder: folder) { savedListProblem = problem }
+                if loadServerCopy(personId)?.entries.isEmpty ?? true { savedListProblem = savedListProblem ?? Words.t("No sync files found on the server.") }
+            case .failure(let why):
+                savedListProblem = why.localizedDescription
+            }
+        }
+        applySavedList(personId)
+    }
+
+    /// Photos on the card now on the list of saved photos get their tick
+    /// (0.34.13): the list may come in after the card's photos are shown.
+    func applySavedList(_ personId: UUID) {
+        guard importPerson == personId, !rows.isEmpty, !saving else { return }
+        let keys = Set((((try? history.load(personId)) ?? []) + (loadServerCopy(personId)?.entries ?? [])).map(\.key))
+        var changed = rows
+        var any = false
+        for i in changed.indices where results[changed[i].id] == nil && changed[i].status != .alreadyImported && keys.contains(changed[i].photo.key) {
+            changed[i].status = .alreadyImported
+            changed[i].ticked = false
+            any = true
+        }
+        if any { rows = changed }
+    }
+
     public func shareWithServer() async {
         guard !sharing else { return }
         let people = book.people.filter { goesToServer($0.id) && NASFolder($0.nasFolder) != nil }
         guard !people.isEmpty else { return }
         sharing = true
         defer { sharing = false }
+        // Whatever the list brought, the card's photos on it get their tick (0.34.13).
+        defer { if let person = importPerson { applySavedList(person) } }
         var problem: String?
         // The buffer server first: quick from anywhere (0.31.8). Reached, it
         // stands for the sync even while the NAS can't be.
@@ -2866,11 +2604,7 @@ public final class AppModel: ObservableObject {
     }
 
     static var deviceKind: String {
-        #if os(iOS)
         return "iphone"
-        #else
-        return "mac"
-        #endif
     }
 
     /// The person's list read in one visit, within 30 seconds, kept here, the
@@ -3049,55 +2783,11 @@ public final class AppModel: ObservableObject {
         defaults.set(sendAtOnce, forKey: "sendAtOnce")
     }
 
-    /// Keeps this Mac and iCloud the same: what changed on either side goes
-    /// to the other, the lists of photos read combined (0.21.0).
-    public func syncWithCloud() async {
-        guard let folder = cloudFolder,
-              let people = peopleStore as? PeopleStoreFile,
-              let history = history as? HistoryStoreFolder,
-              let temperatures = temperatureStore as? TemperatureStoreFile else {
-            cloudProblem = Words.t("iCloud Drive is off on this Mac.")
-            return
-        }
-        #if os(iOS)
-        // Files in iCloud Drive may be only in iCloud: brought onto the phone first.
-        await Task.detached { PhoneFolders.bringDown(folder) }.value
-        #endif
-        let all = defaults.dictionaryRepresentation()
-        var settings: [String: Any] = [:]
-        for key in CloudCopy.sharedKeys { if let value = all[key] { settings[key] = value } }
-        nonisolated(unsafe) let shared = settings
-        let seen = defaults.data(forKey: cloudSeenKey).flatMap { try? JSONDecoder().decode(CloudSync.Seen.self, from: $0) } ?? CloudSync.Seen()
-        let local = CloudSync.Local(people: people.url, temperatures: temperatures.url, history: history.folder,
-                                    macName: Self.deviceName)
-        let outcome: Result<CloudSync.Outcome, Error> = await Task.detached {
-            Result { try CloudSync.sync(local, settings: shared, seen: seen, into: folder) }
-        }.value
-        switch outcome {
-        case .success(let done):
-            cloudProblem = nil
-            if let data = try? JSONEncoder().encode(done.seen) { defaults.set(data, forKey: cloudSeenKey) }
-            if done.peopleTaken, let book = try? peopleStore.load() {
-                if self.book.people.isEmpty { newFromCloud = true }
-                self.book = book
-            }
-            if done.temperaturesTaken, let taken = try? temperatureStore.load() { self.temperatures = taken }
-            if let taken = done.settingsTaken { takeSettings(taken) }
-            if cloudMacs != done.macs { cloudMacs = done.macs }
-        case .failure(let error):
-            cloudProblem = Words.t("Not synced with iCloud: {0}", error.localizedDescription)
-        }
-    }
 
     static var deviceName: String {
-        #if os(macOS)
-        return Host.current().localizedName ?? "This Mac"
-        #else
         return UIDevice.current.name
-        #endif
     }
 
-    #if os(iOS)
     /// The phone's one person (David, 15 November 2026): made the first time,
     /// changed after; anyone else on the phone, and their cameras, removed.
     public func setPhonePerson(name: String) {
@@ -3141,33 +2831,7 @@ public final class AppModel: ObservableObject {
         await testNAS()
         await checkNAS()
     }
-    #endif
 
-    /// iCloud's settings in place of this Mac's, and shown at once.
-    private func takeSettings(_ taken: [String: Any]) {
-        for key in CloudCopy.sharedKeys {
-            if let value = taken[key] { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
-        }
-        openOnCard = defaults.object(forKey: "openOnCard") as? Bool ?? true
-        maxGapSeconds = defaults.object(forKey: "maxGapSeconds") != nil ? defaults.integer(forKey: "maxGapSeconds") : 120
-        if defaults.object(forKey: "breakMinutes") != nil { breakMinutes = defaults.integer(forKey: "breakMinutes") }
-        if defaults.object(forKey: "clockFixMinutes") != nil { clockFixMinutes = defaults.integer(forKey: "clockFixMinutes") }
-        dateOrder = defaults.string(forKey: "dateOrder").flatMap(DateOrder.init(rawValue:)) ?? .system
-        clock24 = defaults.object(forKey: "clock24") as? Bool
-        When.current = When(order: dateOrder, clock24: clock24)
-        if let raw = defaults.string(forKey: "appearance"), let mode = Appearance(rawValue: raw) { appearance = mode }
-        #if os(macOS)
-        if NSApp != nil { applyAppearance() }
-        #endif
-        serviceAddress = defaults.string(forKey: "trackServiceAddress") ?? ""
-        savedService = ServiceFields(address: serviceAddress, key: serviceKey)
-        mapCredit = defaults.string(forKey: "mapCredit") ?? ""
-        nasAddress = defaults.string(forKey: "nasAddress") ?? ""
-        nasBackupAddress = defaults.string(forKey: "nasBackupAddress") ?? ""
-        nasUser = defaults.string(forKey: "nasUser") ?? ""
-        savedNAS = nasFields
-        rematch()
-    }
 
     public func setKeepOnMac(_ keep: KeepOnMac) {
         keepOnMac = keep
@@ -3193,13 +2857,11 @@ public final class AppModel: ObservableObject {
         sentSinceTidy = false
         let busy = Set(queueEntries.filter { $0.state != .sent }.map(\.localPath))
         var plan = MacTidy.plan(sentRecords, keep: keepOnMac, busy: busy, now: now)
-        #if os(iOS)
         // Every working copy leaves once it is on the server: raws (0.29.5), and JPGs too,
         // now that they are in the Photos library (0.29.15).
         let onServer = MacTidy.plan(sentRecords, keep: .untilOnNAS, busy: busy, now: now)
         plan.remove = Array(Set(plan.remove + onServer.remove)).sorted()
         plan.gone = Array(Set(plan.gone + onServer.gone)).sorted()
-        #endif
         guard !plan.remove.isEmpty || !plan.gone.isEmpty else { return }
         let fm = FileManager.default
         let roots = Set(book.people.compactMap { saveFolder(of: $0).map { URL(fileURLWithPath: $0).standardizedFileURL.path } })
@@ -3260,23 +2922,19 @@ public final class AppModel: ObservableObject {
     /// time, until nothing more can go now, the NAS can't be reached, or
     /// sending is paused. Called every few seconds from launch; the queue is
     /// on disk, so it carries on after a restart.
-    #if os(iOS)
     /// Mobile data switched off for Squeaky in the iPhone's Settings, and no
     /// Wi-Fi: sending waits (0.29.38; Squeaky's own switch is removed, David).
     public var mobileDataBlocked = false
-    #endif
 
     /// Each photo sent with the time of its four steps, for the phone's record (0.29.45).
     public var onPhotoTimed: ((String, Int64, [Double]) -> Void)?
 
     public func sendWaiting() async {
         guard !sendingNow, !sendPaused else { return }
-        #if os(iOS)
         if mobileDataBlocked {
             if queueEntries.contains(where: { $0.state == .waiting && !$0.held }) { say(Words.t("Waiting for Wi-Fi to back up to the server")) }
             return
         }
-        #endif
         if let next = nextTry, Date() < next { return }
         // Away from home, through the buffer server (0.30.0).
         if await useBuffer() {
@@ -3363,11 +3021,7 @@ public final class AppModel: ObservableObject {
         }
         if !sendPaused, !waiting { await closeOurMounts() }
         // Every ten minutes, and straight after a send when copies go as soon as they are on the NAS.
-        #if os(iOS)
         let rawsGoAtOnce = true
-        #else
-        let rawsGoAtOnce = false
-        #endif
         if lastTidy.map({ Date().timeIntervalSince($0) > 600 }) ?? true || (sentSinceTidy && (keepOnMac == .untilOnNAS || rawsGoAtOnce)) { tidyMac() }
     }
 
@@ -3379,26 +3033,17 @@ public final class AppModel: ObservableObject {
         guard let address = sendingThrough, meter.count > 0, !sendPaused else { return }
         let host = Self.host(address)
         let going = meter.only.map { Words.t("{0} to {1}", $0.name, host) } ?? Words.t("{0} photos to {1} at once", meter.count, host)
-        #if os(iOS)
         // "DAVL4150.CR3 to Squeaky, ≈ 9 h 15 min left (speed: average)": no full stops, and
         // where it does not fit, the comma becomes a new line (0.29.29, David, 17 November 2026).
         var line = going
         if let seconds = sendingSeconds() { line += LineBreaks.soft + Words.t("{0} left", Remaining.approx(seconds)) }
         if let word = sendingSpeed() { line += " (" + Words.t("speed: " + word.rawValue.lowercased()) + ")" }
-        #else
-        var line = going + (sendingLeft().map { Words.t(", {0} left.", $0) } ?? ".")
-        if let word = sendingSpeed() { line += " " + Words.t(word.rawValue) + "." }
-        #endif
         say(line)
     }
 
     /// "10.0.10.10" from "smb://10.0.10.10"; on the phone, the NAS folder's name.
     nonisolated public static func host(_ address: String) -> String {
-        #if os(macOS)
-        return NASOverSMB.host(address) ?? address
-        #else
         return address
-        #endif
     }
 
     private func size(of entry: QueueEntry) -> Int64 {
@@ -3593,28 +3238,6 @@ public final class AppModel: ObservableObject {
     /// Downloads folder over one of the same name, and shown there in Finder.
     /// A disk image of this Squeaky for that kind of Mac, in Downloads,
     /// shown in Finder. What became of it is said on the Download page.
-    #if os(macOS)
-    public func saveDownload(_ chip: Installer.Chip) async {
-        guard !makingDownload else { return }
-        downloading = chip
-        defer { downloading = nil }
-        downloadLine = Words.t("Making the {0} disk image", chip.title)
-        let app = Bundle.main.bundleURL
-        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-        let made: Result<URL, Error> = await withCheckedContinuation { done in
-            DispatchQueue.global(qos: .userInitiated).async {
-                done.resume(returning: Result { try Installer.save(app: app, version: appVersion, chip: chip, into: downloads) })
-            }
-        }
-        switch made {
-        case .success(let url):
-            downloadLine = Words.t("{0} is in Downloads.", url.lastPathComponent)
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-        case .failure(let error):
-            downloadLine = Words.t("Squeaky was not saved to Downloads. {0}", error.localizedDescription)
-        }
-    }
-    #endif
 
     // MARK: History
 
@@ -3782,18 +3405,6 @@ public final class AppModel: ObservableObject {
     }
 
     /// Import from the Tracks menu: the Mac's own file window, GPX and FIT only.
-    #if os(macOS)
-    public func importWithPanel() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = [UTType(filenameExtension: "gpx"), UTType(filenameExtension: "fit")].compactMap { $0 }
-        guard panel.runModal() == .OK else { return }
-        let urls = panel.urls
-        Task { await importFiles(urls) }
-    }
-    #endif
 
     public func importFiles(_ urls: [URL]) async {
         var added = 0
@@ -3899,11 +3510,9 @@ extension AppModel {
             return false
         }
         let waiting = queueEntries.contains { ($0.state == .waiting || $0.state == .sending) && !$0.held }
-        #if os(iOS)
         // No server folder chosen on this phone yet: the NAS can't be reached
         // straight, so always through the buffer server (0.30.4, David).
         if !PhoneFolders.isChosen(PhoneFolders.nasKey) { return true }
-        #endif
         if let asked = bufferAsked, Date().timeIntervalSince(asked.at) < 60 {
             if let atHome = asked.atHome { return !atHome }
             return false
@@ -3930,13 +3539,9 @@ extension AppModel {
     /// Squeaky folder in their home when none is chosen yet (0.30.4, David);
     /// on the Mac the person's NAS folder.
     func bufferBase(_ nasFolder: String?) -> String? {
-        #if os(iOS)
         return PhoneFolders.isChosen(PhoneFolders.nasKey)
             ? (UserDefaults.standard.string(forKey: PhoneFolders.nasKey + "Path") ?? PhoneFolders.path(PhoneFolders.nasKey))
             : "home/Squeaky"
-        #else
-        return nasFolder
-        #endif
     }
 
     func sendThroughBuffer() async {

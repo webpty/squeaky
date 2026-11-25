@@ -1,8 +1,5 @@
 import CryptoKit
 import Foundation
-#if os(macOS)
-import NetFS
-#endif
 
 // MARK: - Sending one photo
 
@@ -90,12 +87,6 @@ public enum NASSender {
     /// compared with the Mac's copy, gets the Mac copy's dates, and only then
     /// takes its name. Nothing on the NAS is overwritten, except Squeaky's own
     /// earlier copy of the same photo when `update` is set.
-    #if os(macOS)
-    public static func send(_ local: URL, as name: String, into folder: URL, update: Bool, clean: Bool,
-                            exifTool: ExifTool?, progress: @escaping @Sendable (SendStep) -> Void) throws -> SendOutcome {
-        try send(local, as: name, into: folder, update: update, clean: clean, engine: exifTool.map { .exifTool($0) }, progress: progress)
-    }
-    #endif
 
     public static func send(_ local: URL, as name: String, into folder: URL, update: Bool, clean: Bool,
                             engine: PhotoEngine?, progress: @escaping @Sendable (SendStep) -> Void) throws -> SendOutcome {
@@ -382,142 +373,6 @@ public protocol NASPort: Sendable {
     func disconnect(_ connection: NASConnection) async
 }
 
-#if os(macOS)
-/// The real NAS, over the Mac's own file sharing. A shared folder already open
-/// (by Finder, or earlier by Squeaky) is used where it is. Squeaky opens one
-/// hidden from Finder, and so that a lost connection gives up instead of
-/// hanging.
-public struct NASOverSMB: NASPort {
-    public var addresses: [String]
-    public var user: String?
-    public var password: String?
-
-    public init(addresses: [String], user: String?, password: String?) {
-        self.addresses = addresses.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-        let user = user?.trimmingCharacters(in: .whitespacesAndNewlines)
-        self.user = user?.isEmpty == false ? user : nil
-        self.password = password?.isEmpty == false ? password : nil
-    }
-
-    /// "10.0.10.10" from "smb://10.0.10.10", "10.0.10.10" or "smb://10.0.10.10/".
-    public static func host(_ address: String) -> String? {
-        var text = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !text.contains("://") { text = "smb://" + text }
-        guard let host = URL(string: text)?.host, !host.isEmpty else { return nil }
-        return host
-    }
-
-    public func connect(share: String) async throws -> NASConnection {
-        var tried: [String] = []
-        for address in addresses {
-            guard let host = Self.host(address) else { continue }
-            tried.append(host)
-            if let open = Self.mounted(host: host, share: share) {
-                if await Self.alive(open) { return NASConnection(folder: open, address: address, ours: false) }
-                continue // open but not answering: the next address
-            }
-            switch await Self.mount(host: host, share: share, user: user, password: password, timeout: 30) {
-            case .success(let opened):
-                return NASConnection(folder: opened.folder, address: address, ours: opened.ours)
-            case .failure(.failed(let why)):
-                throw NASError.failed(why) // it answered and refused: the other address would too
-            case .failure:
-                continue
-            }
-        }
-        throw NASError.offline(tried.isEmpty ? Words.t("No NAS address is set in Settings.")
-                                              : Words.t("The NAS can't be reached at {0}.", tried.joined(separator: Words.t(" or "))))
-    }
-
-    public func disconnect(_ connection: NASConnection) async {
-        guard connection.ours else { return }
-        let path = connection.folder.path
-        _ = await Blocking.within(20) { unmount(path, 0) }
-    }
-
-    /// The shared folder of that address, already open on this Mac.
-    static func mounted(host: String, share: String) -> URL? {
-        let keys: [URLResourceKey] = [.volumeURLForRemountingKey]
-        for volume in FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: keys, options: []) ?? [] {
-            guard let remote = (try? volume.resourceValues(forKeys: Set(keys)))?.volumeURLForRemounting,
-                  remote.host?.lowercased() == host.lowercased() else { continue }
-            if remote.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased() == share.lowercased() {
-                return volume
-            }
-        }
-        return nil
-    }
-
-    /// Answers within a few seconds. A shared folder whose server went away
-    /// can hang a question for minutes: while one still hangs, it counts as
-    /// not answering, and no second question is stacked behind it.
-    static func alive(_ folder: URL) async -> Bool {
-        let path = folder.path
-        guard asking.begin(path) else { return false }
-        return await Blocking.within(5) {
-            defer { asking.end(path) }
-            return (try? FileManager.default.attributesOfFileSystem(forPath: path)) != nil
-        } ?? false
-    }
-
-    static let asking = InFlight()
-
-    static func mount(host: String, share: String, user: String?, password: String?,
-                      timeout: Double) async -> Result<(folder: URL, ours: Bool), NASError> {
-        var parts = URLComponents()
-        parts.scheme = "smb"
-        parts.host = host
-        parts.path = "/" + share
-        guard let url = parts.url else { return .failure(.failed(Words.t("The NAS address is not valid."))) }
-        // Never a window asking for a password: what Settings holds, or nothing.
-        let open = NSMutableDictionary()
-        open["UIOption"] = "NoUI"
-        let options = NSMutableDictionary()
-        options["SoftMount"] = true
-        options["MountFlags"] = NSNumber(value: MNT_DONTBROWSE)
-        return await withCheckedContinuation { done in
-            let once = Once()
-            let request = RequestBox()
-            let status = NetFSMountURLAsync(url as CFURL, nil, user.map { $0 as CFString }, password.map { $0 as CFString },
-                                            open, options, &request.id, DispatchQueue.global()) { status, _, points in
-                guard once.first() else { return }
-                let list = (points as NSArray?)?.compactMap { $0 as? String } ?? []
-                done.resume(returning: outcome(status, list, host: host, share: share, user: user))
-            }
-            if status != 0 {
-                if once.first() { done.resume(returning: outcome(status, [], host: host, share: share, user: user)) }
-                return
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
-                guard once.first() else { return }
-                if let id = request.id { NetFSMountURLCancel(id) }
-                done.resume(returning: .failure(.offline(Words.t("The NAS did not answer at {0}.", host))))
-            }
-        }
-    }
-
-    static func outcome(_ status: Int32, _ points: [String], host: String, share: String,
-                        user: String?) -> Result<(folder: URL, ours: Bool), NASError> {
-        if status == 0 || status == EEXIST {
-            if let path = points.first { return .success((URL(fileURLWithPath: path, isDirectory: true), status == 0)) }
-            if let open = mounted(host: host, share: share) { return .success((open, false)) }
-        }
-        switch status {
-        case EAUTH, EACCES, EPERM, -5045, -5046, -5999:
-            return .failure(.failed(user == nil ? Words.t("The NAS wants a user name and password: set them in Settings.")
-                                                : Words.t("The NAS refused the user name or password in Settings.")))
-        case ENOENT, -5998, -6003:
-            return .failure(.failed(Words.t("The NAS has no shared folder called {0}.", share)))
-        default:
-            return .failure(.offline(Words.t("The NAS did not open {0} at {1} ({2}).", share, host, status)))
-        }
-    }
-}
-
-private final class RequestBox: @unchecked Sendable {
-    var id: AsyncRequestID?
-}
-#endif
 
 /// Questions still waiting for an answer, by folder.
 final class InFlight: @unchecked Sendable {

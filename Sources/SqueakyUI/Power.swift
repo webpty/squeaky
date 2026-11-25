@@ -1,11 +1,5 @@
 import SqueakyCore
 import Foundation
-#if os(macOS)
-import AppKit
-#endif
-#if os(macOS)
-import IOKit.ps
-#endif
 
 /// How long the battery has left, as the Mac reckons it.
 public protocol PowerPort: Sendable {
@@ -19,13 +13,7 @@ public struct MacPower: PowerPort {
     public init() {}
 
     public func batteryLeft() -> TimeInterval? {
-        #if os(iOS)
         return nil
-        #else
-        let left = IOPSGetTimeRemainingEstimate()
-        guard left != kIOPSTimeRemainingUnlimited, left != kIOPSTimeRemainingUnknown, left > 0 else { return nil }
-        return left
-        #endif
     }
 }
 
@@ -37,12 +25,8 @@ public enum Remaining {
         let h = minutes / 60, m = minutes % 60
         let said = minutes < 60 ? Words.t("about {0} min", minutes)
             : m == 0 ? Words.t("about {0} h", h) : Words.t("about {0} h {1} min", h, m)
-        #if os(iOS)
         // A time is never split over two lines on the phone (0.29.29).
         return said.replacingOccurrences(of: " ", with: "\u{00A0}")
-        #else
-        return said
-        #endif
     }
 
     /// "9 h 15 min", never split over two lines: the phone's Queue page
@@ -109,21 +93,10 @@ public enum Tailscale {
     /// Where it is on this Mac, from the Mac App Store or Tailscale's own download.
     @MainActor
     public static var app: URL? {
-        #if os(iOS)
         return nil
-        #else
-        for id in ["io.tailscale.ipn.macos", "io.tailscale.ipn.macsys"] {
-            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) { return url }
-        }
-        return nil
-        #endif
     }
 
     @MainActor
     public static func open() {
-        #if os(macOS)
-        guard let app else { return }
-        NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration())
-        #endif
     }
 }

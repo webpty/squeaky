@@ -1,25 +1,15 @@
 import Foundation
 import SqueakyCore
-#if os(macOS)
-import AppKit
-public typealias PlatformImage = NSImage
-#else
 import UIKit
 public typealias PlatformImage = UIImage
-#endif
 
 public extension PlatformImage {
     /// A picture from a file, on the Mac or the phone.
     static func load(_ url: URL) -> PlatformImage? {
-        #if os(macOS)
-        return NSImage(contentsOf: url)
-        #else
         return UIImage(contentsOfFile: url.path)
-        #endif
     }
 }
 
-#if os(iOS)
 import Photos
 import CoreLocation
 
@@ -352,4 +342,3 @@ public struct NASThroughFiles: NASPort {
 
     public func disconnect(_ connection: NASConnection) async {}
 }
-#endif

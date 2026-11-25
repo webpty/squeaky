@@ -5,9 +5,6 @@ import ImageIO
 /// What writes and reads the photos' details: ExifTool on the Mac, Squeaky's
 /// own reader and writer for CR3 and JPG on the iPhone.
 public enum PhotoEngine: Sendable {
-    #if os(macOS)
-    case exifTool(ExifTool)
-    #endif
     case native
 }
 
@@ -65,12 +62,6 @@ public struct Saver: Sendable {
     /// The person's save folder.
     public let folder: URL
 
-    #if os(macOS)
-    public init(exifTool: ExifTool, folder: URL) {
-        self.engine = .exifTool(exifTool)
-        self.folder = folder
-    }
-    #endif
 
     public init(engine: PhotoEngine, folder: URL) {
         self.engine = engine
@@ -255,11 +246,6 @@ public struct Saver: Sendable {
             return
         }
         switch engine {
-        #if os(macOS)
-        case .exifTool(let exifTool):
-            let arguments = position.map(Self.gpsArguments) ?? ["-q", "-q", "-m", "-overwrite_original", "-P"]
-            _ = try exifTool.run(arguments + Self.shiftArguments(shift) + [work.path])
-        #endif
         case .native:
             _ = try NativeMetadata.write(into: work, original: original, position: position, shift: shift)
         }
@@ -334,87 +320,7 @@ public struct Saver: Sendable {
     /// no other detail moved. Nil when all is well; else what failed.
     public func check(copy: URL, original: URL, position: Position?, shift: Int = 0) -> String? {
         if PhotoKinds.isVideo(copy) { return NativeMetadata.check(copy: copy, original: original, position: position, shift: shift) }
-        #if os(macOS)
-        guard case .exifTool(let exifTool) = engine else {
-            return NativeMetadata.check(copy: copy, original: original, position: position, shift: shift)
-        }
-        // It opens, the way Finder and Photos open it.
-        guard let src = CGImageSourceCreateWithURL(copy as CFURL, nil), CGImageSourceGetCount(src) > 0,
-              CGImageSourceCopyPropertiesAtIndex(src, 0, nil) != nil,
-              CGImageSourceCreateThumbnailAtIndex(src, 0, [kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-                                                           kCGImageSourceThumbnailMaxPixelSize: 256] as CFDictionary) != nil else {
-            return Words.t("The copy does not open.")
-        }
-
-        if position == nil, shift == 0 {
-            // Copied unchanged: it must be the card's file, byte for byte.
-            guard let a = Self.sha256(copy), a == Self.sha256(original) else { return Words.t("The copy differs from the card's file.") }
-            return nil
-        }
-
-        let tags: [[String: Any]]
-        do {
-            let data = try exifTool.run(["-j", "-a", "-G1", "-n", "-q", "-q", "-api", "ImageHashType=SHA256", "-ImageDataHash", "-all",
-                                         original.path, copy.path])
-            tags = (try JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
-        } catch {
-            return Words.t("The copy could not be read back: {0}", error.localizedDescription)
-        }
-        guard tags.count == 2 else { return Words.t("The copy could not be read back.") }
-        let before = tags[0], after = tags[1]
-
-        // The picture itself is untouched, wherever ExifTool files the hash.
-        func hash(_ r: [String: Any]) -> String? {
-            r.first { $0.key.hasSuffix(":ImageDataHash") }.map { "\($0.value)" }
-        }
-        switch (hash(before), hash(after)) {
-        case let (a?, b?): if a != b { return Words.t("The picture in the copy changed.") }
-        case (_?, nil): return Words.t("The picture in the copy could not be checked.")
-        default: break // a kind of file ExifTool cannot hash; the other checks stand
-        }
-
-        if let position {
-            // The location reads back as written.
-            func number(_ key: String) -> Double? { (after[key] as? NSNumber)?.doubleValue }
-            guard let lat = number("GPS:GPSLatitude"), let lon = number("GPS:GPSLongitude"),
-                  let latRef = after["GPS:GPSLatitudeRef"] as? String, let lonRef = after["GPS:GPSLongitudeRef"] as? String else {
-                return Words.t("The location is not in the copy.")
-            }
-            let readLat = latRef.uppercased().hasPrefix("S") ? -lat : lat
-            let readLon = lonRef.uppercased().hasPrefix("W") ? -lon : lon
-            if abs(readLat - position.lat) > 1e-6 || abs(readLon - position.lon) > 1e-6 {
-                return Words.t("The location in the copy is not the one written.")
-            }
-            if let alt = position.alt {
-                guard let a = number("GPS:GPSAltitude") else { return Words.t("The altitude is not in the copy.") }
-                let ref = (after["GPS:GPSAltitudeRef"] as? NSNumber)?.intValue ?? 0
-                // Half a metre: the watch is no closer than that.
-                if abs((ref == 1 ? -a : a) - alt) > 0.5 { return Words.t("The altitude in the copy is not the one written.") }
-            }
-            guard after["GPS:GPSDateStamp"] != nil, after["GPS:GPSTimeStamp"] != nil else { return Words.t("The GPS time is not in the copy.") }
-            guard (after["GPS:GPSProcessingMethod"] as? String) == Self.processingMethod else {
-                return Words.t("The note that Squeaky added the location is not in the copy.")
-            }
-        }
-
-        if shift != 0 {
-            // The date taken moved by exactly the camera's error.
-            let key = before.keys.first { $0.hasSuffix(":DateTimeOriginal") && $0.hasPrefix("ExifIFD") }
-                ?? before.keys.first { $0.hasSuffix(":DateTimeOriginal") }
-            if let key, let was = before[key].map({ "\($0)" }) {
-                guard let expected = Self.shifted(was, by: shift), after[key].map({ "\($0)" }) == expected else {
-                    return Words.t("The date in the copy was not corrected.")
-                }
-            }
-        }
-
-        // No other detail moved.
-        let changed = Self.otherDetailsChanged(before, after, datesMoved: shift != 0)
-        if !changed.isEmpty { return Words.t("Other details changed in the copy: {0}.", changed.prefix(3).joined(separator: ", ")) }
-        return nil
-        #else
         return NativeMetadata.check(copy: copy, original: original, position: position, shift: shift)
-        #endif
     }
 
     /// Tags that differ, leaving out the location itself, the file system's
@@ -442,40 +348,13 @@ public struct Saver: Sendable {
     /// Two files carry the same GPS position, or neither has one.
     func sameLocation(_ a: URL, _ b: URL) -> Bool {
         if PhotoKinds.isVideo(a) { return NativeMetadata.sameLocation(a, b) }
-        #if os(macOS)
-        guard case .exifTool(let exifTool) = engine else { return NativeMetadata.sameLocation(a, b) }
-        guard let data = try? exifTool.run(["-j", "-n", "-q", "-q", "-GPS:GPSLatitude", "-GPS:GPSLatitudeRef",
-                                            "-GPS:GPSLongitude", "-GPS:GPSLongitudeRef", a.path, b.path]),
-              let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]], rows.count == 2 else { return false }
-        func spot(_ r: [String: Any]) -> String {
-            let lat = (r["GPSLatitude"] as? NSNumber).map { String(format: "%.6f", $0.doubleValue) } ?? "-"
-            let lon = (r["GPSLongitude"] as? NSNumber).map { String(format: "%.6f", $0.doubleValue) } ?? "-"
-            return "\(lat)\(r["GPSLatitudeRef"] ?? "") \(lon)\(r["GPSLongitudeRef"] ?? "")"
-        }
-        return spot(rows[0]) == spot(rows[1])
-        #else
         return NativeMetadata.sameLocation(a, b)
-        #endif
     }
 
     /// Two files hold the same photo: the same picture and the same moment.
     func samePhoto(_ a: URL, _ b: URL) -> Bool {
         if PhotoKinds.isVideo(a) { return NativeMetadata.samePhoto(a, b) }
-        #if os(macOS)
-        guard case .exifTool(let exifTool) = engine else { return NativeMetadata.samePhoto(a, b) }
-        guard let data = try? exifTool.run(["-j", "-q", "-q", "-api", "ImageHashType=SHA256", "-ImageDataHash",
-                                            "-DateTimeOriginal", "-SubSecTimeOriginal", a.path, b.path]),
-              let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]], rows.count == 2 else {
-            return Self.sha256(a) == Self.sha256(b)
-        }
-        func id(_ r: [String: Any]) -> String {
-            "\(r["ImageDataHash"] ?? "")|\(r["DateTimeOriginal"] ?? "")|\(r["SubSecTimeOriginal"] ?? "")"
-        }
-        guard rows[0]["ImageDataHash"] != nil else { return Self.sha256(a) == Self.sha256(b) }
-        return id(rows[0]) == id(rows[1])
-        #else
         return NativeMetadata.samePhoto(a, b)
-        #endif
     }
 }
 

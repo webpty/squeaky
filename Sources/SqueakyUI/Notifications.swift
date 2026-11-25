@@ -1,7 +1,4 @@
 import Foundation
-#if os(macOS)
-import AppKit
-#endif
 import UserNotifications
 
 /// How Squeaky tells you something while you are elsewhere.

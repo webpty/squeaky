@@ -74,9 +74,6 @@ public struct ScannedPhoto: Identifiable, Codable, Equatable, Sendable {
 /// Reads every photo in a folder and below, through ExifTool. Reading only:
 /// nothing on the card is ever written.
 public struct PhotoScanner: Sendable {
-    #if os(macOS)
-    let exifTool: ExifTool
-    #endif
 
     /// A real position: both numbers there, and not the 0, 0 some cameras write.
     static func hasLocation(_ row: [String: Any]) -> Bool {
@@ -85,11 +82,6 @@ public struct PhotoScanner: Sendable {
         return !(lat == 0 && lon == 0)
     }
 
-    #if os(macOS)
-    public init(exifTool: ExifTool) {
-        self.exifTool = exifTool
-    }
-    #endif
 
     /// Every photo file, in name order, hidden folders left out.
     public static func files(in folder: URL) -> [URL] {
@@ -102,105 +94,6 @@ public struct PhotoScanner: Sendable {
         return out.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
     }
 
-    #if os(macOS)
-    /// The photos' details, a batch at a time; `progress` hears how many are read.
-    public func scan(_ all: [URL], progress: @Sendable (Int) -> Void) throws -> [ScannedPhoto] {
-        // Videos through Squeaky's own reader, as on the phone, so both read them alike (0.33.0).
-        let videos = all.filter(PhotoKinds.isVideo)
-        let files = all.filter { !PhotoKinds.isVideo($0) }
-        var out: [ScannedPhoto] = NativeMetadata.scan(videos) { _ in }
-        var done = videos.count
-        progress(done)
-        for start in stride(from: 0, to: files.count, by: 100) {
-            let batch = Array(files[start..<min(start + 100, files.count)])
-            let data = try exifTool.run(["-j", "-q", "-q", "-fast2", "-charset", "filename=utf8",
-                                         "-DateTimeOriginal", "-SubSecTimeOriginal", "-OffsetTimeOriginal", "-OffsetTime", "-Model",
-                                         "-GPSLatitude#", "-GPSLongitude#", "-LensModel", "-LensSerialNumber"]
-                                        + batch.map(\.path))
-            let rows = (try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]) ?? []
-            var byPath: [String: [String: Any]] = [:]
-            for row in rows { if let path = row["SourceFile"] as? String { byPath[path] = row } }
-            for url in batch {
-                let row = byPath[url.path] ?? [:]
-                func text(_ key: String) -> String? {
-                    guard let v = row[key] else { return nil }
-                    let s = "\(v)".trimmingCharacters(in: .whitespacesAndNewlines)
-                    return s.isEmpty ? nil : s
-                }
-                let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0 }.map(Int64.init) ?? 0
-                let located = Self.hasLocation(row)
-                out.append(ScannedPhoto(url: url, fileName: url.lastPathComponent, size: size,
-                                        taken: text("DateTimeOriginal"), subSeconds: text("SubSecTimeOriginal"),
-                                        zone: text("OffsetTimeOriginal") ?? text("OffsetTime"), model: text("Model"),
-                                        hasLocation: located,
-                                        ownLat: located ? (row["GPSLatitude"] as? NSNumber)?.doubleValue : nil,
-                                        ownLon: located ? (row["GPSLongitude"] as? NSNumber)?.doubleValue : nil,
-                                        lens: text("LensModel"), lensSerial: text("LensSerialNumber")))
-            }
-            done += batch.count
-            progress(done)
-        }
-        readFirmware(&out)
-        readDrives(&out)
-        // In the card's order, as before.
-        let order = Dictionary(uniqueKeysWithValues: all.enumerated().map { ($1.path, $0) })
-        return out.sorted { (order[$0.url.path] ?? 0) < (order[$1.url.path] ?? 0) }
-    }
-
-    /// The drive mode of photos taken within two seconds of another by the same
-    /// camera, the only ones that can be part of a burst: Canon keeps it in the
-    /// maker notes, which the fast read skips (0.29.6).
-    func readDrives(_ photos: inout [ScannedPhoto]) {
-        var byModel: [String: [(Int, Date)]] = [:]
-        for (i, p) in photos.enumerated() {
-            if !p.isVideo, let model = p.model, let at = Moments.clockReading(p) { byModel[model, default: []].append((i, at)) }
-        }
-        var wanted = Set<Int>()
-        for (_, list) in byModel {
-            let sorted = list.sorted { $0.1 < $1.1 }
-            for (a, b) in zip(sorted, sorted.dropFirst()) where b.1.timeIntervalSince(a.1) <= 2 {
-                wanted.insert(a.0)
-                wanted.insert(b.0)
-            }
-        }
-        let picked = wanted.sorted()
-        for start in stride(from: 0, to: picked.count, by: 100) {
-            let batch = Array(picked[start..<min(start + 100, picked.count)])
-            guard let data = try? exifTool.run(["-j", "-q", "-q", "-fast", "-charset", "filename=utf8", "-ContinuousDrive#"]
-                                               + batch.map { photos[$0].url.path }),
-                  let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { continue }
-            var byPath: [String: Int] = [:]
-            for row in rows {
-                if let path = row["SourceFile"] as? String, let v = (row["ContinuousDrive"] as? NSNumber)?.intValue { byPath[path] = v }
-            }
-            for i in batch { photos[i].drive = byPath[photos[i].url.path] }
-        }
-    }
-
-    /// The software version of each camera, from its newest photo only: Canon
-    /// keeps it in the maker notes, which the fast read skips, and reading
-    /// them for every photo doubles the time a card takes. Without it the
-    /// photos are read all the same.
-    func readFirmware(_ photos: inout [ScannedPhoto]) {
-        var newest: [String: Int] = [:]
-        for (i, photo) in photos.enumerated() {
-            guard let model = photo.model, !photo.isVideo else { continue }
-            if let j = newest[model], (photos[j].taken ?? "") > (photo.taken ?? "") { continue }
-            newest[model] = i
-        }
-        let picked = newest.values.sorted()
-        guard !picked.isEmpty,
-              let data = try? exifTool.run(["-j", "-q", "-q", "-fast", "-charset", "filename=utf8",
-                                            "-CanonFirmwareVersion", "-FirmwareVersion", "-Software"] + picked.map { photos[$0].url.path }),
-              let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
-        var byPath: [String: [String: Any]] = [:]
-        for row in rows { if let path = row["SourceFile"] as? String { byPath[path] = row } }
-        for i in picked {
-            let row = byPath[photos[i].url.path] ?? [:]
-            photos[i].firmware = Firmware.version(["CanonFirmwareVersion", "FirmwareVersion", "Software"].map { row[$0].map { "\($0)" } })
-        }
-    }
-    #endif
 }
 
 // MARK: - History

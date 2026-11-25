@@ -71,16 +71,4 @@ public enum TemperatureReader {
     /// The temperature each photo's camera recorded, in degrees Celsius, by
     /// file path. Canon writes it in its maker notes, which the card's fast
     /// read skips, so only these photos are asked.
-    #if os(macOS)
-    public static func read(_ urls: [URL], exifTool: ExifTool) -> [String: Double] {
-        guard !urls.isEmpty, let data = try? exifTool.run(["-j", "-q", "-q", "-n", "-charset", "filename=utf8",
-                                                            "-CameraTemperature"] + urls.map(\.path)),
-              let rows = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { return [:] }
-        var out: [String: Double] = [:]
-        for row in rows {
-            if let path = row["SourceFile"] as? String, let t = (row["CameraTemperature"] as? NSNumber)?.doubleValue { out[path] = t }
-        }
-        return out
-    }
-    #endif
 }

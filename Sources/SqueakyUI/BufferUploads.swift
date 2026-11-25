@@ -21,13 +21,9 @@ public final class BufferUploads: NSObject, URLSessionDataDelegate, @unchecked S
     private var started: [Int: Date] = [:]
     private var answers: [Int: Data] = [:]
     private lazy var session: URLSession = {
-        #if os(iOS)
         let config = URLSessionConfiguration.background(withIdentifier: Self.identifier)
         config.isDiscretionary = false
         config.sessionSendsLaunchEvents = true
-        #else
-        let config = URLSessionConfiguration.default
-        #endif
         config.httpMaximumConnectionsPerHost = 2
         // A photo may stall up to ten minutes before it is started again (0.31.5).
         config.timeoutIntervalForRequest = 600

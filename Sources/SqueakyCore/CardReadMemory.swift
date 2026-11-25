@@ -94,3 +94,29 @@ public struct CardReadMemory: Sendable {
         try? data.write(to: file, options: .atomic)
     }
 }
+
+/// What looking for an offset code found in each photo (0.34.13, David: a card
+/// with no new photos needs no looking): the moment the code showed, or nothing.
+/// Kept by the photo's key, so a photo is looked at once, whichever card it is on.
+public struct OffsetCodeMemory: Sendable {
+    let file: URL
+
+    public init(folder: URL) {
+        file = folder.appendingPathComponent("offsetcodes.json")
+    }
+
+    /// Photo key to the code's moment in seconds since 1970, or nil when the
+    /// photo held no code.
+    public func load() -> [String: Double?] {
+        (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([String: Double?].self, from: $0) } ?? [:]
+    }
+
+    public func add(_ found: [String: Double?]) {
+        guard !found.isEmpty else { return }
+        var all = load()
+        for (k, v) in found { all[k] = v }
+        guard let data = try? JSONEncoder().encode(all) else { return }
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? data.write(to: file, options: .atomic)
+    }
+}
