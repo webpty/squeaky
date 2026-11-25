@@ -1750,3 +1750,18 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
 - The watch app is a geotrac thing: to be named Geotrac, its code moved to
   the tracks project (in that project's own session).
 - 0.34.9 (David, 21 November 2026): the card out (taken out, ejected, or let go of and then taken out), the Photos page empties on the phone and the Mac (`forgetCard`): photos, counts, owner, days; all read again when it is back. No Clear button on either. This replaces the 6 November rule that the Mac kept the list. The sync line moved from Photos to Settings on both.
+
+## Cards read once, Save selected orange (0.34.12, David, 25 November 2026)
+
+- What was read from each photo on a card is kept (`CardReadMemory`,
+  `cardread/<card id>.json` beside people.json), by its place on the card,
+  size and modification date. The next time the card is read only photos not
+  seen before, or changed since, are opened ("since you know this card had
+  1900 photos last time, only 20 are new"); the rest come from the memory, so
+  "Reading 0 of 20" counts only those. Phone and Mac alike. "Try again" on
+  unsaved photos reads every photo afresh (`read(fresh: true)`). Raise
+  `CardReadMemory.reader` whenever what is read from a photo changes, so
+  every card is read afresh once. The first read of each card after 0.34.12
+  still opens every photo. Untried on a real card.
+- "Save selected" is orange (`WideButton(.orange)`), apart from Select all's
+  blue and Save all's teal.

@@ -103,6 +103,7 @@ struct SelfTest {
         download(scratch)
         cardKinds()
         cards(scratch)
+        cardMemory(scratch)
         matching(scratch)
         await videos(scratch)
         names()
@@ -539,6 +540,53 @@ extension SelfTest {
             let real = (try? PhotoScanner(exifTool: tool).scan(PhotoScanner.files(in: URL(fileURLWithPath: folder))) { _ in }) ?? []
             for p in real { print("card   \(p.fileName): \(p.taken ?? "-").\(p.subSeconds ?? "") \(p.zone ?? "-") \(p.model ?? "-")") }
         }
+    }
+
+    /// What was read from a card's photos, kept (0.34.12): the next read opens
+    /// only photos not seen before, or changed since.
+    static func cardMemory(_ scratch: URL) {
+        let fm = FileManager.default
+        let card = scratch.appendingPathComponent("MEMCARD")
+        let dcim = card.appendingPathComponent("DCIM/100CANON")
+        try? fm.createDirectory(at: dcim, withIntermediateDirectories: true)
+        for n in 1...3 { writePhoto(dcim.appendingPathComponent("IMG_000\(n).JPG"), model: "Canon EOS R5m2", zone: "-03:00") }
+        let memory = CardReadMemory(folder: scratch.appendingPathComponent("memstore"), card: "CARD-1234")
+        let files = PhotoScanner.files(in: card)
+        let first = memory.remembered(files, root: card)
+        check("card memory: a new card reads every photo", first.known.isEmpty && first.toRead.count == 3)
+        let read = NativeMetadata.scan(first.toRead) { _ in }
+        memory.keep(read, stamps: first.stamps, root: card, present: Set(files.map { CardReadMemory.place($0, root: card) }))
+
+        writePhoto(dcim.appendingPathComponent("IMG_0004.JPG"), model: "Canon EOS R5m2", zone: "-03:00", taken: "2026:10:16 12:05:00")
+        let files2 = PhotoScanner.files(in: card)
+        let second = memory.remembered(files2, root: card)
+        check("card memory: only the new photo is read", second.toRead.map(\.lastPathComponent) == ["IMG_0004.JPG"] && second.known.count == 3,
+              "\(second.toRead.map(\.lastPathComponent))")
+        check("card memory: what was read comes back the same",
+              second.known[CardReadMemory.place(files[0], root: card)] == read[0])
+        // The same card reached by another path (the phone's path to a card can
+        // change between openings): still known.
+        let elsewhere = scratch.appendingPathComponent("MEMELSEWHERE")
+        try? fm.copyItem(at: card, to: elsewhere)
+        let moved = memory.remembered(PhotoScanner.files(in: elsewhere), root: elsewhere)
+        check("card memory: known whatever path the card is reached by",
+              moved.known.count == 3 && moved.known.values.allSatisfy { $0.url.path.hasPrefix(elsewhere.path) }, "\(moved.known.count)")
+        // A photo changed on the card is read again. Listed afresh, as each read
+        // does: a URL keeps the size it was listed with.
+        if let h = try? FileHandle(forWritingTo: files[1]) { h.seekToEndOfFile(); h.write(Data([0])); try? h.close() }
+        let files3 = PhotoScanner.files(in: card)
+        let third = memory.remembered(files3, root: card)
+        check("card memory: a changed photo is read again", Set(third.toRead.map(\.lastPathComponent)) == ["IMG_0002.JPG", "IMG_0004.JPG"])
+        check("card memory: a fresh read reads everything", memory.remembered(files3, root: card, ignoring: true).toRead.count == 4)
+        // Another card is not this one.
+        let other = CardReadMemory(folder: scratch.appendingPathComponent("memstore"), card: "CARD-5678")
+        check("card memory: kept per card", other.remembered(files3, root: card).known.isEmpty)
+        // A file gone from the card is forgotten; one not read this time but still there is kept.
+        memory.keep([], stamps: third.stamps, root: card, present: Set(files3.dropFirst().map { CardReadMemory.place($0, root: card) }))
+        let fourth = memory.remembered(files3, root: card)
+        check("card memory: a photo gone is forgotten, the others kept",
+              fourth.toRead.map(\.lastPathComponent).contains("IMG_0001.JPG") && fourth.known.count == 1,
+              "\(fourth.known.keys.sorted())")
     }
 
     /// A card arriving for real: a disk image with a DCIM folder, attached

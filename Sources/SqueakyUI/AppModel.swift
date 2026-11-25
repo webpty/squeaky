@@ -1750,7 +1750,7 @@ public final class AppModel: ObservableObject {
     /// is read afresh, then saved as Save photos would.
     public func tryUnsavedAgain() async {
         guard let source, let person = importPerson, !saving, !photosBusy else { return }
-        await read(source, for: person)
+        await read(source, for: person, fresh: true)
         while photosBusy { try? await Task.sleep(for: .milliseconds(200)) }
         if !saving, trackCheck == nil, canSave { await checkTracksBeforeSave() }
     }
@@ -1766,7 +1766,14 @@ public final class AppModel: ObservableObject {
         return saved[source.id].flatMap(UUID.init(uuidString:)).flatMap { id in book.person(id) != nil ? id : nil }
     }
 
-    public func read(_ source: PhotoSource, for personId: UUID) async {
+    /// Where what was read from each card's photos is kept (0.34.12).
+    private var cardReadFolder: URL {
+        (peopleStore as? PeopleStoreFile)?.url.deletingLastPathComponent()
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Squeaky")
+    }
+
+    /// `fresh` reads every photo again, whatever was read from it before.
+    public func read(_ source: PhotoSource, for personId: UUID, fresh: Bool = false) async {
         var saved = defaults.dictionary(forKey: "cardPeople") as? [String: String] ?? [:]
         saved[source.id] = personId.uuidString
         defaults.set(saved, forKey: "cardPeople")
@@ -1787,17 +1794,27 @@ public final class AppModel: ObservableObject {
         photosLine = Words.t("Looking for photos")
         let url = source.url
         var files = await Task.detached { PhotoScanner.files(in: url) }.value
+        // Every file on the card, before any are left out, so the memory of
+        // what was read keeps the ones not read this time (0.34.12).
+        let present = Set(files.map { CardReadMemory.place($0, root: url) })
         #if os(iOS)
         // Someone else's card: its JPGs only, the raws left on the card (0.29.5).
         // Its videos too, not its RAW videos (0.33.0).
         if personId == PhoneFolders.othersId { files = files.filter { ["jpg", "jpeg", "mp4", "mov"].contains($0.pathExtension.lowercased()) } }
         #endif
+        // Only the photos not read before are opened (0.34.12, David: "only 20
+        // are new"); the rest come from what was read from them last time.
+        let memory = CardReadMemory(folder: cardReadFolder, card: source.id)
+        let allFiles = files
+        let (known, toRead, stamps) = await Task.detached { memory.remembered(allFiles, root: url, ignoring: fresh) }.value
+        guard readingRound == round else { return }
+        files = toRead
         let total = files.count
         readProgress = (0, total)
         defer { readProgress = nil }
         photosLine = Words.t("Reading 0 of {0}", total)
         do {
-            let photos = try await Task.detached {
+            let justRead = try await Task.detached {
                 let progress: @Sendable (Int) -> Void = { done in
                     Task { @MainActor [weak self] in
                         guard let self, self.readingRound == round else { return }
@@ -1812,6 +1829,13 @@ public final class AppModel: ObservableObject {
                 case .native: return NativeMetadata.scan(files, progress: progress)
                 }
             }.value
+            await Task.detached { memory.keep(justRead, stamps: stamps, root: url, present: present) }.value
+            // Back in the card's order, remembered and newly read together.
+            let readNow = Dictionary(justRead.map { (CardReadMemory.place($0.url, root: url), $0) }, uniquingKeysWith: { a, _ in a })
+            let photos = allFiles.compactMap { f -> ScannedPhoto? in
+                let place = CardReadMemory.place(f, root: url)
+                return readNow[place] ?? known[place]
+            }
             // The camera offsets set on the person's other devices, then what
             // any Mac or phone saved before, from the lists on the server.
             #if os(iOS)

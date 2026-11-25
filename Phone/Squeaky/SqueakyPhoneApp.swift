@@ -368,7 +368,7 @@ enum Palette {
 /// Apple's own filled button, full width, in its colour (0.34.5, David: "apple
 /// shape, not invented"); clearly active, dimmed by the iPhone when it is not.
 struct WideButton: PrimitiveButtonStyle {
-    enum Kind { case blue, purple, teal, grey, red }
+    enum Kind { case blue, purple, teal, orange, grey, red }
     let kind: Kind
     init(_ kind: Kind) { self.kind = kind }
 
@@ -389,6 +389,7 @@ struct WideButton: PrimitiveButtonStyle {
         case .blue: return .heroBlue
         case .purple: return .purple
         case .teal: return .teal
+        case .orange: return .orange
         case .grey: return Palette.greyButton
         case .red: return .red
         }

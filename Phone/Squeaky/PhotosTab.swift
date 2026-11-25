@@ -183,12 +183,12 @@ struct PhotosTab: View {
         }
     }
 
-    /// Save selected in blue, Save all in teal.
+    /// Save selected in orange (0.34.12, David: apart from Select all's blue), Save all in teal.
     @ViewBuilder var saveButtons: some View {
         // Dimmed with nothing selected, and with everything selected: Save all does that (0.34.6, David).
         let all = !model.choosable.isEmpty && model.choosable.allSatisfy(\.ticked)
         Button(Words.t("Save selected")) { Task { await model.checkTracksBeforeSave() } }
-            .buttonStyle(WideButton(.blue))
+            .buttonStyle(WideButton(.orange))
             .disabled(!model.canSave || all)
         // Every photo on the card that can be chosen (0.32.1, David).
         Button(Words.t("Save all")) { model.saveAll() }
