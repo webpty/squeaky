@@ -267,6 +267,10 @@ for what was then a Mac app.
   `Phone/install_phone.sh`; it runs for 7 days, then is installed again.
   Always on both phones, David's and Amanda's (David, 24 November
   2026). No iCloud entitlement.
+  With ProtonVPN connected on the Mac, a phone on the cable cannot be reached
+  ("The tunnel connection failed", 26 November 2026): David disconnects it
+  for the install. One Release build (`generic/platform=iOS`) goes on both
+  phones; the install only copies it (`devicectl device install app`).
 - CR3 and JPG only, never HEIC (David: "the app never handles heic"). CR3
   first. A .HIF on a card is left there. The Mac is unchanged.
 - ExifTool cannot run on the phone: `NativeMetadata` reads and writes CR3
