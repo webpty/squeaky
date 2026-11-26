@@ -1219,3 +1219,8 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   list; once, every camera with no time offset is removed
   (`removeCamerasWithoutOffset`, defaults `offsetlessCamerasRemoved`); a real
   one comes back with the next card that has its photos.
+- 0.34.15: 0.34.14 took a card being taken out for a folder that is not a
+  card (an unreadable folder has no DCIM folder either) and forgot it and
+  whose it was, on both phones. Only a folder that can be read and holds no
+  DCIM folder is dropped now (`SDCard.surelyNotACard`); a card taken out is
+  let go of as before.

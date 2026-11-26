@@ -257,6 +257,9 @@ extension SelfTest {
         check("sd card: its DCIM folder is one", SDCard.looksLikeCard(card.appendingPathComponent("DCIM")))
         check("sd card: a folder inside DCIM is one", SDCard.looksLikeCard(card.appendingPathComponent("DCIM/100CANON")))
         check("sd card: a folder of photos without DCIM is not", !SDCard.looksLikeCard(nas))
+        check("sd card: a folder without DCIM is surely not one", SDCard.surelyNotACard(nas))
+        check("sd card: a card is never surely not one", !SDCard.surelyNotACard(card))
+        check("sd card: a card taken out is never surely not one", !SDCard.surelyNotACard(scratch.appendingPathComponent("GONECARD")))
     }
 
     /// What was read from a card's photos, kept (0.34.12): the next read opens

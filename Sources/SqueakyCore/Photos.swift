@@ -231,4 +231,13 @@ public enum SDCard {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: url.path)) ?? []
         return names.contains { $0.uppercased() == "DCIM" }
     }
+
+    /// Surely not a card: the folder can be read and holds no DCIM folder. A
+    /// folder that cannot be read, a card being taken out, is never called
+    /// one (0.34.15).
+    public static func surelyNotACard(_ url: URL) -> Bool {
+        if url.pathComponents.contains(where: { $0.uppercased() == "DCIM" }) { return false }
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: url.path) else { return false }
+        return !names.contains { $0.uppercased() == "DCIM" }
+    }
 }

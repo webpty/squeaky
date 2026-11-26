@@ -56,12 +56,6 @@ final class CardWatch {
     }
 
     private func look() {
-        // The folder in use is not an SD card (opened before 0.34.14): let go of.
-        if let open = model.source, !model.photosBusy, !model.saving, !SDCard.looksLikeCard(open.url) {
-            dropNotACard(open.id)
-            lastSource = nil
-            return
-        }
         // A card the list was showing and is now let go of stays let go of while it is in.
         if let id = lastSource, model.source == nil { letGo.insert(id) }
         lastSource = model.source?.id
@@ -72,6 +66,12 @@ final class CardWatch {
             if !there {
                 model.cardTakenOut()
                 letGo.remove(card.id)
+                lastSource = nil
+            } else if SDCard.surelyNotACard(card.url) {
+                // Present, and no DCIM folder: a folder opened as a card before
+                // 0.34.14, let go of. A card taken out is never taken for one
+                // (0.34.15: 0.34.14 forgot cards that way, and whose they were).
+                dropNotACard(card.id)
                 lastSource = nil
             }
             return
@@ -95,7 +95,7 @@ final class CardWatch {
                 letGo.remove(id)
                 continue
             }
-            guard SDCard.looksLikeCard(url) else {
+            if SDCard.surelyNotACard(url) {
                 if access { url.stopAccessingSecurityScopedResource() }
                 dropNotACard(id)
                 continue
