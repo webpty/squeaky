@@ -1833,6 +1833,46 @@ public final class AppModel: ObservableObject {
 
     /// Photos selected or not for saving, as one change to the list: the
     /// phone's ticks, taps and slides (0.31.0, David, 18 November 2026).
+    /// Selected photos not saved yet, to mark as copied.
+    public var canMarkCopied: Bool {
+        source != nil && importPerson != nil && !photosBusy && !saving
+            && rows.contains { $0.ticked && !isSaved($0) }
+    }
+
+    /// The selected photos recorded as copied on this phone, nothing copied or
+    /// added to Photos (0.34.16, David: photos copied before Squeaky's record,
+    /// some since deleted in Photos, must not come back).
+    public func markCopied() {
+        guard let personId = importPerson, canMarkCopied else { return }
+        let picked = rows.filter { $0.ticked && !isSaved($0) }
+        let past: [HistoryEntry]
+        do { past = try history.load(personId) } catch {
+            // Never written over: a record that cannot be read is left as it is.
+            photosLine = Words.t("Not marked: the record of copied photos could not be read. {0}", error.localizedDescription)
+            return
+        }
+        var known = Set(past.map(\.key))
+        var all = past
+        for row in picked where !known.contains(row.photo.key) {
+            known.insert(row.photo.key)
+            all.append(HistoryEntry(fileName: row.photo.fileName, size: row.photo.size, taken: row.photo.taken,
+                                    subSeconds: row.photo.subSeconds, imported: Date()))
+        }
+        do { try history.save(personId, all) } catch {
+            photosLine = Words.t("Not marked: the record of copied photos could not be written. {0}", error.localizedDescription)
+            return
+        }
+        let ids = Set(picked.map(\.id))
+        var changed = rows
+        for i in changed.indices where ids.contains(changed[i].id) {
+            changed[i].status = .alreadyImported
+            changed[i].ticked = false
+        }
+        rows = changed
+        let frames = Set(picked.map { Self.frameKey($0.photo) }).count
+        photosLine = Words.t("{0} photos marked as copied", frames)
+    }
+
     public func setTicked(_ ids: Set<String>, _ on: Bool) {
         guard !saving, !ids.isEmpty else { return }
         var changed = rows

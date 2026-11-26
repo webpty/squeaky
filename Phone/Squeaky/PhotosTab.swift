@@ -87,6 +87,10 @@ struct PhotosTab: View {
                                 HStack(spacing: 10) { saveButtons }
                                 VStack(spacing: 10) { saveButtons }
                             }
+                            // Copied before Squeaky's record: marked, nothing copied (0.34.16, David).
+                            Button(Words.t("Mark as copied")) { model.markCopied() }
+                                .buttonStyle(WideButton(.grey))
+                                .disabled(!model.canMarkCopied)
                             Toggle(Words.t("Hide already saved"), isOn: $model.hideSaved)
                                 .disabled(model.photosBusy || model.saving)
                         }

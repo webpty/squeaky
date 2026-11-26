@@ -1224,3 +1224,17 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   whose it was, on both phones. Only a folder that can be read and holds no
   DCIM folder is dropped now (`SDCard.surelyNotACard`); a card taken out is
   let go of as before.
+
+## Mark as copied (0.34.16, David, 26 November 2026)
+
+- "Mark as copied" (grey, under the save buttons) records the selected
+  photos as copied on the phone (`markCopied`): nothing is copied or added to
+  Photos, the green tick appears, "Hide already saved" hides them. For photos
+  copied before Squeaky's record: Amanda's phone held only 77 of David's card
+  (all from 25 November, 15:40), and saving the rest again would bring back
+  photos she had deleted in Photos ("as soon as the photos are copied she
+  manages them and deletes all the ones she doesn't like").
+- It never writes over a record it cannot read; it says so instead. Saving
+  still does: `save` starts from `(try? history.load(...)) ?? []`, so a record
+  that fails to read once is replaced by that save's photos alone. Not proven
+  to be how Amanda's record lost its older entries; worth fixing.

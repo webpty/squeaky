@@ -475,5 +475,9 @@
  "Save only those with a track": "Guardar solo los que tienen recorrido",
  "None of the photos have a track. Make sure this is correct.": "Ninguna de las fotos tiene recorrido. Comprueba que es correcto.",
  "{0} of {1} photos have no track. Make sure this is correct.": "{0} de {1} fotos no tienen recorrido. Comprueba que es correcto.",
- "This doesn't appear to be a card": "Esto no parece ser una tarjeta"
+ "This doesn't appear to be a card": "Esto no parece ser una tarjeta",
+ "Mark as copied": "Marcar como copiadas",
+ "{0} photos marked as copied": "{0} fotos marcadas como copiadas",
+ "Not marked: the record of copied photos could not be read. {0}": "No se marcaron: no se pudo leer el registro de fotos copiadas. {0}",
+ "Not marked: the record of copied photos could not be written. {0}": "No se marcaron: no se pudo guardar el registro de fotos copiadas. {0}"
 }
