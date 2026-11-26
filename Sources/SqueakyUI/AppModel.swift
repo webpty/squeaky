@@ -642,6 +642,7 @@ public final class AppModel: ObservableObject {
             || owner.nasFolder != NASThroughFiles.share || book.person(PhoneFolders.othersId) == nil {
             setPhonePerson(name: owner.name)
         }
+        removeCamerasWithoutOffset()
         if needsSetup {
             settingUp = true
         } else {
@@ -1312,6 +1313,37 @@ public final class AppModel: ObservableObject {
     /// A line for the Photos page from one of its buttons.
     public func tell(_ line: String) {
         photosLine = line
+    }
+
+    /// A folder opened as a card that is not one (a NAS folder, before 0.34.14):
+    /// no longer read, its photos off the page, its name off the list of cards.
+    /// Silent: the clean-up of a bug (David: "no need to specify").
+    public func forgetNotACard(id: String) {
+        if source?.id == id, !saving {
+            readingRound += 1
+            source = nil
+            forgetCard()
+            photosLine = ""
+        }
+        var owners = defaults.dictionary(forKey: "cardPeople") as? [String: String] ?? [:]
+        owners[id] = nil
+        defaults.set(owners, forKey: "cardPeople")
+        var names = defaults.dictionary(forKey: "cardNames") as? [String: String] ?? [:]
+        names[id] = nil
+        defaults.set(names, forKey: "cardNames")
+        objectWillChange.send()
+    }
+
+    /// Once (0.34.14): every camera with no time offset is removed, most of them
+    /// added from a folder that was not a card. A real one comes back with the
+    /// next card that has its photos.
+    func removeCamerasWithoutOffset() {
+        guard !defaults.bool(forKey: "offsetlessCamerasRemoved") else { return }
+        defaults.set(true, forKey: "offsetlessCamerasRemoved")
+        let gone = book.people.flatMap { book.cameras(of: $0.id) }.filter { $0.offsetSeconds == nil }
+        guard !gone.isEmpty else { return }
+        store { book in for camera in gone { book.remove(camera: camera.id) } }
+        rematch()
     }
 
     /// Settings opens on this camera's details, from the Photos page.

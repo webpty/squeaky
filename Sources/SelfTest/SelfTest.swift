@@ -37,6 +37,7 @@ struct SelfTest {
         await tracksLoading(scratch)
         await watchTracks(scratch)
         cardMemory(scratch)
+        sdCards(scratch)
         matching(scratch)
         await videos(scratch)
         gpx(scratch)
@@ -245,6 +246,18 @@ extension SelfTest {
 }
 
 extension SelfTest {
+
+    /// Only an SD card is opened (0.34.14): a card holds a DCIM folder.
+    static func sdCards(_ scratch: URL) {
+        let fm = FileManager.default
+        let card = scratch.appendingPathComponent("SDCARD"), nas = scratch.appendingPathComponent("homes-amanda")
+        try? fm.createDirectory(at: card.appendingPathComponent("DCIM/100CANON"), withIntermediateDirectories: true)
+        try? fm.createDirectory(at: nas.appendingPathComponent("2026.06.08"), withIntermediateDirectories: true)
+        check("sd card: the card itself is one", SDCard.looksLikeCard(card))
+        check("sd card: its DCIM folder is one", SDCard.looksLikeCard(card.appendingPathComponent("DCIM")))
+        check("sd card: a folder inside DCIM is one", SDCard.looksLikeCard(card.appendingPathComponent("DCIM/100CANON")))
+        check("sd card: a folder of photos without DCIM is not", !SDCard.looksLikeCard(nas))
+    }
 
     /// What was read from a card's photos, kept (0.34.12): the next read opens
     /// only photos not seen before, or changed since.

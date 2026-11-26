@@ -474,5 +474,6 @@
  "{0} already in Photos, not added again.": "{0} 個已在「照片」中，未再加入。",
  "Save only those with a track": "只儲存有軌跡的",
  "None of the photos have a track. Make sure this is correct.": "沒有任何照片有軌跡。請確認這是正確的。",
- "{0} of {1} photos have no track. Make sure this is correct.": "{1} 張照片中有 {0} 張沒有軌跡。請確認這是正確的。"
+ "{0} of {1} photos have no track. Make sure this is correct.": "{1} 張照片中有 {0} 張沒有軌跡。請確認這是正確的。",
+ "This doesn't appear to be a card": "這似乎不是記憶卡"
 }

@@ -474,5 +474,6 @@
  "{0} already in Photos, not added again.": "{0} already in Photos, not added again.",
  "Save only those with a track": "Save only those with a track",
  "None of the photos have a track. Make sure this is correct.": "None of the photos have a track. Make sure this is correct.",
- "{0} of {1} photos have no track. Make sure this is correct.": "{0} of {1} photos have no track. Make sure this is correct."
+ "{0} of {1} photos have no track. Make sure this is correct.": "{0} of {1} photos have no track. Make sure this is correct.",
+ "This doesn't appear to be a card": "This doesn't appear to be a card"
 }

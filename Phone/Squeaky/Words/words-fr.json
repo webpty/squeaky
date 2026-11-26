@@ -474,5 +474,6 @@
  "{0} already in Photos, not added again.": "{0} déjà dans Photos, pas ajoutés à nouveau.",
  "Save only those with a track": "Enregistrer seulement ceux avec une trace",
  "None of the photos have a track. Make sure this is correct.": "Aucune des photos n'a de trace. Vérifiez que c'est correct.",
- "{0} of {1} photos have no track. Make sure this is correct.": "{0} photos sur {1} n'ont pas de trace. Vérifiez que c'est correct."
+ "{0} of {1} photos have no track. Make sure this is correct.": "{0} photos sur {1} n'ont pas de trace. Vérifiez que c'est correct.",
+ "This doesn't appear to be a card": "Cela ne semble pas être une carte"
 }

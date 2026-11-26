@@ -1199,3 +1199,19 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   minute while it failed; the ticks follow when it brings anything new
   (`applySavedList`). Only a phone with no copy of it (a new install) reads it
   as a card is read, behind the photos (`restoreSavedList`).
+
+## Only SD cards are opened (0.34.14, David, 26 November 2026)
+
+- A folder chosen with Open card must be an SD card: one holding a DCIM
+  folder, its DCIM folder, or a folder inside DCIM (`SDCard.looksLikeCard`).
+  Any other folder is refused with "This doesn't appear to be a card"
+  (David's words). Before, Amanda's phone opened a folder on the NAS as a
+  card, read 509 of her photos, added a camera for each model in them, and,
+  the folder never being "taken out", never let go of it for the real card.
+- Clean-up of that bug, silent (David: "this was a bug, no need to
+  specify"): a remembered folder that is not an SD card is forgotten as
+  Squeaky opens or while it is open (`CardWatch.dropNotACard`,
+  `forgetNotACard`), its photos off the page and its name off the SD cards
+  list; once, every camera with no time offset is removed
+  (`removeCamerasWithoutOffset`, defaults `offsetlessCamerasRemoved`); a real
+  one comes back with the next card that has its photos.

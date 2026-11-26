@@ -41,7 +41,27 @@ final class CardWatch {
         UserDefaults.standard.set(all, forKey: key)
     }
 
+    /// A remembered folder no longer to be opened.
+    static func forget(_ id: String) {
+        var all = UserDefaults.standard.dictionary(forKey: key) as? [String: Data] ?? [:]
+        all[id] = nil
+        UserDefaults.standard.set(all, forKey: key)
+    }
+
+    /// Not an SD card (0.34.14): forgotten.
+    private func dropNotACard(_ id: String) {
+        Self.forget(id)
+        letGo.remove(id)
+        model.forgetNotACard(id: id)
+    }
+
     private func look() {
+        // The folder in use is not an SD card (opened before 0.34.14): let go of.
+        if let open = model.source, !model.photosBusy, !model.saving, !SDCard.looksLikeCard(open.url) {
+            dropNotACard(open.id)
+            lastSource = nil
+            return
+        }
         // A card the list was showing and is now let go of stays let go of while it is in.
         if let id = lastSource, model.source == nil { letGo.insert(id) }
         lastSource = model.source?.id
@@ -73,6 +93,11 @@ final class CardWatch {
             guard there else {
                 if access { url.stopAccessingSecurityScopedResource() }
                 letGo.remove(id)
+                continue
+            }
+            guard SDCard.looksLikeCard(url) else {
+                if access { url.stopAccessingSecurityScopedResource() }
+                dropNotACard(id)
                 continue
             }
             if letGo.contains(id) {

@@ -221,3 +221,14 @@ public enum CopyName {
         return (fileName as NSString).deletingPathExtension + ".jpg"
     }
 }
+
+/// Whether a folder chosen in the Files list is an SD card (0.34.14, David): a
+/// camera's card holds a DCIM folder. The card itself, its DCIM folder or a
+/// folder inside DCIM is taken; any other folder, a NAS folder say, is refused.
+public enum SDCard {
+    public static func looksLikeCard(_ url: URL) -> Bool {
+        if url.pathComponents.contains(where: { $0.uppercased() == "DCIM" }) { return true }
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: url.path)) ?? []
+        return names.contains { $0.uppercased() == "DCIM" }
+    }
+}

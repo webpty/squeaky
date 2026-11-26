@@ -151,6 +151,13 @@ struct PhotosTab: View {
             .fileImporter(isPresented: $choosing, allowedContentTypes: [.folder]) { result in
                 switch result {
                 case .success(let url):
+                    // Only an SD card is opened (0.34.14, David).
+                    let access = url.startAccessingSecurityScopedResource()
+                    guard SDCard.looksLikeCard(url) else {
+                        if access { url.stopAccessingSecurityScopedResource() }
+                        model.tell(Words.t("This doesn't appear to be a card"))
+                        return
+                    }
                     let source = Self.source(url)
                     CardWatch.remember(url, id: source.id)
                     model.choose(source)
