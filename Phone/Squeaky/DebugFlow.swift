@@ -198,7 +198,6 @@ extension DebugHooks {
         if args.contains("--save") {
             try? await Task.sleep(for: .seconds(3))
             while model.photosBusy { try? await Task.sleep(for: .milliseconds(200)) }
-            model.dontSave()
             model.setTicked(Set(model.rows.map(\.id)), true); await model.savePhotos()
         }
     }
@@ -226,8 +225,7 @@ extension DebugHooks {
         UserDefaults.standard.set(people, forKey: "cardPeople")
         model.choose(source)
         try? await Task.sleep(for: .seconds(1))
-        while model.photosBusy || model.trackCheck == .checking { try? await Task.sleep(for: .milliseconds(100)) }
-        model.dontSave()
+        while model.photosBusy { try? await Task.sleep(for: .milliseconds(100)) }
         guard model.source != nil, !model.rows.isEmpty else { print("pull: FAILED, the card was not read"); return true }
         let saving = Task { model.setTicked(Set(model.rows.map(\.id)), true); await model.savePhotos() }
         let until = Date().addingTimeInterval(30)

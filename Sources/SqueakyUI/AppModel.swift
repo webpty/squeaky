@@ -76,16 +76,6 @@ public enum PhotosFix: Equatable {
     }
 }
 
-/// Where the check before saving stands: checking, or the photos still
-/// without a track, the track service answering or not.
-public enum TrackCheck: Equatable, Sendable {
-    case checking
-    /// Every photo has a track: on the phone, still shown before saving (0.29.5).
-    case ready
-    case noTrack(Int)
-    case offline(Int)
-}
-
 @MainActor
 public final class AppModel: ObservableObject {
     @Published public var appearance = Appearance.system
@@ -180,7 +170,6 @@ public final class AppModel: ObservableObject {
     @Published public private(set) var tracksBusy = false
     /// The check before a card is saved by itself, while some of its photos
     /// have no track (0.27.0, David, 12 November 2026).
-    @Published public private(set) var trackCheck: TrackCheck?
     /// The credit the small maps need, kept for when the Mac is offline.
     @Published public private(set) var mapCredit = ""
     /// Goes up whenever the map source changes, so missing maps are tried again.
@@ -194,10 +183,7 @@ public final class AppModel: ObservableObject {
 
     // Photos: cards, whose they are, and what is on them.
     @Published public private(set) var cards: [PhotoSource] = []
-    @Published public private(set) var source: PhotoSource? {
-        // The check before saving belongs to its card.
-        didSet { if source?.id != oldValue?.id { trackCheck = nil } }
-    }
+    @Published public private(set) var source: PhotoSource?
     /// The card waiting for its owner to be chosen.
     @Published public var askingWhose: PhotoSource?
     @Published public private(set) var importPerson: UUID? { didSet { keepListSoon() } }
@@ -856,9 +842,8 @@ public final class AppModel: ObservableObject {
 
     /// The rows Save photos would save: ticked and placed, or let through.
     public var readyToSave: [ImportRow] {
-        // Every photo selected, those whose camera has no time offset too: the panel
-        // before saving says they go without a location, and the choice is the
-        // person's (0.31.8, David: "i always want the choice"; 0.31.4 held them).
+        // Every photo selected, those whose camera has no time offset too: saved
+        // without a location (0.31.8, David: "i always want the choice").
         rows.filter(\.willImport)
     }
 
@@ -879,7 +864,7 @@ public final class AppModel: ObservableObject {
     public func saveAll() {
         guard !saving, !photosBusy else { return }
         setTicked(Set(choosable.map(\.id)), true)
-        Task { await checkTracksBeforeSave() }
+        Task { await saveSelected() }
     }
 
     /// Copies every ready photo into the person's folder with its location,
@@ -1558,7 +1543,7 @@ public final class AppModel: ObservableObject {
         guard let source, let person = importPerson, !saving, !photosBusy else { return }
         await read(source, for: person, fresh: true)
         while photosBusy { try? await Task.sleep(for: .milliseconds(200)) }
-        if !saving, trackCheck == nil, canSave { await checkTracksBeforeSave() }
+        if !saving, canSave { await saveSelected() }
     }
 
     /// The card now in, read again for whoever it belongs to.
@@ -1678,16 +1663,9 @@ public final class AppModel: ObservableObject {
             await Task.yield()
             rematch()
             photosLine = rows.isEmpty ? Words.t("No photos on {0}.", source.name) : codes
-            // Every camera set: nothing to line up, so the photos are saved straight
-            // away, and the card comes out once they are on the Mac (David, 1 November 2026).
-            if camerasReady, saveWhenReady, saveBlock == nil {
-                let ask = true
-                if ask {
-                    await checkTracksBeforeSave()
-                } else {
-                    await savePhotos()
-                }
-            } else if let block = saveBlock, readyToSave.count > 0 {
+            // Nothing is saved until chosen by hand; the panel that came up here
+            // is gone (0.34.17, David).
+            if let block = saveBlock, readyToSave.count > 0 {
                 // Save photos is dimmed until this is fixed: said on its own, with the way to it.
                 say(block.line, fix: block.fix)
             }
@@ -2226,52 +2204,14 @@ public final class AppModel: ObservableObject {
         return (placed, tried)
     }
 
-    // MARK: Checking for tracks before saving (0.27.0, David, 12 November 2026)
+    // MARK: Saving straight away (0.34.17, David, 26 November 2026)
 
-    /// Photos on the card that would be saved without a location for want of a track.
-    public var noTrackCount: Int {
-        readyToSave.filter { $0.placement == .review(.noTrack) }.count
-    }
-
-    /// The tracks loaded again from the track service; the card is saved at
-    /// once if every photo then has its track, else the choice is laid over
-    /// the window and nothing is saved until one is made.
-    public func checkTracksBeforeSave() async {
-        trackCheck = .checking
-        while tracksBusy { try? await Task.sleep(for: .milliseconds(200)) }
-        let answered = await refresh(pullStrava: true)
-        guard trackCheck != nil else { return }
-        let missing = noTrackCount
-        if missing == 0 {
-            // The phone shows the latest track before every save (0.29.5, David, 16 November 2026).
-            trackCheck = .ready
-        } else {
-            trackCheck = answered ? .noTrack(missing) : .offline(missing)
-        }
-    }
-
-    public func dontSave() {
-        trackCheck = nil
-    }
-
-    public func checkTracksAgain() {
-        Task { await checkTracksBeforeSave() }
-    }
-
-    /// Saved as they are. With the track service away, those without a track
-    /// stay on this Mac until the tracks can be checked again.
-    /// The selected photos that have a track, saved; those without stay selected (0.34.5, David).
-    public func saveOnlyTracked() {
-        trackCheck = nil
-        let ids = Set(readyToSave.filter { $0.placement != .review(.noTrack) }.map(\.id))
-        Task { await savePhotos(only: ids) }
-    }
-
-    public func saveAnyway() {
-        let hold: Bool
-        if case .offline? = trackCheck { hold = true } else { hold = false }
-        trackCheck = nil
-        Task { await savePhotos(hold: hold) }
+    /// The selected photos saved at once: no panel first. Photos without a
+    /// track go without a location, placed later with Add locations ("since we
+    /// can now add the gps coordinates post import").
+    public func saveSelected() async {
+        guard !saving, !photosBusy else { return }
+        await savePhotos()
     }
 
     /// Photos held for want of the track service: once it answers, tried

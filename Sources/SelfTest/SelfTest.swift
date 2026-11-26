@@ -38,6 +38,7 @@ struct SelfTest {
         await watchTracks(scratch)
         cardMemory(scratch)
         sdCards(scratch)
+        sameWalks()
         matching(scratch)
         await videos(scratch)
         gpx(scratch)
@@ -246,6 +247,22 @@ extension SelfTest {
 }
 
 extension SelfTest {
+
+    /// Tracks of the same walk (0.34.17): starts far apart, minutes shared.
+    static func sameWalks() {
+        let b = Bounds(minLat: 0, maxLat: 1, minLon: 0, maxLon: 1)
+        func t(_ id: String, _ source: TrackSource, _ start: Double, _ minutes: Double) -> Track {
+            Track(id: id, source: source, name: id, sport: nil, fileName: nil,
+                  start: Date(timeIntervalSince1970: start), end: Date(timeIntervalSince1970: start + minutes * 60),
+                  timeZone: nil, pointCount: 10, distance: nil, bounds: b, status: .onService)
+        }
+        let watch = t("watch", .watch, 1_000_000, 120)
+        let strava = t("strava", .strava, 1_000_000 + 95, 125)
+        let lunch = t("lunch", .strava, 1_000_000 + 130 * 60, 30)
+        check("same walk: a Garmin copy starting 95 s later", TrackLibrary.sameWalk(watch, strava))
+        check("same walk: the next walk is not", !TrackLibrary.sameWalk(watch, lunch))
+        check("same walk: starts within 20 s still are", TrackLibrary.sameWalk(t("a", .file, 0, 1), t("b", .file, 15, 60)))
+    }
 
     /// Only an SD card is opened (0.34.14): a card holds a DCIM folder.
     static func sdCards(_ scratch: URL) {
@@ -633,12 +650,13 @@ extension SelfTest {
         _ = try? await library.importWatch(id: "watch-short", name: "short", points: short, role: .reader)
         var listed = await library.listed().map(\.id)
         check("watch: of two within 20 s, the longer listed", listed == [WatchInbox.libraryId(start)], "\(listed)")
-        // A longer one 25 s after: a different outing, both kept.
+        // A longer one 25 s after, over the same minutes.
         let other = TrackPoints(t: Array(start + 25 ..< start + 1025), lat: Array(repeating: -54.8, count: 1000),
                                 lon: Array(repeating: -68.3, count: 1000), alt: Array(repeating: nil, count: 1000))
         _ = try? await library.importWatch(id: "watch-other", name: "other", points: other, role: .owner)
         listed = await library.listed().map(\.id)
-        check("watch: 25 s apart, both kept", listed.count == 2 && listed.contains("watch-other"), "\(listed)")
+        // Mostly the same minutes: the same walk (0.34.17), the longer listed.
+        check("watch: 25 s apart, the same minutes, one walk", listed == ["watch-other"], "\(listed)")
         check("watch: every watch track offered to family phones", await library.watchTracks().count == 3)
     }
 

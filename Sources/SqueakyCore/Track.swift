@@ -68,7 +68,7 @@ public struct Track: Codable, Identifiable, Equatable, Sendable {
     public var serviceId: String?
     /// Where it is, named by the track service (0.29.20).
     public var place: String?
-    /// Another track starts within `sameStartSeconds` and is longer: this one is kept but not listed (0.32.0).
+    /// Another track of the same walk is listed instead: this one is kept but not listed (0.32.0, 0.34.17).
     public var setAside: Bool?
 
     public init(id: String, source: TrackSource, name: String, sport: String?, fileName: String?,

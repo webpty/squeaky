@@ -198,7 +198,7 @@ struct PhotosTab: View {
     @ViewBuilder var saveButtons: some View {
         // Dimmed with nothing selected, and with everything selected: Save all does that (0.34.6, David).
         let all = !model.choosable.isEmpty && model.choosable.allSatisfy(\.ticked)
-        Button(Words.t("Save selected")) { Task { await model.checkTracksBeforeSave() } }
+        Button(Words.t("Save selected")) { Task { await model.saveSelected() } }
             .buttonStyle(WideButton(.orange))
             .disabled(!model.canSave || all)
         // Every photo on the card that can be chosen (0.32.1, David).

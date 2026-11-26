@@ -173,23 +173,44 @@ public actor TrackLibrary {
         return .added(track)
     }
 
-    /// Of listed tracks starting within `sameStartSeconds` of each other, the
-    /// longest stays listed and the others are set aside (0.32.0).
+    /// Tracks of the same walk: starting within `sameStartSeconds` of each other
+    /// (0.32.0), or covering mostly the same minutes, whatever their starts
+    /// (0.34.17, David: Garmin and Strava trim and smooth the track Geotrac
+    /// saved, so its copy starts elsewhere). One stays listed: the one the
+    /// watch recorded, its points as they were; else the longest. The rest are
+    /// set aside, worked out afresh each time.
     public func setAsideDuplicates() {
-        let listed = all.indices.filter { all[$0].status != .uploaded && all[$0].setAside != true }
+        let listed = all.indices.filter { all[$0].status != .uploaded }
             .sorted { all[$0].start < all[$1].start }
-        var group: [Int] = []
-        func close() {
-            if group.count > 1, let keep = group.max(by: { all[$0].duration < all[$1].duration }) {
-                for i in group where i != keep { all[i].setAside = true }
-            }
-            group = []
-        }
+        for i in listed { all[i].setAside = nil }
+        var groups: [[Int]] = []
         for i in listed {
-            if let first = group.first, all[i].start.timeIntervalSince(all[first].start) > sameStartSeconds { close() }
-            group.append(i)
+            if let g = groups.firstIndex(where: { group in group.contains { Self.sameWalk(all[$0], all[i]) } }) {
+                groups[g].append(i)
+            } else {
+                groups.append([i])
+            }
         }
-        close()
+        for group in groups where group.count > 1 {
+            let keep = group.max { a, b in
+                let wa = all[a].source == .watch, wb = all[b].source == .watch
+                if wa != wb { return !wa }
+                return all[a].duration < all[b].duration
+            }!
+            for i in group where i != keep { all[i].setAside = true }
+        }
+    }
+
+    /// The share of the shorter track's minutes that two tracks must share to
+    /// be the same walk.
+    public static let sameWalkShare = 0.8
+
+    public static func sameWalk(_ a: Track, _ b: Track) -> Bool {
+        if abs(a.start.timeIntervalSince(b.start)) <= sameStartSeconds { return true }
+        let shared = min(a.end, b.end).timeIntervalSince(max(a.start, b.start))
+        let shorter = min(a.duration, b.duration)
+        guard shared > 0, shorter > 0 else { return false }
+        return shared / shorter >= sameWalkShare
     }
 
     /// Every track that came from a watch, with its points, for family phones nearby.

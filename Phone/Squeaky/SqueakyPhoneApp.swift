@@ -159,9 +159,6 @@ struct PhoneRoot: View {
             UIApplication.shared.isIdleTimerDisabled = busy && !(work?.isRunning ?? false)
             if busy, let refused = work?.refused { model.tell(refused) }
         }
-        .sheet(isPresented: Binding(get: { model.trackCheck != nil }, set: { _ in })) {
-            if let check = model.trackCheck { TrackCheckSheet(model: model, check: check) }
-        }
         // Once on each phone: mobile data is the iPhone's to switch off (0.29.38).
         .alert(Words.t("Mobile data"), isPresented: $remindMobileData) {
             Button(Words.t("Open iPhone Settings")) {
@@ -219,84 +216,6 @@ struct LoaderDots: View {
     }
 }
 
-/// The check before saving, as on the Mac (0.27.0).
-struct TrackCheckSheet: View {
-    @ObservedObject var model: AppModel
-    let check: TrackCheck
-
-    /// The newest track, by when it starts.
-    var latest: Track? { model.tracks.max { $0.start < $1.start } }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            switch check {
-            case .checking:
-                Text(Words.t("Checking for matching tracks"))
-                LoaderDots().frame(maxWidth: .infinity)
-            case .ready, .noTrack, .offline:
-                // Before every save on the phone (0.29.5, David, 16 November 2026).
-                if case .offline = check {
-                    Text(Words.t("The track service isn't answering."))
-                }
-                if let latest {
-                    // Its map, as on the Tracks page (0.31.9, David).
-                    VStack(alignment: .leading, spacing: 2) {
-                        TrackLargeMap(model: model, track: latest)
-                            .frame(height: 170)
-                        if !model.mapCredit.isEmpty {
-                            Text(model.mapCredit).font(.caption2).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.6)
-                        }
-                    }
-                    // The place stays whole; the start goes on its own line when it does not fit (0.29.35).
-                    Sentences(text: Words.t("Latest track: {0}", model.trackTitle(latest)) + LineBreaks.soft
-                              + Words.t("starts {0}", When.current.dayAndTime(latest.start, zone: latest.timeZone.flatMap(TimeZone.init(identifier:)) ?? .current)))
-                        // The same text as the Photos page's rows (0.34.6, David).
-                        .font(.body)
-                }
-                // How many have no track, and "none" when none has one (0.34.5, David).
-                let missing = model.noTrackCount, total = model.readyToSave.count
-                if check != .ready, missing > 0 {
-                    Text(missing >= total ? Words.t("None of the photos have a track. Make sure this is correct.")
-                         : Words.t("{0} of {1} photos have no track. Make sure this is correct.", missing.formatted(), total.formatted()))
-                }
-                // The choice stays the person's (0.31.8, David: "i always want the choice").
-                let noOffset = model.readyToSave.filter { $0.placement == .review(.offsetNotSet) }.count
-                if noOffset > 0 {
-                    Text(noOffset == 1 ? Words.t("1 photo has no camera time offset. It will be saved without a location.")
-                         : Words.t("{0} photos have no camera time offset. They will be saved without a location.", noOffset.formatted()))
-                        .foregroundStyle(.orange)
-                }
-                if let problem = model.savedListProblem {
-                    Text(Words.t("The list of photos already saved couldn't be read: {0} Photos already saved on the Mac may be saved again.", problem))
-                        .foregroundStyle(.orange)
-                }
-                VStack(spacing: 10) {
-                    Button(model.savedListProblem == nil ? Words.t("Save") : Words.t("Save anyway")) { model.saveAnyway() }
-                        .buttonStyle(WideButton(.blue))
-                    // Only some without a track: those with one saved, the rest kept selected (0.34.5, David).
-                    if check != .ready, missing > 0, missing < total {
-                        Button(Words.t("Save only those with a track")) { model.saveOnlyTracked() }
-                            .buttonStyle(WideButton(.blue))
-                    }
-                    Button(Words.t("Check tracks again")) { model.checkTracksAgain() }
-                        .buttonStyle(WideButton(.grey))
-                    Button(Words.t("Cancel")) { model.dontSave() }
-                        .buttonStyle(WideButton(.red))
-                }
-            }
-        }
-        .padding(24)
-        .presentationDetents([.height(check == .checking ? 140 : 650)])
-        .interactiveDismissDisabled()
-    }
-}
-
-extension TrackCheck {
-    var isOffline: Bool {
-        if case .offline = self { return true }
-        return false
-    }
-}
 
 /// A line that says what is going on, with a spinner while it is.
 struct StatusRow: View {

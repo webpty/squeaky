@@ -1238,3 +1238,21 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   still does: `save` starts from `(try? history.load(...)) ?? []`, so a record
   that fails to read once is replaced by that save's photos alone. Not proven
   to be how Amanda's record lost its older entries; worth fixing.
+
+## Saving straight away; one track per walk (0.34.17, David, 26 November 2026)
+
+- The panel before saving is removed ("since we can now add the gps
+  coordinates post import"): Save selected and Save all copy at once
+  (`saveSelected`). Photos without a track go without a location and are
+  placed later with Add locations. Gone with it: the latest track's map, the
+  counts without a track or a camera offset, "Save only those with a track",
+  and the panel that came up by itself after a card was read. Nothing is
+  saved until chosen by hand.
+- Tracks of the same walk are one: starting within 20 s, or sharing at least
+  80% of the shorter one's minutes (`TrackLibrary.sameWalk`), whatever their
+  starts. Garmin and Strava trim and smooth the track Geotrac saved, so their
+  copy starts elsewhere and its line differs slightly. The watch's own track
+  stays listed (its points as recorded), else the longest; the rest are set
+  aside, worked out afresh each time, and photos are matched against the
+  listed one only. geotrac.cc's own list still holds both: the tracks
+  project's to change.
