@@ -1331,3 +1331,16 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   commit count; `ITSAppUsesNonExemptEncryption` is false. Each build works 90
   days. Unlisted App Store distribution was weighed and left for when Squeaky
   changes less often (every update reviewed).
+
+## App Review check (1.0.1, David, 27 November 2026)
+
+- `Phone/Squeaky/PrivacyInfo.xcprivacy`: settings (CA92.1), file dates of
+  the chosen card and Squeaky's own files (3B52.1, C617.1), free space on the
+  server folder (E174.1); no tracking, nothing collected declared. Add a
+  reason whenever new code uses another API on Apple's required-reason list.
+- The Photos full-access text names both uses (locations, and never adding a
+  photo twice); Bluetooth names the Geotrac watch app.
+- Map lookups at OpenStreetMap say "Squeaky/<version> (https://geotrac.cc)".
+- Before a store release, not TestFlight: a privacy policy page, the App
+  Privacy answers (photos pass through bufr.cc, David's server), screenshots
+  and a description.

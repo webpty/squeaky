@@ -1,6 +1,6 @@
 "CFBundleDisplayName" = "Squeaky";
 "NSPhotoLibraryAddUsageDescription" = "Squeaky ajoute les photos qu'il enregistre depuis vos cartes.";
-"NSPhotoLibraryUsageDescription" = "Squeaky ajoute un lieu aux photos de Photos qui n'en ont pas.";
+"NSPhotoLibraryUsageDescription" = "Squeaky ajoute un lieu aux photos de Photos qui n'en ont pas, et vérifie Photos pour ne jamais ajouter une photo deux fois.";
 "NSBluetoothAlwaysUsageDescription" = "Squeaky reçoit les traces de l'app Geotrac de votre montre Garmin.";
 "NSBluetoothPeripheralUsageDescription" = "Squeaky reçoit les traces de l'app Geotrac de votre montre Garmin.";
 "NSLocalNetworkUsageDescription" = "Squeaky transmet les traces de la montre aux téléphones de la famille à proximité.";

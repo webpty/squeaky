@@ -1,6 +1,6 @@
 "CFBundleDisplayName" = "Squeaky";
 "NSPhotoLibraryAddUsageDescription" = "Squeaky 會加入從記憶卡儲存的照片。";
-"NSPhotoLibraryUsageDescription" = "Squeaky 會為「照片」中沒有位置的照片加入位置。";
+"NSPhotoLibraryUsageDescription" = "Squeaky 會為「照片」中沒有位置的照片加入位置，並檢查「照片」，絕不重複加入同一張照片。";
 "NSBluetoothAlwaysUsageDescription" = "Squeaky 會接收 Garmin 手錶上 Geotrac app 的軌跡。";
 "NSBluetoothPeripheralUsageDescription" = "Squeaky 會接收 Garmin 手錶上 Geotrac app 的軌跡。";
 "NSLocalNetworkUsageDescription" = "Squeaky 會把手錶的軌跡傳給附近家人的手機。";

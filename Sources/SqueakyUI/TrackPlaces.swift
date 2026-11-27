@@ -50,7 +50,7 @@ public enum TrackPlaces {
             URLQueryItem(name: "accept-language", value: "en"),
         ]
         var request = URLRequest(url: parts.url!)
-        request.setValue("Squeaky/\(appVersion) (private family photo app)", forHTTPHeaderField: "User-Agent")
+        request.setValue("Squeaky/\(appVersion) (https://geotrac.cc)", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 10
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200,
