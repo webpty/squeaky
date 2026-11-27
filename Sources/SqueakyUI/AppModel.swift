@@ -157,7 +157,38 @@ public final class AppModel: ObservableObject {
     }
 
     // Tracks.
-    @Published public private(set) var tracks: [Track] = []
+    /// With "Use Geotrac's tracks" off, only tracks imported on this phone are
+    /// shown and matched against (0.34.19).
+    @Published public private(set) var tracks: [Track] = [] {
+        didSet {
+            if !useGeotracTracks, tracks.contains(where: { $0.source != .file }) {
+                tracks = tracks.filter { $0.source == .file }
+            }
+        }
+    }
+
+    /// "Use Geotrac's tracks" (0.34.19, David, 27 November 2026): off by
+    /// default, asked once on the first launch after the install. The owner's
+    /// phone (David's) always uses them and is never asked.
+    public static let geotracTracksKey = "useGeotracTracks"
+    public static let geotracTracksAskedKey = "geotracTracksAsked"
+    public var useGeotracTracks: Bool {
+        role == .owner || defaults.bool(forKey: Self.geotracTracksKey)
+    }
+
+    public func setUseGeotracTracks(_ on: Bool) async {
+        defaults.set(on, forKey: Self.geotracTracksKey)
+        defaults.set(true, forKey: Self.geotracTracksAskedKey)
+        objectWillChange.send()
+        tracks = await library.listed()
+        if on {
+            await refresh()
+        } else {
+            tracksLine = ""
+            await loadTimeline()
+            rematch()
+        }
+    }
     /// Tracks named by where they are, by track id (0.29.5).
     @Published public private(set) var trackPlaces: [String: String] = [:]
     @Published public private(set) var namingTracks = false
@@ -3336,6 +3367,12 @@ public final class AppModel: ObservableObject {
         guard let service else {
             tracks = await library.listed()
             tracksLine = ServiceError.notSetUp.localizedDescription
+            return false
+        }
+        // Not using Geotrac's tracks: the service is not asked for them.
+        guard useGeotracTracks else {
+            tracks = await library.listed()
+            tracksLine = ""
             return false
         }
         tracksBusy = true

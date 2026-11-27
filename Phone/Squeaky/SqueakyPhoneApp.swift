@@ -97,6 +97,7 @@ struct PhoneRoot: View {
     @State private var work: BackgroundWork?
     @State private var network = NetworkWatch()
     @State private var remindMobileData = false
+    @State private var askGeotracTracks = false
     @Environment(\.scenePhase) private var phase
 
     enum Tab { case photos, tracks, queue, settings }
@@ -168,6 +169,26 @@ struct PhoneRoot: View {
             Button(Words.t("Close"), role: .cancel) { UserDefaults.standard.set(true, forKey: Self.remindedKey) }
         } message: {
             Text(Words.t("Squeaky sends photos to your server over mobile data when there is no WiFi. To stop it, turn off Mobile Data for Squeaky in the iPhone's Settings."))
+        }
+        // Once after the install, on every phone but the owner's (0.34.19, David).
+        .alert(Words.t("Use Geotrac's tracks?"), isPresented: $askGeotracTracks) {
+            Button(Words.t("No"), role: .cancel) { Task { await model.setUseGeotracTracks(false) } }
+            Button(Words.t("Yes")) { Task { await model.setUseGeotracTracks(true) } }
+        }
+        .task {
+            #if DEBUG
+            if CommandLine.arguments.contains("--flow-test") { return }
+            #endif
+            guard model.role != .owner, !UserDefaults.standard.bool(forKey: AppModel.geotracTracksAskedKey) else { return }
+            // After the iPhone's own question about notifications and the mobile data one.
+            for _ in 0..<240 {
+                if await UNUserNotificationCenter.current().notificationSettings().authorizationStatus != .notDetermined { break }
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            try? await Task.sleep(for: .milliseconds(1500))
+            while remindMobileData { try? await Task.sleep(for: .milliseconds(500)) }
+            try? await Task.sleep(for: .milliseconds(600))
+            askGeotracTracks = true
         }
         // Tracks from the watch go up to the track service, tried again every
         // five minutes while any wait (0.32.0).

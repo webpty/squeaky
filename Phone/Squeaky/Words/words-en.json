@@ -477,6 +477,8 @@
  "{0} of {1} photos have no track. Make sure this is correct.": "{0} of {1} photos have no track. Make sure this is correct.",
  "This doesn't appear to be a card": "This doesn't appear to be a card",
  "This is a card": "This is a card",
+ "Use Geotrac's tracks": "Use Geotrac's tracks",
+ "Use Geotrac's tracks?": "Use Geotrac's tracks?",
  "Mark as copied": "Mark as copied",
  "{0} photos marked as copied": "{0} photos marked as copied",
  "Not marked: the record of copied photos could not be read. {0}": "Not marked: the record of copied photos could not be read. {0}",

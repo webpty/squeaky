@@ -39,7 +39,8 @@ final class TrackShare: NSObject {
     func start(model: AppModel) {
         self.model = model
         let address = model.serviceAddress.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !address.isEmpty else { return }
+        // Geotrac's tracks not used: none are taken from the family's phones (0.34.19).
+        guard !address.isEmpty, model.useGeotracTracks else { return }
         let tag = SHA256.hash(data: Data(address.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
         if session != nil, tag == family { return }
         stop()

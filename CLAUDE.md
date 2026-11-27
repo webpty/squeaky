@@ -1280,7 +1280,21 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   phone build is made: his phone needs that build, which then serves the
   other two as well.
 - Set aside for now (David): a time zone setting for cameras that write none
-  (the T3i), and "Use David's tracks", off by default and asked on the first
-  launch after install.
+  (the T3i).
 - Untried: a dashcam card, DJI files (DNG raws are left on the card; the
   drone's own GPS in its videos is not read), Nikon JPGs (the P950).
+
+## Use Geotrac's tracks (0.34.19, David, 27 November 2026)
+
+- Settings, GPS tracks service: "Use Geotrac's tracks", off by default
+  (`useGeotracTracks`). Off, the phone asks the service for no tracks, takes
+  none from the family's phones (`TrackShare`), and shows and matches only
+  tracks imported on it (`source == .file`). The owner's phone (David's) always
+  uses them: no switch there, never asked.
+- Asked once, "Use Geotrac's tracks?" with No and Yes, on the first launch
+  after the install, after the iPhone's notification question and the mobile
+  data one (`geotracTracksAsked`). Amanda answers Yes to keep her tracks.
+- Untried on a phone at 0.34.19.
+- Where it is heading (David): Geotrac with many users, each with their own
+  tracks, able to share them with others. That is the tracks project's work;
+  this switch then becomes a choice of whose tracks.
