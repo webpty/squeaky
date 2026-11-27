@@ -88,12 +88,9 @@ struct SettingsTab: View {
                     }.cardRows()
                 }
                 Section {
-                    // Not on the owner's phone, which always uses them (0.34.19).
-                    if model.role != .owner {
-                        Toggle(Words.t("Use Geotrac's tracks"), isOn: Binding(
-                            get: { model.useGeotracTracks },
-                            set: { on in Task { await model.setUseGeotracTracks(on) } }))
-                    }
+                    Toggle(Words.t("Use Geotrac's tracks"), isOn: Binding(
+                        get: { model.useGeotracTracks },
+                        set: { on in Task { await model.setUseGeotracTracks(on) } }))
                     if serviceFields {
                         LabeledContent(Words.t("Address")) {
                             TextField("", text: $model.serviceAddress)

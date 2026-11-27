@@ -3,8 +3,10 @@
 An iPhone app for David and his family (David's and Amanda's phones). It reads
 an SD card through a USB-C reader, matches the photos to David's watch tracks,
 writes the location into copies, adds them to the phone's Photos library and
-sends them to his NAS (or bufr.cc away from home). Shared with family members,
-never sold. The full brief is `squeaky-app-brief.md`, given on 16 October 2026,
+sends them to his NAS (or bufr.cc away from home). Shared with family members
+now and meant to be shared with others later, never sold: it works the same
+for everyone, with no code for one person (David, 27 November 2026); who
+someone is comes from settings only. The full brief is `squeaky-app-brief.md`, given on 16 October 2026,
 for what was then a Mac app.
 
 - David's instructions override the brief wherever they clash (16 October
@@ -1289,11 +1291,12 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
 - Settings, GPS tracks service: "Use Geotrac's tracks", off by default
   (`useGeotracTracks`). Off, the phone asks the service for no tracks, takes
   none from the family's phones (`TrackShare`), and shows and matches only
-  tracks imported on it (`source == .file`). The owner's phone (David's) always
-  uses them: no switch there, never asked.
-- Asked once, "Use Geotrac's tracks?" with No and Yes, on the first launch
-  after the install, after the iPhone's notification question and the mobile
-  data one (`geotracTracksAsked`). Amanda answers Yes to keep her tracks.
+  tracks imported on it (`source == .file`). The same on every phone, the
+  owner key's included (0.34.20).
+- Asked once, "Use Geotrac's tracks?" with No and Yes, as soon as Squeaky
+  opens after the install, after the mobile data message
+  (`geotracTracksAsked`). Until 0.34.20 both waited for a notification
+  question Squeaky never asks at launch: two minutes on a new phone.
 - Untried on a phone at 0.34.19.
 - Where it is heading (David): Geotrac with many users, each with their own
   tracks, able to share them with others. That is the tracks project's work;

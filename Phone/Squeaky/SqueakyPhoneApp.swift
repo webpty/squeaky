@@ -170,25 +170,10 @@ struct PhoneRoot: View {
         } message: {
             Text(Words.t("Squeaky sends photos to your server over mobile data when there is no WiFi. To stop it, turn off Mobile Data for Squeaky in the iPhone's Settings."))
         }
-        // Once after the install, on every phone but the owner's (0.34.19, David).
+        // Once after the install, on every phone (0.34.19, David).
         .alert(Words.t("Use Geotrac's tracks?"), isPresented: $askGeotracTracks) {
             Button(Words.t("No"), role: .cancel) { Task { await model.setUseGeotracTracks(false) } }
             Button(Words.t("Yes")) { Task { await model.setUseGeotracTracks(true) } }
-        }
-        .task {
-            #if DEBUG
-            if CommandLine.arguments.contains("--flow-test") { return }
-            #endif
-            guard model.role != .owner, !UserDefaults.standard.bool(forKey: AppModel.geotracTracksAskedKey) else { return }
-            // After the iPhone's own question about notifications and the mobile data one.
-            for _ in 0..<240 {
-                if await UNUserNotificationCenter.current().notificationSettings().authorizationStatus != .notDetermined { break }
-                try? await Task.sleep(for: .milliseconds(500))
-            }
-            try? await Task.sleep(for: .milliseconds(1500))
-            while remindMobileData { try? await Task.sleep(for: .milliseconds(500)) }
-            try? await Task.sleep(for: .milliseconds(600))
-            askGeotracTracks = true
         }
         // Tracks from the watch go up to the track service, tried again every
         // five minutes while any wait (0.32.0).
@@ -202,14 +187,18 @@ struct PhoneRoot: View {
             #if DEBUG
             if CommandLine.arguments.contains("--flow-test") { return }
             #endif
-            guard !UserDefaults.standard.bool(forKey: Self.remindedKey) else { return }
-            // After the iPhone's own question about notifications, never on top of it.
-            for _ in 0..<240 {
-                if await UNUserNotificationCenter.current().notificationSettings().authorizationStatus != .notDetermined { break }
+            // As soon as Squeaky opens (0.34.20): Squeaky asks no notification
+            // question at launch, so waiting for one held both for two minutes.
+            try? await Task.sleep(for: .milliseconds(800))
+            if !UserDefaults.standard.bool(forKey: Self.remindedKey) {
+                remindMobileData = true
+                while remindMobileData { try? await Task.sleep(for: .milliseconds(300)) }
                 try? await Task.sleep(for: .milliseconds(500))
             }
-            try? await Task.sleep(for: .milliseconds(600))
-            remindMobileData = true
+            // Once after the install, the same on every phone (0.34.19, 0.34.20).
+            if !UserDefaults.standard.bool(forKey: AppModel.geotracTracksAskedKey) {
+                askGeotracTracks = true
+            }
         }
     }
 

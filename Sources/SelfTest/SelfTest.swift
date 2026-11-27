@@ -458,17 +458,6 @@ extension SelfTest {
 
 
 
-/// A folder standing in for the NAS: the tests never touch David's real one.
-/// A people file holding the four people tests use, unless one is there
-/// already: a new install starts with nobody (0.21.0).
-func familyFile(_ url: URL) -> PeopleStoreFile {
-    let file = PeopleStoreFile(url: url)
-    if !FileManager.default.fileExists(atPath: url.path) {
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? file.save(.family())
-    }
-    return file
-}
 
 extension SelfTest {
 }

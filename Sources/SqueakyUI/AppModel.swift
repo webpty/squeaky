@@ -168,12 +168,12 @@ public final class AppModel: ObservableObject {
     }
 
     /// "Use Geotrac's tracks" (0.34.19, David, 27 November 2026): off by
-    /// default, asked once on the first launch after the install. The owner's
-    /// phone (David's) always uses them and is never asked.
+    /// default, asked once on the first launch after the install, the same on
+    /// every phone (0.34.20: the app works the same for everyone).
     public static let geotracTracksKey = "useGeotracTracks"
     public static let geotracTracksAskedKey = "geotracTracksAsked"
     public var useGeotracTracks: Bool {
-        role == .owner || defaults.bool(forKey: Self.geotracTracksKey)
+        defaults.bool(forKey: Self.geotracTracksKey)
     }
 
     public func setUseGeotracTracks(_ on: Bool) async {

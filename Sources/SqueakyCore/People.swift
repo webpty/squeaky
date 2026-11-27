@@ -134,22 +134,6 @@ public struct PeopleBook: Codable, Equatable, Sendable {
         lenses = try c.decodeIfPresent([Lens].self, forKey: .lenses) ?? []
     }
 
-    /// The family and their five cameras, as David listed them on 16 October 2026.
-    public static func family() -> PeopleBook {
-        let david = Person(name: "David"), amanda = Person(name: "Amanda")
-        let patrick = Person(name: "Patrick"), gilbert = Person(name: "Gilbert")
-        return PeopleBook(
-            people: [david, amanda, patrick, gilbert],
-            cameras: [
-                Camera(personId: david.id, model: "Canon EOS R5m2", zone: .fromPhoto),
-                Camera(personId: david.id, model: "Canon EOS R7", zone: .fromPhoto),
-                Camera(personId: amanda.id, model: "Canon EOS R5m2", zone: .fromPhoto),
-                Camera(personId: gilbert.id, model: "COOLPIX P950", zone: .notSet),
-                Camera(personId: patrick.id, model: "Canon EOS REBEL T3i", zone: .notSet),
-            ]
-        )
-    }
-
     public func person(_ id: UUID) -> Person? {
         people.first { $0.id == id }
     }
