@@ -1344,3 +1344,22 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
 - Before a store release, not TestFlight: a privacy policy page, the App
   Privacy answers (photos pass through bufr.cc, David's server), screenshots
   and a description.
+
+## Keys in panels, confirmations, no direct server access (1.0.2, David, 28 November 2026)
+
+- Removing anything asks first, from its button, Cancel and Remove in red
+  ("confirm everywhere"): an SD card, either key. Deleting from the card
+  already asked.
+- GPS tracks service and Buffer server: the address and key rows, an edit
+  icon at the end of the key's row opening `KeyPanel` (address, key, Apple's
+  own Paste button while the clipboard holds text, a bin top right that asks
+  before removing the key, Cancel and Save). No Change or Remove buttons, and
+  no tick at the top of Settings any more.
+- No direct access to the server (David: Tailscale no longer needed to show
+  it in Files): the Server section, its folder, its checks and the steps to
+  connect a file server are removed. Every photo goes through bufr.cc and the
+  NAS fetches it into homes/<person>/Squeaky ("home/Squeaky" from the key);
+  the sync list and offsets go through bufr.cc only. A folder chosen before is
+  let go of at launch. With no buffer key, sending waits and says so. The NAS
+  code stays in the core, unused by the phone.
+- Untried on a phone at 1.0.2.

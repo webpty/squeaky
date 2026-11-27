@@ -660,6 +660,8 @@ public final class AppModel: ObservableObject {
             setPhonePerson(name: owner.name)
         }
         removeCamerasWithoutOffset()
+        // No direct access to the server (1.0.2): a folder chosen in Files is let go of.
+        if PhoneFolders.isChosen(PhoneFolders.nasKey) { PhoneFolders.forget(PhoneFolders.nasKey) }
         if needsSetup {
             settingUp = true
         } else {
@@ -2383,9 +2385,7 @@ public final class AppModel: ObservableObject {
 
     /// The photos any device saved for this person, as listed on the server.
     public func serverHistory(_ personId: UUID) async -> [HistoryEntry] {
-        if case .success(let folder) = await openServerFolder(personId), let problem = await refreshServerCopy(personId, folder: folder) {
-            syncFailed(problem)
-        }
+        if let problem = await syncThroughBuffer(personId) { syncFailed(problem) }
         return loadServerCopy(personId)?.entries ?? []
     }
 
@@ -2432,16 +2432,10 @@ public final class AppModel: ObservableObject {
     /// again, or new) reads it from the buffer server, else the NAS, behind the
     /// card's photos (0.34.13): the list is the backup of what was saved.
     func restoreSavedList(_ personId: UUID) async {
-        if bufferClient != nil { _ = await syncThroughBuffer(personId) }
-        if loadServerCopy(personId)?.entries.isEmpty ?? true, NASFolder(book.person(personId)?.nasFolder) != nil {
-            switch await openServerFolder(personId) {
-            case .success(let folder):
-                await Task.detached { ServerList.moveFromHidden(in: folder) }.value
-                if let problem = await refreshServerCopy(personId, folder: folder) { savedListProblem = problem }
-                if loadServerCopy(personId)?.entries.isEmpty ?? true { savedListProblem = savedListProblem ?? Words.t("No sync files found on the server.") }
-            case .failure(let why):
-                savedListProblem = why.localizedDescription
-            }
+        if bufferClient != nil {
+            if let why = await syncThroughBuffer(personId) { savedListProblem = why }
+        } else {
+            savedListProblem = Words.t("No buffer server key.")
         }
         applySavedList(personId)
     }
@@ -2470,79 +2464,14 @@ public final class AppModel: ObservableObject {
         // Whatever the list brought, the card's photos on it get their tick (0.34.13).
         defer { if let person = importPerson { applySavedList(person) } }
         var problem: String?
-        // The buffer server first: quick from anywhere (0.31.8). Reached, it
-        // stands for the sync even while the NAS can't be.
-        var bufferSynced = false
+        // Through the buffer server only (1.0.2, David: no direct access to the server).
         if bufferClient != nil {
             syncActivity = Words.t("Reading the sync list from the buffer server")
-            var failed: String?
-            for person in people { if let why = await syncThroughBuffer(person.id) { failed = why } }
+            for person in people { if let why = await syncThroughBuffer(person.id) { problem = why } }
             syncActivity = nil
-            bufferSynced = failed == nil
+        } else {
+            problem = Words.t("No buffer server key.")
         }
-        for person in people {
-            // Reaching the NAS can take seconds: said, with the wheel (0.29.26).
-            syncActivity = Words.t("Reaching the NAS")
-            let folder: URL
-            switch await openServerFolder(person.id) {
-            case .success(let found): folder = found
-            case .failure(let why):
-                syncActivity = nil
-                problem = why.localizedDescription
-                continue
-            }
-            await Task.detached { ServerList.moveFromHidden(in: folder) }.value
-            // One list per person, merged and written back (0.29.27, David: "i want a synced list").
-            let (readProblem, shared) = await readAndKeep(person.id, folder: folder)
-            if let readProblem { problem = readProblem }
-            guard let shared else { continue }
-            let own = (try? history.load(person.id)) ?? []
-            let ownCameras = book.cameras(of: person.id).filter { $0.offsetSeconds != nil }
-            // What the buffer server's list added is passed on to the NAS too.
-            let kept = loadServerCopy(person.id)
-            let entries = ServerList.union(ServerList.union(shared.allEntries, own), kept?.entries ?? [])
-            let cameras = ServerList.newest(shared.allCameras + ownCameras + (kept?.cameras ?? []))
-            let camerasBefore = shared.cameras?.cameras.map { "\($0.model)=\($0.offsetDate.timeIntervalSince1970)" }.sorted() ?? []
-            let camerasAfter = cameras.map { "\($0.model)=\($0.offsetDate.timeIntervalSince1970)" }.sorted()
-            // Written only when something is new: an entry or an offset not yet listed, or old files to fold in.
-            guard entries.count != (shared.saved?.entries.count ?? -1) || camerasBefore != camerasAfter || !shared.oldFiles.isEmpty else {
-                syncActivity = nil
-                continue
-            }
-            syncActivity = Words.t("Saving the sync list to the NAS")
-            let now = Date()
-            let by = Self.deviceKind
-            let oldFiles = shared.oldFiles
-            // Given up after 30 seconds rather than hanging (0.29.18).
-            let failure: String? = await withTaskGroup(of: String??.self) { group in
-                group.addTask {
-                    await Task.detached { () -> String? in
-                        do {
-                            try ServerList.writeShared(.init(entries: entries, updatedAt: now, updatedBy: by),
-                                                       .init(cameras: cameras, updatedAt: now, updatedBy: by), into: folder)
-                            ServerList.removeOld(oldFiles, in: folder)
-                            return nil
-                        } catch {
-                            return error.localizedDescription
-                        }
-                    }.value
-                }
-                group.addTask { try? await Task.sleep(for: .seconds(30)); return .some(Words.t("no answer within 30 seconds.")) }
-                let first = await group.next() ?? nil
-                group.cancelAll()
-                return first ?? nil
-            }
-            syncActivity = nil
-            if let failure {
-                problem = Words.t("it couldn't be written:") + " " + failure
-            } else if person.id == linePerson {
-                lastSave = ServerList.LastSave(byPhone: by == "iphone", at: now, count: entries.count)
-            }
-        }
-        syncActivity = nil
-        // No sync file seen at all, not even this device's own: a problem, said (0.29.23).
-        if problem == nil, lastSave == nil { problem = Words.t("No sync files found on the server.") }
-        if bufferSynced { problem = nil }
         if let problem {
             sharedProblem = problem
         } else {
@@ -2560,8 +2489,7 @@ public final class AppModel: ObservableObject {
     /// Offsets set more recently on another device taken here; a camera
     /// another device knows and this one not yet, added.
     public func pullCameras(_ personId: UUID) async {
-        guard case .success(let folder) = await openServerFolder(personId) else { return }
-        _ = await refreshServerCopy(personId, folder: folder)
+        _ = await syncThroughBuffer(personId)
     }
 
     // MARK: The server's sync files, kept here (0.29.12, David: "whats the point of having
@@ -2778,36 +2706,9 @@ public final class AppModel: ObservableObject {
     /// as Squeaky opens and whenever the Queue page is shown, with the saved
     /// settings. Every shared folder in People must answer.
     public func checkNAS() async {
-        guard !checkingNAS else { return }
-        // Photos going up: the box names the address they go through.
-        if let address = sendingThrough {
-            if nasReach != .through(address) { nasReach = .through(address) }
-            return
-        }
-        let shares = Set(book.people.compactMap { NASFolder($0.nasFolder)?.share }).sorted()
-        guard !shares.isEmpty, nasPort != nil || !savedNAS.port.addresses.isEmpty else {
-            nasReach = .notSetUp
-            return
-        }
-        checkingNAS = true
-        defer { checkingNAS = false }
-        var answered: NASReach = .unreachable
-        for share in shares {
-            do {
-                let connection = try await nas.connect(share: share)
-                // Opened only to ask: closed again with Squeaky's other openings once nothing is waiting.
-                if connection.ours { ourMounts[connection.folder.path] = connection }
-                answered = .through(connection.address)
-            } catch {
-                answered = .unreachable
-                break
-            }
-        }
-        let wasAway = nasReach == .unreachable
-        if nasReach != answered { nasReach = answered }
-        // The server answers and the lists were not written since Squeaky opened.
-        // The server answers, and the files were not read since Squeaky opened, or it was away.
-        if case .through = answered, sharedAt == nil || wasAway { Task { await shareWithServer() } }
+        // No direct access to the server (1.0.2, David): everything goes
+        // through the buffer server, which the NAS fetches from.
+        if nasReach != .notSetUp { nasReach = .notSetUp }
     }
 
     private func startSending() {
@@ -2987,93 +2888,13 @@ public final class AppModel: ObservableObject {
             return
         }
         if let next = nextTry, Date() < next { return }
-        // Away from home, through the buffer server (0.30.0).
-        if await useBuffer() {
+        // Always through the buffer server (1.0.2, David: no direct access
+        // to the server); with none set up, sending waits for its key.
+        if bufferClient != nil {
             await sendThroughBuffer()
-            return
+        } else if queueEntries.contains(where: { $0.state == .waiting && !$0.held }) {
+            say(Words.t("Waiting for the buffer server key, in Settings"))
         }
-        if sendRoute != .nas, queueEntries.contains(where: { $0.state == .waiting && !$0.held }) { sendRoute = .nas }
-        sendingNow = true
-        defer {
-            sendingNow = false
-            sendingBatch = false
-        }
-        nextTry = nil
-        // Someone taken off the list: their photos can't go anywhere.
-        if queueEntries.contains(where: { $0.state == .waiting && book.person($0.personId) == nil }) {
-            changeQueue { all in
-                for i in all.indices where all[i].state == .waiting && book.person(all[i].personId) == nil {
-                    all[i].state = .failed
-                    all[i].reason = Words.t("Their person was removed from People")
-                    batchFailed += 1
-                }
-            }
-        }
-        // Set when the NAS can't take more for now: those going up finish,
-        // no more begin, and the line says when it tries again.
-        var halt: String?
-        await withTaskGroup(of: Bool.self) { group in
-            var running = 0
-            while true {
-                while halt == nil, !sendPaused, running < sendAtOnce, let entry = nextToSend() {
-                    // Away from home with the buffer server set up since this batch began:
-                    // no more go to the NAS; the next round sends through the buffer (0.30.1).
-                    if bufferKeySaved, await useBuffer() { break }
-                    guard let place = NASFolder(book.person(entry.personId)?.nasFolder) else { break }
-                    let connection: NASConnection
-                    do {
-                        connection = try await nas.connect(share: place.share)
-                    } catch {
-                        nasReach = .unreachable
-                        let retry = Date().addingTimeInterval(60)
-                        nextTry = retry
-                        halt = Words.t("{0} Trying again at {1}.", error.localizedDescription, When.current.time(retry))
-                        break
-                    }
-                    if connection.ours { ourMounts[connection.folder.path] = connection }
-                    sendingThrough = connection.address
-                    if nasReach != .through(connection.address) { nasReach = .through(connection.address) }
-                    let name = (entry.relativePath as NSString).lastPathComponent
-                    changeEntry(entry.id) { $0.state = .sending }
-                    meter.begin(entry.id, name: name, weights: stepTimes.weights(for: connection.address))
-                    sendingBatch = true
-                    sayGoing()
-                    refreshWork()
-                    running += 1
-                    group.addTask { @MainActor [self] in
-                        await sendOne(entry, as: name, into: place, on: connection)
-                    }
-                }
-                guard running > 0, let full = await group.next() else { break }
-                running -= 1
-                if full {
-                    let retry = Date().addingTimeInterval(300)
-                    nextTry = retry
-                    halt = Words.t("NAS full. Trying again at {0}.", When.current.time(retry))
-                }
-                if halt == nil, running > 0 { sayGoing() }
-                refreshWork()
-            }
-        }
-        sendingThrough = nil
-        if let halt {
-            say(halt)
-            return
-        }
-        say(sendPaused ? Words.t("Paused.") : restingLine())
-        let waiting = queueEntries.contains { $0.state == .waiting && NASFolder(book.person($0.personId)?.nasFolder) != nil }
-        // All that can go has gone, and nothing is still being saved or placed:
-        // one notification for the whole batch.
-        if !sendPaused, !waiting, !saving, !placingLater, batchSent + batchFailed > 0 {
-            notifier.post(Self.batchText(sent: batchSent, failed: batchFailed))
-            await shareWithServer()
-            batchSent = 0
-            batchFailed = 0
-        }
-        if !sendPaused, !waiting { await closeOurMounts() }
-        // Every ten minutes, and straight after a send when copies go as soon as they are on the NAS.
-        let rawsGoAtOnce = true
-        if lastTidy.map({ Date().timeIntervalSince($0) > 600 }) ?? true || (sentSinceTidy && (keepOnMac == .untilOnNAS || rawsGoAtOnce)) { tidyMac() }
     }
 
     /// "IMG_0001.JPG to nas, about 20 min left. Slow.", or with several
