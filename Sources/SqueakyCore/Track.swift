@@ -68,7 +68,7 @@ public struct Track: Codable, Identifiable, Equatable, Sendable {
     public var serviceId: String?
     /// Where it is, named by the track service (0.29.20).
     public var place: String?
-    /// Another track of the same walk is listed instead: this one is kept but not listed (0.32.0, 0.34.17).
+    /// Another track of the same track is listed instead: this one is kept but not listed (0.32.0, 0.34.17).
     public var setAside: Bool?
 
     public init(id: String, source: TrackSource, name: String, sport: String?, fileName: String?,
@@ -96,7 +96,7 @@ public struct Track: Codable, Identifiable, Equatable, Sendable {
     public var isListed: Bool { status != .uploaded && setAside != true }
 }
 
-/// Two tracks starting this close together are the same outing; the shorter
+/// Two tracks starting this close together are the same track; the shorter
 /// is set aside (0.32.0, David: 20 seconds, not 60).
 public let sameStartSeconds: TimeInterval = 20
 

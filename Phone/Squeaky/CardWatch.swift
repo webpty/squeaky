@@ -46,6 +46,29 @@ final class CardWatch {
         var all = UserDefaults.standard.dictionary(forKey: key) as? [String: Data] ?? [:]
         all[id] = nil
         UserDefaults.standard.set(all, forKey: key)
+        var chosen = Set(UserDefaults.standard.stringArray(forKey: chosenKey) ?? [])
+        chosen.remove(id)
+        UserDefaults.standard.set(Array(chosen), forKey: chosenKey)
+    }
+
+    /// Folders opened with "This is a card" (0.34.18, David): cards, DCIM
+    /// folder or not, never dropped by the clean-up of 0.34.14.
+    static let chosenKey = "cardsByChoice"
+
+    static func markAsCard(_ id: String) {
+        var chosen = Set(UserDefaults.standard.stringArray(forKey: chosenKey) ?? [])
+        chosen.insert(id)
+        UserDefaults.standard.set(Array(chosen), forKey: chosenKey)
+    }
+
+    static func isCardByChoice(_ id: String) -> Bool {
+        (UserDefaults.standard.stringArray(forKey: chosenKey) ?? []).contains(id)
+    }
+
+    /// A card removed in Settings: forgotten, and read again only once opened again.
+    static func remove(_ id: String, model: AppModel) {
+        forget(id)
+        model.removeCard(id: id)
     }
 
     /// Not an SD card (0.34.14): forgotten.
@@ -67,7 +90,7 @@ final class CardWatch {
                 model.cardTakenOut()
                 letGo.remove(card.id)
                 lastSource = nil
-            } else if SDCard.surelyNotACard(card.url) {
+            } else if !Self.isCardByChoice(card.id), SDCard.surelyNotACard(card.url) {
                 // Present, and no DCIM folder: a folder opened as a card before
                 // 0.34.14, let go of. A card taken out is never taken for one
                 // (0.34.15: 0.34.14 forgot cards that way, and whose they were).
@@ -95,7 +118,7 @@ final class CardWatch {
                 letGo.remove(id)
                 continue
             }
-            if SDCard.surelyNotACard(url) {
+            if !Self.isCardByChoice(id), SDCard.surelyNotACard(url) {
                 if access { url.stopAccessingSecurityScopedResource() }
                 dropNotACard(id)
                 continue

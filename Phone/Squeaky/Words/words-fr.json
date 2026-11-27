@@ -476,6 +476,7 @@
  "None of the photos have a track. Make sure this is correct.": "Aucune des photos n'a de trace. Vérifiez que c'est correct.",
  "{0} of {1} photos have no track. Make sure this is correct.": "{0} photos sur {1} n'ont pas de trace. Vérifiez que c'est correct.",
  "This doesn't appear to be a card": "Cela ne semble pas être une carte",
+ "This is a card": "C'est une carte",
  "Mark as copied": "Marquer comme copiées",
  "{0} photos marked as copied": "{0} photos marquées comme copiées",
  "Not marked: the record of copied photos could not be read. {0}": "Rien n'a été marqué : le registre des photos copiées n'a pas pu être lu. {0}",

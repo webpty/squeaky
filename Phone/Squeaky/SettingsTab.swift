@@ -77,7 +77,11 @@ struct SettingsTab: View {
                                             Button(Words.t("Cancel"), role: .cancel) {}
                                         }
                                     // Rename removed: the iPhone cannot rename a card (0.29.44, David).
-                                    HalfSpace()
+                                    // Remove (0.34.18, David): for a folder opened as a card by mistake.
+                                    HalfButton(Words.t("Remove"), role: .destructive) {
+                                        CardWatch.remove(card.id, model: model)
+                                    }
+                                    .disabled(model.saving && model.source?.id == card.id)
                                 }
                             }
                         }

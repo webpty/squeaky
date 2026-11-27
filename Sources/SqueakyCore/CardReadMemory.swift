@@ -78,6 +78,11 @@ public struct CardReadMemory: Sendable {
         return (known, toRead, stamps)
     }
 
+    /// What was read from the card, forgotten (the card removed in Settings).
+    public func forget() {
+        try? FileManager.default.removeItem(at: file)
+    }
+
     /// Keeps what was read from these photos. Photos remembered before and
     /// still on the card (`present`, by place) are kept too, so a card read for
     /// someone else, JPGs only, does not forget its raws; anything no longer on

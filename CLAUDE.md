@@ -1239,7 +1239,7 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   that fails to read once is replaced by that save's photos alone. Not proven
   to be how Amanda's record lost its older entries; worth fixing.
 
-## Saving straight away; one track per walk (0.34.17, David, 26 November 2026)
+## Saving straight away; one track for overlapping copies (0.34.17, David, 26 November 2026)
 
 - The panel before saving is removed ("since we can now add the gps
   coordinates post import"): Save selected and Save all copy at once
@@ -1248,11 +1248,39 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   counts without a track or a camera offset, "Save only those with a track",
   and the panel that came up by itself after a card was read. Nothing is
   saved until chosen by hand.
-- Tracks of the same walk are one: starting within 20 s, or sharing at least
-  80% of the shorter one's minutes (`TrackLibrary.sameWalk`), whatever their
+- Copies of the same track are one: starting within 20 s, or sharing at least
+  80% of the shorter one's minutes (`TrackLibrary.sameTrack`), whatever their
   starts. Garmin and Strava trim and smooth the track Geotrac saved, so their
   copy starts elsewhere and its line differs slightly. The watch's own track
   stays listed (its points as recorded), else the longest; the rest are set
   aside, worked out afresh each time, and photos are matched against the
   listed one only. geotrac.cc's own list still holds both: the tracks
   project's to change.
+
+## "This is a card", and removing a card (0.34.18, David, 27 November 2026)
+
+- A folder with no DCIM folder, chosen with Open card, brings the alert
+  "This doesn't appear to be a card" with Cancel and "This is a card"
+  (Patrick's dashcam card may have none). "This is a card" opens it and keeps
+  its id in `cardsByChoice` (`CardWatch.markAsCard`), so the clean-up of
+  0.34.14 never drops it.
+- Settings, SD cards: Remove (red) beside Change, for a folder taken as a
+  card by mistake (`CardWatch.remove`, `AppModel.removeCard`): the folder is
+  forgotten with its owner, name and card memory, and its photos leave the
+  page. The record of copies is untouched, so photos copied stay copied.
+  Dimmed while that card is being saved.
+
+## Patrick and Gilbert (27 November 2026)
+
+- Each has a reading key on the track service and a sender key on bufr.cc
+  (homes/patrick, homes/gilbert), live and checked; the key files are in each
+  project's `.keys/`. Patrick tries Squeaky for a week with his dashcam and
+  his DJI Mini 4 Pro, away from David.
+- A new phone joins the free signing only when it is on the cable while the
+  phone build is made: his phone needs that build, which then serves the
+  other two as well.
+- Set aside for now (David): a time zone setting for cameras that write none
+  (the T3i), and "Use David's tracks", off by default and asked on the first
+  launch after install.
+- Untried: a dashcam card, DJI files (DNG raws are left on the card; the
+  drone's own GPS in its videos is not read), Nikon JPGs (the P950).

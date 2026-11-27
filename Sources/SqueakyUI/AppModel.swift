@@ -1319,6 +1319,14 @@ public final class AppModel: ObservableObject {
         objectWillChange.send()
     }
 
+    /// A card removed in Settings (0.34.18, David): no longer read, its photos
+    /// off the page, its owner and name forgotten, and what was read from it.
+    /// Photos already copied stay copied: the record of copies is untouched.
+    public func removeCard(id: String) {
+        forgetNotACard(id: id)
+        CardReadMemory(folder: cardReadFolder, card: id).forget()
+    }
+
     /// Once (0.34.14): every camera with no time offset is removed, most of them
     /// added from a folder that was not a card. A real one comes back with the
     /// next card that has its photos.

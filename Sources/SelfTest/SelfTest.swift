@@ -38,7 +38,7 @@ struct SelfTest {
         await watchTracks(scratch)
         cardMemory(scratch)
         sdCards(scratch)
-        sameWalks()
+        sameTracks()
         matching(scratch)
         await videos(scratch)
         gpx(scratch)
@@ -248,8 +248,8 @@ extension SelfTest {
 
 extension SelfTest {
 
-    /// Tracks of the same walk (0.34.17): starts far apart, minutes shared.
-    static func sameWalks() {
+    /// Tracks of the same track (0.34.17): starts far apart, minutes shared.
+    static func sameTracks() {
         let b = Bounds(minLat: 0, maxLat: 1, minLon: 0, maxLon: 1)
         func t(_ id: String, _ source: TrackSource, _ start: Double, _ minutes: Double) -> Track {
             Track(id: id, source: source, name: id, sport: nil, fileName: nil,
@@ -259,9 +259,9 @@ extension SelfTest {
         let watch = t("watch", .watch, 1_000_000, 120)
         let strava = t("strava", .strava, 1_000_000 + 95, 125)
         let lunch = t("lunch", .strava, 1_000_000 + 130 * 60, 30)
-        check("same walk: a Garmin copy starting 95 s later", TrackLibrary.sameWalk(watch, strava))
-        check("same walk: the next walk is not", !TrackLibrary.sameWalk(watch, lunch))
-        check("same walk: starts within 20 s still are", TrackLibrary.sameWalk(t("a", .file, 0, 1), t("b", .file, 15, 60)))
+        check("same track: a Garmin copy starting 95 s later", TrackLibrary.sameTrack(watch, strava))
+        check("same track: the next track is not", !TrackLibrary.sameTrack(watch, lunch))
+        check("same track: starts within 20 s still are", TrackLibrary.sameTrack(t("a", .file, 0, 1), t("b", .file, 15, 60)))
     }
 
     /// Only an SD card is opened (0.34.14): a card holds a DCIM folder.
@@ -324,6 +324,8 @@ extension SelfTest {
         check("card memory: a photo gone is forgotten, the others kept",
               fourth.toRead.map(\.lastPathComponent).contains("IMG_0001.JPG") && fourth.known.count == 1,
               "\(fourth.known.keys.sorted())")
+        memory.forget()
+        check("card memory: a card removed reads every photo again", memory.remembered(files3, root: card).known.isEmpty)
     }
 
 }
@@ -644,7 +646,7 @@ extension SelfTest {
         let again = try? await library.importWatch(id: WatchInbox.libraryId(start), name: "x", points: points, role: .owner)
         if case .alreadyHere? = again { check("watch: same track twice is one", true) } else { check("watch: same track twice is one", false) }
 
-        // A shorter track 15 s later: the same outing, set aside.
+        // A shorter track 15 s later: the same track, set aside.
         let short = TrackPoints(t: Array(start + 15 ..< start + 115), lat: Array(repeating: -54.8, count: 100),
                                 lon: Array(repeating: -68.3, count: 100), alt: Array(repeating: nil, count: 100))
         _ = try? await library.importWatch(id: "watch-short", name: "short", points: short, role: .reader)
@@ -655,8 +657,8 @@ extension SelfTest {
                                 lon: Array(repeating: -68.3, count: 1000), alt: Array(repeating: nil, count: 1000))
         _ = try? await library.importWatch(id: "watch-other", name: "other", points: other, role: .owner)
         listed = await library.listed().map(\.id)
-        // Mostly the same minutes: the same walk (0.34.17), the longer listed.
-        check("watch: 25 s apart, the same minutes, one walk", listed == ["watch-other"], "\(listed)")
+        // Mostly the same minutes: the same track (0.34.17), the longer listed.
+        check("watch: 25 s apart, the same minutes, one track", listed == ["watch-other"], "\(listed)")
         check("watch: every watch track offered to family phones", await library.watchTracks().count == 3)
     }
 

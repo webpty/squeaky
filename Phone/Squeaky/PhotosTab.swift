@@ -9,6 +9,8 @@ import UniformTypeIdentifiers
 struct PhotosTab: View {
     @ObservedObject var model: AppModel
     @State private var choosing = false
+    /// A folder chosen that holds no DCIM folder, waiting on "This is a card".
+    @State private var notACard: URL?
     @StateObject private var pictures = Pictures()
     @StateObject private var library = LibraryLocations()
     @State private var showingFailed = false
@@ -158,8 +160,10 @@ struct PhotosTab: View {
                     // Only an SD card is opened (0.34.14, David).
                     let access = url.startAccessingSecurityScopedResource()
                     guard SDCard.looksLikeCard(url) else {
+                        // "This is a card" opens it anyway (0.34.18, David: a
+                        // dashcam's card may have no DCIM folder).
                         if access { url.stopAccessingSecurityScopedResource() }
-                        model.tell(Words.t("This doesn't appear to be a card"))
+                        notACard = url
                         return
                     }
                     let source = Self.source(url)
@@ -182,6 +186,17 @@ struct PhotosTab: View {
         .task(id: "\(model.tracks.count)|\(model.timeline.pieces.count)|\(model.saving)|\(model.source == nil)") {
             guard !model.saving, model.source == nil else { return }
             await library.lookIfAllowed(model)
+        }
+        .alert(Words.t("This doesn't appear to be a card"),
+               isPresented: Binding(get: { notACard != nil }, set: { if !$0 { notACard = nil } })) {
+            Button(Words.t("Cancel"), role: .cancel) {}
+            Button(Words.t("This is a card")) {
+                guard let url = notACard else { return }
+                let source = Self.source(url)
+                CardWatch.markAsCard(source.id)
+                CardWatch.remember(url, id: source.id)
+                model.choose(source)
+            }
         }
         .sheet(isPresented: $showingFailed) { NotSaved(model: model) }
         .sheet(item: $viewing) { start in

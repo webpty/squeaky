@@ -173,7 +173,7 @@ public actor TrackLibrary {
         return .added(track)
     }
 
-    /// Tracks of the same walk: starting within `sameStartSeconds` of each other
+    /// Tracks of the same track: starting within `sameStartSeconds` of each other
     /// (0.32.0), or covering mostly the same minutes, whatever their starts
     /// (0.34.17, David: Garmin and Strava trim and smooth the track Geotrac
     /// saved, so its copy starts elsewhere). One stays listed: the one the
@@ -185,7 +185,7 @@ public actor TrackLibrary {
         for i in listed { all[i].setAside = nil }
         var groups: [[Int]] = []
         for i in listed {
-            if let g = groups.firstIndex(where: { group in group.contains { Self.sameWalk(all[$0], all[i]) } }) {
+            if let g = groups.firstIndex(where: { group in group.contains { Self.sameTrack(all[$0], all[i]) } }) {
                 groups[g].append(i)
             } else {
                 groups.append([i])
@@ -202,15 +202,15 @@ public actor TrackLibrary {
     }
 
     /// The share of the shorter track's minutes that two tracks must share to
-    /// be the same walk.
-    public static let sameWalkShare = 0.8
+    /// be the same track.
+    public static let sameTrackShare = 0.8
 
-    public static func sameWalk(_ a: Track, _ b: Track) -> Bool {
+    public static func sameTrack(_ a: Track, _ b: Track) -> Bool {
         if abs(a.start.timeIntervalSince(b.start)) <= sameStartSeconds { return true }
         let shared = min(a.end, b.end).timeIntervalSince(max(a.start, b.start))
         let shorter = min(a.duration, b.duration)
         guard shared > 0, shorter > 0 else { return false }
-        return shared / shorter >= sameWalkShare
+        return shared / shorter >= sameTrackShare
     }
 
     /// Every track that came from a watch, with its points, for family phones nearby.
