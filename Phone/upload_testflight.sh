@@ -16,8 +16,8 @@ xcodebuild -project Phone/Squeaky.xcodeproj -scheme SqueakyPhone -configuration 
   DEVELOPMENT_TEAM=KMB36MW5KY CODE_SIGN_STYLE=Automatic PRODUCT_BUNDLE_IDENTIFIER=geotrac.squeaky \
   MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="$build" archive | grep -E "error:|ARCHIVE (SUCCEEDED|FAILED)"
 if [[ -n "$ARCHIVE_ONLY" ]]; then exit 0; fi
-options=build/testflight/ExportOptions.plist
-cat > "$options" <<PLIST
+export_options=build/testflight/ExportOptions.plist
+cat > "$export_options" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -28,5 +28,5 @@ cat > "$options" <<PLIST
 <key>manageAppVersionAndBuildNumber</key><false/>
 </dict></plist>
 PLIST
-xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist "$options" \
+xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist "$export_options" \
   -exportPath build/testflight/export -allowProvisioningUpdates 2>&1 | grep -E "error|Upload|EXPORT (SUCCEEDED|FAILED)|uploaded"
