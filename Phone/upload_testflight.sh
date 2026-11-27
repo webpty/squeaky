@@ -13,7 +13,7 @@ archive="build/testflight/Squeaky-$version-$build.xcarchive"
 echo "Squeaky $version, build $build"
 xcodebuild -project Phone/Squeaky.xcodeproj -scheme SqueakyPhone -configuration Release \
   -destination "generic/platform=iOS" -archivePath "$archive" -allowProvisioningUpdates \
-  DEVELOPMENT_TEAM=KMB36MW5KY CODE_SIGN_STYLE=Automatic PRODUCT_BUNDLE_IDENTIFIER=squeaky \
+  DEVELOPMENT_TEAM=KMB36MW5KY CODE_SIGN_STYLE=Automatic PRODUCT_BUNDLE_IDENTIFIER=geotrac.squeaky \
   MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="$build" archive | grep -E "error:|ARCHIVE (SUCCEEDED|FAILED)"
 [[ -n "$ARCHIVE_ONLY" ]] && exit 0
 options=build/testflight/ExportOptions.plist

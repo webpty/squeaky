@@ -11,7 +11,7 @@ TEAM=$(defaults read com.apple.dt.Xcode IDEProvisioningTeamByIdentifier 2>/dev/n
 # PHONE=<id> picks the phone on the cable when another is about over Wi-Fi.
 PHONE=${PHONE:-$(xcrun devicectl list devices 2>/dev/null | awk '/iPhone/ && (/ connected / || /available \(paired\)/) && /physical/ {for(i=1;i<=NF;i++) if ($i ~ /^[0-9A-F-]{25,}$/) {print $i; exit}}')}
 [ -z "$PHONE" ] && { echo "NO_PHONE"; exit 3; }
-BUNDLE=${BUNDLE:-squeaky}
+BUNDLE=${BUNDLE:-geotrac.squeaky}
 VERSION=$(sed -n 's/.*appVersion = "\(.*\)".*/\1/p' ../Sources/SqueakyCore/Version.swift)
 xcodebuild -project Squeaky.xcodeproj -scheme SqueakyPhone -configuration Release \
   -destination "id=$PHONE" -derivedDataPath ../build/phone -allowProvisioningUpdates \

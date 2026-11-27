@@ -188,7 +188,7 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				MARKETING_VERSION = 0.31.6;
-				PRODUCT_BUNDLE_IDENTIFIER = squeaky;
+				PRODUCT_BUNDLE_IDENTIFIER = geotrac.squeaky;
 				PRODUCT_NAME = Squeaky;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -219,7 +219,7 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				MARKETING_VERSION = 0.31.6;
-				PRODUCT_BUNDLE_IDENTIFIER = squeaky;
+				PRODUCT_BUNDLE_IDENTIFIER = geotrac.squeaky;
 				PRODUCT_NAME = Squeaky;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;

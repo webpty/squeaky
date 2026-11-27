@@ -1314,9 +1314,11 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
 
 - David has a paid developer account: the team KMB36MW5KY, the same id as the
   free one, now an Individual team. Cable builds now last a year, not 7 days.
-- The bundle identifier is `squeaky` (David: nothing on the Apple account is
-  to mention webpty, and "do you need so many dots?"). The keychain service is
-  `squeaky` too. iOS takes it for a new app: the old com.webpty.squeaky is
+- The bundle identifier is `geotrac.squeaky` (David: nothing on the Apple
+  account is to mention webpty, and "do you need so many dots?"; `squeaky`
+  alone was taken by another developer). He registered it by hand: Xcode signs
+  with the team's wildcard profile and never registers it. The keychain service
+  is `squeaky`. iOS takes it for a new app: the old com.webpty.squeaky is
   deleted by hand on each phone once its queue is empty; the keys are typed
   again, the copied list and offsets come back from the server, each card is
   read in full once. The App ID "XC com webpty squeaky" can then be removed
