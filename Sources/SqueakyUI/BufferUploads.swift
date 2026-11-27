@@ -6,7 +6,7 @@ import SqueakyCore
 /// the phone locked, with no notification (0.30.0); on the Mac through an
 /// ordinary connection. Each transfer carries its queue entry's id.
 public final class BufferUploads: NSObject, URLSessionDataDelegate, @unchecked Sendable {
-    public static let identifier = (Bundle.main.bundleIdentifier ?? "com.webpty.squeaky") + ".buffer"
+    public static let identifier = (Bundle.main.bundleIdentifier ?? "squeaky") + ".buffer"
 
     /// How far a photo has got, 0 to 1.
     var onProgress: (@MainActor (UUID, Double) -> Void)?

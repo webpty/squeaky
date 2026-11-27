@@ -19,7 +19,7 @@ final class BackgroundWork {
     private var asked = false
     /// Set when the phone would not take the work, said on the Photos line.
     private(set) var refused: String?
-    static let prefix = (Bundle.main.bundleIdentifier ?? "com.webpty.squeaky") + ".work."
+    static let prefix = (Bundle.main.bundleIdentifier ?? "squeaky") + ".work."
 
     init(model: AppModel) {
         self.model = model

@@ -55,7 +55,7 @@ for what was then a Mac app.
 
 - The track service is `~/Sites/tracks` (its own CLAUDE.md). Settings holds its
   address (UserDefaults) and key (login keychain, account
-  `track-service-key`, service `com.webpty.squeaky`).
+  `track-service-key`, service `squeaky` since 0.34.22).
 - The key's role decides: an owner key connects Strava, syncs and uploads;
   a reading key reads, and its Mac's imports stay on that Mac.
 - `TrackLibrary` keeps every track and its points in
@@ -1309,3 +1309,20 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
 - Import is shown only with a key that may add tracks (the service's owner
   role); with a read-only key or none it is removed, not greyed out.
 - Settings, Watch still shows while the switch is off.
+
+## TestFlight, and the identifier "squeaky" (0.34.22, David, 27 November 2026)
+
+- David has a paid developer account: the team KMB36MW5KY, the same id as the
+  free one, now an Individual team. Cable builds now last a year, not 7 days.
+- The bundle identifier is `squeaky` (David: nothing on the Apple account is
+  to mention webpty, and "do you need so many dots?"). The keychain service is
+  `squeaky` too. iOS takes it for a new app: the old com.webpty.squeaky is
+  deleted by hand on each phone once its queue is empty; the keys are typed
+  again, the copied list and offsets come back from the server, each card is
+  read in full once. The App ID "XC com webpty squeaky" can then be removed
+  from the account.
+- TestFlight replaces cable installs: `Phone/upload_testflight.sh` archives
+  and uploads through Xcode's own sign-in (no key); the build number is the
+  commit count; `ITSAppUsesNonExemptEncryption` is false. Each build works 90
+  days. Unlisted App Store distribution was weighed and left for when Squeaky
+  changes less often (every update reviewed).

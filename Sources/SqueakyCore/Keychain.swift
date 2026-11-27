@@ -20,7 +20,7 @@ public struct KeychainError: Error, LocalizedError {
 public struct Keychain: SecretStorePort {
     let service: String
 
-    public init(service: String = "com.webpty.squeaky") {
+    public init(service: String = "squeaky") {
         self.service = service
     }
 
