@@ -124,9 +124,12 @@ struct PhoneRoot: View {
             PhotosTab(model: model)
                 .tabItem { Label(Words.t("Photos"), systemImage: "photo.on.rectangle") }
                 .tag(Tab.photos)
-            TracksTab(model: model)
-                .tabItem { Label(Words.t("Tracks"), systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
-                .tag(Tab.tracks)
+            // Only while Geotrac's tracks are used (0.34.21, David).
+            if model.useGeotracTracks {
+                TracksTab(model: model)
+                    .tabItem { Label(Words.t("Tracks"), systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
+                    .tag(Tab.tracks)
+            }
             QueueTab(model: model)
                 .tabItem { Label(Words.t("Queue"), systemImage: "arrow.up.circle") }
                 .tag(Tab.queue)
@@ -134,6 +137,9 @@ struct PhoneRoot: View {
                 .tabItem { Label(Words.t("Settings"), systemImage: "gearshape") }
                 .tag(Tab.settings)
         }
+        }
+        .onChange(of: model.useGeotracTracks) { _, on in
+            if !on, tab == .tracks { tab = .photos }
         }
         // Every switch green when on (0.34.5, David).
         .toggleStyle(SwitchToggleStyle(tint: .green))

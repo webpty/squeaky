@@ -84,11 +84,13 @@ struct TracksTab: View {
             .toolbar {
                 PageTitle(title: Words.t("Tracks"))
                 // A GPX or FIT file from the Files list, sent to the service as on the Mac (0.29.30).
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { importing = true } label: { Image(systemName: "square.and.arrow.down") }
-                        .accessibilityLabel(Words.t("Import GPX or FIT"))
-                        // Only an owner key may add tracks (0.29.42).
-                        .disabled(model.tracksBusy || !model.serviceKeySaved || model.role != .owner)
+                // Only a key that may add tracks has it; a read-only key never sees it (0.34.21, David).
+                if model.serviceKeySaved, model.role == .owner {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { importing = true } label: { Image(systemName: "square.and.arrow.down") }
+                            .accessibilityLabel(Words.t("Import GPX or FIT"))
+                            .disabled(model.tracksBusy)
+                    }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { Task { await model.refresh(pullStrava: true) } } label: { Image(systemName: "arrow.clockwise") }

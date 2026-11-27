@@ -1301,3 +1301,11 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
 - Where it is heading (David): Geotrac with many users, each with their own
   tracks, able to share them with others. That is the tracks project's work;
   this switch then becomes a choice of whose tracks.
+
+## Tracks page and Import only where they apply (0.34.21, David, 27 November 2026)
+
+- The Tracks page is hidden while "Use Geotrac's tracks" is off; turning it
+  off while on that page moves to Photos.
+- Import is shown only with a key that may add tracks (the service's owner
+  role); with a read-only key or none it is removed, not greyed out.
+- Settings, Watch still shows while the switch is off.
