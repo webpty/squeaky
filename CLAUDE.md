@@ -1323,6 +1323,9 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   again, the copied list and offsets come back from the server, each card is
   read in full once. The App ID "XC com webpty squeaky" can then be removed
   from the account.
+- The first TestFlight upload is 1.0.0 (David); small changes then raise the
+  last digit as before. The store name is "Squeaky Photos" ("Squeaky" is
+  another developer's); the name under the icon stays Squeaky.
 - TestFlight replaces cable installs: `Phone/upload_testflight.sh` archives
   and uploads through Xcode's own sign-in (no key); the build number is the
   commit count; `ITSAppUsesNonExemptEncryption` is false. Each build works 90
