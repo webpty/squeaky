@@ -17,18 +17,14 @@ struct KeyRows: View {
                 Text(address).lineLimit(1).truncationMode(.middle)
             }
         }
-        // "Key implemented" and the tick, or "Key" and "Not set"; Edit in words
-        // on the right (1.0.4, David).
+        // "Key saved", the tick and Edit; or "Key" and Add (1.0.5, David).
         HStack(spacing: 8) {
-            Text(saved ? Words.t("Key implemented") : Words.t("Key"))
+            Text(saved ? Words.t("Key saved") : Words.t("Key"))
             if saved {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
             }
             Spacer()
-            if !saved {
-                Text(Words.t("Not set")).foregroundStyle(.secondary)
-            }
-            Button(Words.t("Edit"), action: edit)
+            Button(saved ? Words.t("Edit") : Words.t("Add"), action: edit)
                 .buttonStyle(.borderless)
         }
     }

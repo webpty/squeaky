@@ -477,6 +477,8 @@
  "{0} of {1} photos have no track. Make sure this is correct.": "{0} of {1} photos have no track. Make sure this is correct.",
  "This doesn't appear to be a card": "This doesn't appear to be a card",
  "This is a card": "This is a card",
+ "Key saved": "Key saved",
+ "Add": "Add",
  "GPS tracks service key accepted": "GPS tracks service key accepted",
  "Buffer server key accepted": "Buffer server key accepted",
  "Key implemented": "Key implemented",

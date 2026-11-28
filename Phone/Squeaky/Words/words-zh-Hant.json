@@ -477,6 +477,8 @@
  "{0} of {1} photos have no track. Make sure this is correct.": "{1} 張照片中有 {0} 張沒有軌跡。請確認這是正確的。",
  "This doesn't appear to be a card": "這似乎不是記憶卡",
  "This is a card": "這是記憶卡",
+ "Key saved": "已儲存金鑰",
+ "Add": "加入",
  "GPS tracks service key accepted": "已接受 GPS 軌跡服務金鑰",
  "Buffer server key accepted": "已接受緩衝伺服器金鑰",
  "Key implemented": "已設定金鑰",

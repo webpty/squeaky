@@ -477,6 +477,8 @@
  "{0} of {1} photos have no track. Make sure this is correct.": "{0} de {1} fotos no tienen recorrido. Comprueba que es correcto.",
  "This doesn't appear to be a card": "Esto no parece ser una tarjeta",
  "This is a card": "Es una tarjeta",
+ "Key saved": "Clave guardada",
+ "Add": "Añadir",
  "GPS tracks service key accepted": "Clave del servicio de tracks GPS aceptada",
  "Buffer server key accepted": "Clave del servidor intermedio aceptada",
  "Key implemented": "Clave instalada",

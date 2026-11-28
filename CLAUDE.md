@@ -1383,5 +1383,5 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   posts a notification, "Buffer server key accepted" or "GPS tracks service
   key accepted". Failures go to the red section; the wheel line shows while
   checking.
-- The Key row: "Key implemented" and the green tick (David's words), or "Key"
-  and "Not set"; "Edit" in words on the right opens the panel.
+- The Key row (1.0.5, David): "Key saved", the green tick and "Edit"; with no
+  key, "Key" and "Add". Either opens the panel.
