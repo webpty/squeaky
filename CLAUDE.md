@@ -1326,7 +1326,7 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
 - The first TestFlight upload is 1.0.0 (David); small changes then raise the
   last digit as before. The store name is "Squeaky Photos" ("Squeaky" is
   another developer's); the name under the icon stays Squeaky.
-- Every upload to App Store Connect needs David's yes first ("Upload 1.0.5?"), each time (28 November 2026). Pushes to GitHub still need none.
+- Every upload to App Store Connect needs David's yes first ("Upload 1.0.5 to Apple?"), each time (28 November 2026). Pushes to GitHub still need none.
 - TestFlight replaces cable installs: `Phone/upload_testflight.sh` archives
   and uploads through Xcode's own sign-in (no key); the build number is the
   commit count; `ITSAppUsesNonExemptEncryption` is false. Each build works 90
