@@ -758,6 +758,8 @@ public final class AppModel: ObservableObject {
         defaults.set(fields.address, forKey: "trackServiceAddress")
         savedService = fields
         await testService(saying: Words.t("Saved. "))
+        // Accepted: a notification, not a line (1.0.4, David).
+        if serviceError == nil, role != nil { notifier.post(Words.t("GPS tracks service key accepted"), kind: "key-service") }
         if role != nil { await refresh() }
     }
 
@@ -774,11 +776,11 @@ public final class AppModel: ObservableObject {
             serviceStatus = status
             role = status.role
             defaults.set(status.role.rawValue, forKey: "trackServiceRole")
-            let who = status.role == .owner ? Words.t("Owner key") : Words.t("Reading key")
-            settingsLine = prefix + Words.t("{0}. {1} {2} on the service.", who, status.tracks, status.tracks == 1 ? Words.t("track") : Words.t("tracks"))
+            // No line when it works: the green tick says so (1.0.4, David).
+            settingsLine = ""
             serviceError = nil
         } catch {
-            settingsLine = prefix.trimmingCharacters(in: .whitespaces)
+            settingsLine = ""
             serviceError = error.localizedDescription
         }
     }
@@ -3372,6 +3374,8 @@ extension AppModel {
         savedBuffer = fields
         bufferAsked = nil
         await checkBuffer(saying: Words.t("Saved. "))
+        // Accepted: a notification, not a line (1.0.4, David).
+        if bufferError == nil { notifier.post(Words.t("Buffer server key accepted"), kind: "key-buffer") }
     }
 
     public func removeBuffer() async {
@@ -3400,7 +3404,7 @@ extension AppModel {
     }
 
     public func checkBuffer(saying prefix: String = "", showing: Bool = false) async {
-        guard let client = bufferClient else { bufferLine = prefix.trimmingCharacters(in: .whitespaces); bufferError = nil; return }
+        guard let client = bufferClient else { bufferLine = ""; bufferError = nil; return }
         bufferBusy = true
         defer { bufferBusy = false }
         if !prefix.isEmpty || showing { bufferLine = prefix + Words.t("Checking the buffer server") }
@@ -3408,15 +3412,11 @@ extension AppModel {
             let status = try await client.status()
             bufferWaiting = status.waiting
             bufferAsked = (Date(), status.atHome)
-            if status.role == "sender" {
-                bufferLine = prefix + Words.t("Key accepted.")
-                bufferError = nil
-            } else {
-                bufferLine = prefix.trimmingCharacters(in: .whitespaces)
-                bufferError = Words.t("This key can't send photos.")
-            }
+            // No line when it works: the green tick says so (1.0.4, David).
+            bufferLine = ""
+            bufferError = status.role == "sender" ? nil : Words.t("This key can't send photos.")
         } catch {
-            bufferLine = prefix.trimmingCharacters(in: .whitespaces)
+            bufferLine = ""
             bufferError = error.localizedDescription
         }
     }

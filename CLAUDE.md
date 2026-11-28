@@ -1375,3 +1375,13 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
 - Errors show in a red section at the top of Settings, one line each (GPS
   tracks service, buffer server, sync list, watch), with a copy icon in its
   corner that copies them all (David). The status lines no longer carry them.
+
+## Key accepted as a notification (1.0.4, David, 28 November 2026)
+
+- No status line under the keys when they work ("Saved. Key accepted." and
+  the service's key kind and track count are gone): saving a key that works
+  posts a notification, "Buffer server key accepted" or "GPS tracks service
+  key accepted". Failures go to the red section; the wheel line shows while
+  checking.
+- The Key row: "Key implemented" and the green tick (David's words), or "Key"
+  and "Not set"; "Edit" in words on the right opens the panel.

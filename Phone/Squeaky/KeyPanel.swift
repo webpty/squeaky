@@ -17,18 +17,19 @@ struct KeyRows: View {
                 Text(address).lineLimit(1).truncationMode(.middle)
             }
         }
-        LabeledContent(Words.t("Key")) {
-            HStack(spacing: 14) {
-                if saved {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                        .accessibilityLabel(Words.t("Saved"))
-                } else {
-                    Text(Words.t("Not set")).foregroundStyle(.secondary)
-                }
-                Button(action: edit) { Image(systemName: "square.and.pencil") }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel(Words.t("Edit"))
+        // "Key implemented" and the tick, or "Key" and "Not set"; Edit in words
+        // on the right (1.0.4, David).
+        HStack(spacing: 8) {
+            Text(saved ? Words.t("Key implemented") : Words.t("Key"))
+            if saved {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
             }
+            Spacer()
+            if !saved {
+                Text(Words.t("Not set")).foregroundStyle(.secondary)
+            }
+            Button(Words.t("Edit"), action: edit)
+                .buttonStyle(.borderless)
         }
     }
 }
