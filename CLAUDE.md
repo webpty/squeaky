@@ -1386,3 +1386,7 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   checking.
 - The Key row (1.0.5, David): "Key saved", the green tick and "Edit"; with no
   key, "Key" and "Add". Either opens the panel.
+- The sync list in the Buffer server section (1.0.5, David): "Sync list" with
+  "1,234 items" (photos and videos alike, so items), and "Last update" with
+  the day ("28 Nov 2026", the phone's own order); which device wrote it is no
+  longer said, the Mac being gone. "Not synced yet" before the first.

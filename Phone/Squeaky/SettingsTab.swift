@@ -19,6 +19,13 @@ struct SettingsTab: View {
 
     var owner: Person? { model.macOwner.flatMap { model.book.person($0) } }
 
+    /// "28 Nov 2026", in the phone's own order.
+    static func day(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.setLocalizedDateFormatFromTemplate("dMMMy")
+        return f.string(from: date)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -99,9 +106,18 @@ struct SettingsTab: View {
                             saved: model.bufferKeySaved) { editing = .buffer }
                     StatusRow(text: model.bufferLine, busy: model.bufferBusy)
                     // The sync line (0.34.9); the wheel while it works.
-                    // A failure shows in the red section at the top instead (1.0.3).
-                    StatusRow(text: model.syncActivity ?? QueueText.sync(model.lastSave, problem: nil),
-                              busy: model.syncActivity != nil)
+                    // The sync list in two rows (1.0.5, David): how many items, photos and
+                    // videos alike, and the day of the last update. A failure shows in red at the top.
+                    if let activity = model.syncActivity {
+                        StatusRow(text: activity, busy: true)
+                    }
+                    LabeledContent(Words.t("Sync list")) {
+                        Text(model.lastSave.map { $0.count == 1 ? Words.t("1 item") : Words.t("{0} items", $0.count.formatted()) }
+                             ?? Words.t("Not synced yet"))
+                    }
+                    if let last = model.lastSave {
+                        LabeledContent(Words.t("Last update")) { Text(Self.day(last.at)) }
+                    }
                 }.cardRows()
                 // The Geotrac app on a Garmin watch, picked once in Garmin Connect (0.32.0).
                 Section(Words.t("Watch")) {
