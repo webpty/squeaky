@@ -154,6 +154,7 @@ public final class AppModel: ObservableObject {
         role = nil
         serviceStatus = nil
         settingsLine = ""
+        serviceError = nil
     }
 
     // Tracks.
@@ -775,8 +776,10 @@ public final class AppModel: ObservableObject {
             defaults.set(status.role.rawValue, forKey: "trackServiceRole")
             let who = status.role == .owner ? Words.t("Owner key") : Words.t("Reading key")
             settingsLine = prefix + Words.t("{0}. {1} {2} on the service.", who, status.tracks, status.tracks == 1 ? Words.t("track") : Words.t("tracks"))
+            serviceError = nil
         } catch {
-            settingsLine = prefix + error.localizedDescription
+            settingsLine = prefix.trimmingCharacters(in: .whitespaces)
+            serviceError = error.localizedDescription
         }
     }
 
@@ -2406,6 +2409,10 @@ public final class AppModel: ObservableObject {
     /// last try failed: shown on the Queue page (0.29.2, David, 16 November 2026).
     @Published public private(set) var sharedAt: Date?
     @Published public private(set) var sharedProblem: String?
+    /// What went wrong last with each, for the red section at the top of
+    /// Settings (1.0.3, David); nil once it works again.
+    @Published public private(set) var bufferError: String?
+    @Published public private(set) var serviceError: String?
     /// What is being done with the sync files right now, said in place of the sync line (0.29.16).
     @Published public private(set) var syncActivity: String?
     /// Who wrote into the server folder last, and when, any device (0.29.3);
@@ -2531,7 +2538,7 @@ public final class AppModel: ObservableObject {
     func syncThroughBuffer(_ personId: UUID) async -> String? {
         guard goesToServer(personId), let client = bufferClient,
               let base = bufferBase(book.person(personId)?.nasFolder), !base.isEmpty else { return nil }
-        let folder = base.split(separator: "/").joined(separator: "/") + "/" + ServerList.folderName + "/"
+        let folder = base.split(separator: "/").joined(separator: "/") + "/" + Self.bufferListFolder + "/"
         let savedPath = folder + "saved.json", camerasPath = folder + "cameras.json"
         let theirs: ServerList.SavedFile?
         let theirCameras: ServerList.CamerasFile?
@@ -2541,7 +2548,22 @@ public final class AppModel: ObservableObject {
         } catch {
             return error.localizedDescription
         }
-        let copy = keepServerCopy(personId, entries: theirs?.entries ?? [], cameras: theirCameras?.cameras ?? [])
+        // The lists kept under the person's old Geotag folder before the
+        // rename, taken in once (1.0.3): every photo copied since then counts.
+        var older: [HistoryEntry] = [], olderCameras: [Camera] = []
+        let oldBase = base.replacingOccurrences(of: "/Squeaky", with: "/Geotag")
+        if oldBase != base, !defaults.bool(forKey: "oldBufferListsTaken-\(personId.uuidString)") {
+            let oldFolder = oldBase.split(separator: "/").joined(separator: "/") + "/" + Self.bufferListFolder + "/"
+            do {
+                older = try await client.readList(oldFolder + "saved.json").map(ServerList.decodeSaved)?.entries ?? []
+                olderCameras = try await client.readList(oldFolder + "cameras.json").map(ServerList.decodeCameras)?.cameras ?? []
+                defaults.set(true, forKey: "oldBufferListsTaken-\(personId.uuidString)")
+            } catch {
+                return error.localizedDescription
+            }
+        }
+        let copy = keepServerCopy(personId, entries: (theirs?.entries ?? []) + older,
+                                  cameras: (theirCameras?.cameras ?? []) + olderCameras)
         applyCameras(copy.cameras, personId: personId)
         let own = (try? history.load(personId)) ?? []
         let entries = ServerList.union(copy.entries, own)
@@ -2564,6 +2586,11 @@ public final class AppModel: ObservableObject {
         }
         return nil
     }
+
+    /// The folder name bufr.cc keeps the sync lists under: the one it accepts,
+    /// from before Geotag became Squeaky (1.0.3). Only a key at bufr.cc: it
+    /// never shows, and the lists kept there before the rename carry on.
+    static let bufferListFolder = "~Geotag"
 
     func loadServerCopy(_ personId: UUID) -> ServerCopy? {
         let decoder = JSONDecoder()
@@ -3361,11 +3388,19 @@ extension AppModel {
         bufferWaiting = nil
         bufferAsked = nil
         bufferLine = ""
+        bufferError = nil
     }
 
     /// Asks the buffer server how it stands: the key, and how many photos wait there for the NAS.
+    /// Every error now, one line each, for the red section of Settings.
+    public var settingsErrors: [String] {
+        [serviceError.map { Words.t("GPS tracks service: {0}", $0) },
+         bufferError.map { Words.t("Buffer server: {0}", $0) },
+         sharedProblem.map { Words.t("Sync list: {0}", $0) }].compactMap { $0 }
+    }
+
     public func checkBuffer(saying prefix: String = "", showing: Bool = false) async {
-        guard let client = bufferClient else { bufferLine = prefix.trimmingCharacters(in: .whitespaces); return }
+        guard let client = bufferClient else { bufferLine = prefix.trimmingCharacters(in: .whitespaces); bufferError = nil; return }
         bufferBusy = true
         defer { bufferBusy = false }
         if !prefix.isEmpty || showing { bufferLine = prefix + Words.t("Checking the buffer server") }
@@ -3373,9 +3408,16 @@ extension AppModel {
             let status = try await client.status()
             bufferWaiting = status.waiting
             bufferAsked = (Date(), status.atHome)
-            bufferLine = prefix + (status.role == "sender" ? Words.t("Key accepted.") : Words.t("This key can't send photos."))
+            if status.role == "sender" {
+                bufferLine = prefix + Words.t("Key accepted.")
+                bufferError = nil
+            } else {
+                bufferLine = prefix.trimmingCharacters(in: .whitespaces)
+                bufferError = Words.t("This key can't send photos.")
+            }
         } catch {
-            bufferLine = prefix + error.localizedDescription
+            bufferLine = prefix.trimmingCharacters(in: .whitespaces)
+            bufferError = error.localizedDescription
         }
     }
 

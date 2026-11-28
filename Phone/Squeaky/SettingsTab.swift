@@ -22,6 +22,11 @@ struct SettingsTab: View {
     var body: some View {
         NavigationStack {
             Form {
+                // Every error, in red, at the top, copied with one tap (1.0.3, David).
+                let errors = model.settingsErrors + (watch.problem.map { [Words.t("Watch: {0}", $0)] } ?? [])
+                if !errors.isEmpty {
+                    ErrorsSection(lines: errors)
+                }
                 // One line per camera: its name, and whether its offset is set (0.29.30, David:
                 // the figure itself tells nothing, and it drifts). Set by the offset code.
                 Section(Words.t("Cameras")) {
@@ -94,7 +99,8 @@ struct SettingsTab: View {
                             saved: model.bufferKeySaved) { editing = .buffer }
                     StatusRow(text: model.bufferLine, busy: model.bufferBusy)
                     // The sync line (0.34.9); the wheel while it works.
-                    StatusRow(text: model.syncActivity ?? QueueText.sync(model.lastSave, problem: model.sharedProblem),
+                    // A failure shows in the red section at the top instead (1.0.3).
+                    StatusRow(text: model.syncActivity ?? QueueText.sync(model.lastSave, problem: nil),
                               busy: model.syncActivity != nil)
                 }.cardRows()
                 // The Geotrac app on a Garmin watch, picked once in Garmin Connect (0.32.0).
@@ -180,5 +186,38 @@ struct InfoHeader: View {
             Button(action: open) { Image(systemName: "info.circle") }
                 .accessibilityLabel(Words.t("About {0}", title))
         }
+    }
+}
+
+
+/// The errors at the top of Settings, in red, with a copy icon in the
+/// corner that copies them all at once (1.0.3, David).
+struct ErrorsSection: View {
+    let lines: [String]
+    @State private var copied = false
+
+    var body: some View {
+        Section {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(lines, id: \.self) { Sentences(text: $0) }
+                }
+                .foregroundStyle(.red)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Button {
+                    UIPasteboard.general.string = lines.joined(separator: "\n")
+                    copied = true
+                    Task {
+                        try? await Task.sleep(for: .seconds(2))
+                        copied = false
+                    }
+                } label: {
+                    Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(Words.t("Copy"))
+            }
+        }
+        .listRowBackground(Color.red.opacity(0.15))
     }
 }

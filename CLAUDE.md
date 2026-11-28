@@ -1363,3 +1363,15 @@ Said 26 Oct 2026: in changes made across all projects, only Squeaky's notes are 
   let go of at launch. With no buffer key, sending waits and says so. The NAS
   code stays in the core, unused by the phone.
 - Untried on a phone at 1.0.2.
+
+## Sync lists at bufr.cc, and errors in red (1.0.3, David, 28 November 2026)
+
+- bufr.cc accepts only lists under a "~Geotag" folder, so from 0.34.0 every
+  sync through it was refused ("Only Geotag's sync lists are kept.") and
+  nothing synced. Squeaky now files them there (`bufferListFolder`), under
+  home/Squeaky, and once per person takes in the lists kept under
+  home/Geotag before the rename. bufr.cc accepting "~Squeaky" is its own
+  session's work; Squeaky does not depend on it.
+- Errors show in a red section at the top of Settings, one line each (GPS
+  tracks service, buffer server, sync list, watch), with a copy icon in its
+  corner that copies them all (David). The status lines no longer carry them.
